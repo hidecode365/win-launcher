@@ -1,0 +1,22 @@
+# Rust ビルド成果物
+src-tauri/target/
+
+# Node
+node_modules/
+
+# 環境変数
+.env
+.env.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Vite ビルド成果物
+dist/
+
+# Claude Code ローカル設定（プロジェクト共有不要）
+.claude/settings.local.json
+
+# Tauri 自動生成スキーマ
+src-tauri/gen/schemas/

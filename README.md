@@ -1,0 +1,54 @@
+# WinLauncher
+
+A fast, keyboard-driven launcher for Windows 11 — built with Tauri v2, React, and Rust.
+
+![WinLauncher](docs/screenshot-search.png)
+
+## Screenshots
+
+| File Search | Settings | Clipboard History |
+|-------------|----------|------------------|
+| ![Search](docs/screenshot-search.png) | ![Settings](docs/screenshot-settings.png) | ![Clipboard](docs/screenshot-clipboard.png) |
+
+## Features
+
+- **File Search** — Incremental search across configured folders with frecency-based ranking
+- **Calculator** — Type expressions like `1000 + 200` for instant results
+- **Clipboard History** — Browse and restore text & image history with `cb`
+- **Web Search** — Search Google directly from the launcher
+- **System Commands** — Shutdown, restart, or sleep with confirmation
+- **Customizable Hotkey** — Default `Alt+Space`, configurable from settings
+- **System Tray** — Runs silently in the background
+
+## Installation
+
+Download the installer from [Releases](https://github.com/hidecode365/win-launcher/releases).
+
+> winget support coming soon
+
+## Usage
+
+| Key | Action |
+|-----|--------|
+| `Alt+Space` | Open / close launcher |
+| `↑↓` | Navigate results |
+| `Enter` | Launch / execute |
+| `Esc` | Close |
+| `Ctrl+S` | Open settings |
+| `cb` | Open clipboard history |
+
+## Requirements
+
+- Windows 11 (x64)
+- No additional runtime required
+
+## Tech Stack
+
+- [Tauri v2](https://tauri.app/)
+- React + TypeScript
+- Rust
+- Tailwind CSS
+
+## License
+
+MIT

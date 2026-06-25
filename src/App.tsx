@@ -1,0 +1,332 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Store } from "@tauri-apps/plugin-store";
+import { useSettings } from "./hooks/useSettings";
+import { useHotkey } from "./hooks/useHotkey";
+import { useSearch } from "./hooks/useSearch";
+import { useClipboard } from "./hooks/useClipboard";
+import { SearchBox } from "./components/SearchBox";
+import { ResultList } from "./components/ResultList";
+import { ClipboardPanel } from "./components/ClipboardPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { SystemCommandModal } from "./components/SystemCommandModal";
+import { StatusFooter } from "./components/StatusFooter";
+import { hideWindow } from "./lib/window";
+import type { ClipboardTextEntry, FrecencyMap } from "./types";
+
+export default function App() {
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsVersion, setSettingsVersion] = useState(0);
+  const storeRef = useRef<Store | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const settings = useSettings(showSettings);
+  const hotkey = useHotkey(settings.setAppSettings);
+  const search = useSearch(settings.appSettings, settingsVersion, storeRef);
+  const clipboard = useClipboard(
+    settings.appSettingsRef,
+    search.clipboardMode,
+    search.clipboardFilterText,
+    storeRef,
+    search.setQuery
+  );
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // ファイル起動履歴（frecency）とクリップボードのテキスト履歴を読み込む。
+  // Rust 側にコマンドを追加せず、settings.json を Rust と共有する
+  // @tauri-apps/plugin-store の JS API から直接アクセスする。
+  useEffect(() => {
+    Store.load("settings.json")
+      .then((store) => {
+        storeRef.current = store;
+        return Promise.all([
+          store.get<FrecencyMap>("frecency"),
+          store.get<ClipboardTextEntry[]>("clipboardHistory"),
+        ]);
+      })
+      .then(([frecencyData, clipboardData]) => {
+        search.setInitialFrecency(frecencyData ?? {});
+        clipboard.setInitialHistory(clipboardData ?? []);
+      })
+      .catch(console.error);
+  }, []);
+
+  // ウィンドウサイズの永続化。位置とは異なりサイズのみ保存する。
+  // リサイズ確定から 500ms デバウンスしたうえで settings.json の "windowSize" へ
+  // 論理ピクセルで書き込む。適用（読み込み・反映）は Rust 側の起動時処理が担う。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    getCurrentWindow()
+      .onResized(({ payload: size }) => {
+        if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(async () => {
+          const store = storeRef.current;
+          if (!store) return;
+          const win = getCurrentWindow();
+          const scaleFactor = await win.scaleFactor().catch(() => 1);
+          const logical = size.toLogical(scaleFactor);
+          await store.set("windowSize", {
+            width: Math.round(logical.width),
+            height: Math.round(logical.height),
+          });
+          await store.save();
+        }, 500);
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+
+    return () => {
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+      unlisten?.();
+    };
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setSettingsVersion((v) => v + 1);
+    hotkey.resetHotkeyError();
+    settings.resetClipboardSettingsError();
+  }, [hotkey.resetHotkeyError, settings.resetClipboardSettingsError]);
+
+  // 設定パネルの開閉は document レベルの keydown で処理する。
+  // input 要素のローカル onKeyDown に持たせると、フォーカス状態や
+  // WebView2 の Ctrl+S 既定動作（ページ保存）の影響で発火しないことがあるため、
+  // 開く方向・閉じる方向の両方を同じ仕組みに統一している。
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (showSettings) {
+          closeSettings();
+        } else if (!search.pendingCommand) {
+          openSettings();
+        }
+      } else if (e.key === "Escape" && showSettings) {
+        closeSettings();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [showSettings, search.pendingCommand, openSettings, closeSettings]);
+
+  const calcLength = search.calcResult !== null ? 1 : 0;
+  const baseLength = search.clipboardMode
+    ? clipboard.clipboardEntries.length
+    : search.calcMode
+      ? calcLength
+      : search.systemMode
+        ? search.systemMatches.length
+        : search.results.length;
+  const webSearchVisible =
+    settings.appSettings.webSearchEnabled &&
+    search.query.trim().length > 0 &&
+    !search.clipboardMode;
+  const listLength = baseLength + (webSearchVisible ? 1 : 0);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (search.pendingCommand) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          search.confirmSystemCommand();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          search.cancelSystemCommand();
+        }
+        return;
+      }
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          search.setSelected((s) => Math.min(s + 1, listLength - 1));
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          search.setSelected((s) => Math.max(s - 1, 0));
+          break;
+        case "Enter":
+          if (webSearchVisible && search.selected === baseLength) {
+            search.openWebSearch(search.query);
+          } else if (search.clipboardMode) {
+            if (clipboard.clipboardEntries[search.selected]) {
+              clipboard.selectClipboardEntry(
+                clipboard.clipboardEntries[search.selected]
+              );
+            }
+          } else if (search.calcMode) {
+            if (search.calcResult !== null) search.copyResult(search.calcResult);
+          } else if (search.systemMode) {
+            if (search.systemMatches[search.selected]) {
+              search.requestSystemCommand(search.systemMatches[search.selected]);
+            }
+          } else if (search.results[search.selected]) {
+            search.launchFile(search.results[search.selected].path);
+          }
+          break;
+        case "Escape":
+          hideWindow();
+          break;
+      }
+    },
+    [
+      search.pendingCommand,
+      search.confirmSystemCommand,
+      search.cancelSystemCommand,
+      listLength,
+      search.setSelected,
+      webSearchVisible,
+      search.selected,
+      baseLength,
+      search.openWebSearch,
+      search.query,
+      search.clipboardMode,
+      clipboard.clipboardEntries,
+      clipboard.selectClipboardEntry,
+      search.calcMode,
+      search.calcResult,
+      search.copyResult,
+      search.systemMode,
+      search.systemMatches,
+      search.requestSystemCommand,
+      search.results,
+      search.launchFile,
+    ]
+  );
+
+  // フォーカスアウトで自動非表示、フォーカスインでは検索欄の内容を保持したまま再フォーカス
+  // （グローバルホットキーでの再表示は Rust 側で window.hide/show するため、
+  //   フロントエンドの state はここでリセットする必要がある）
+  //
+  // WebView2 はウィンドウ内のクリック（設定パネルへの切り替えによる DOM 入れ替えや
+  // ドラッグ開始操作など）でも一時的にフォーカスを失う通知を送ることがあるため、
+  // 即時に hide() せず、一定時間後も本当にフォーカスが戻っていない場合のみ非表示にする。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let blurTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const clearBlurTimer = () => {
+      if (blurTimer !== undefined) {
+        clearTimeout(blurTimer);
+        blurTimer = undefined;
+      }
+    };
+
+    getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) {
+          clearBlurTimer();
+          inputRef.current?.focus();
+        } else {
+          clearBlurTimer();
+          blurTimer = setTimeout(async () => {
+            const stillFocused = await getCurrentWindow()
+              .isFocused()
+              .catch(() => false);
+            if (!stillFocused) hideWindow();
+          }, 150);
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+
+    return () => {
+      clearBlurTimer();
+      unlisten?.();
+    };
+  }, []);
+
+  if (showSettings) {
+    return (
+      <SettingsPanel
+        appSettings={settings.appSettings}
+        hotkeyError={hotkey.hotkeyError}
+        onSaveHotkey={hotkey.setHotkey}
+        onSetFileSearchEnabled={settings.setFileSearchEnabled}
+        onSetCalcEnabled={settings.setCalcEnabled}
+        onSetCopyWithComma={settings.setCopyWithComma}
+        onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
+        onSetWebSearchEnabled={settings.setWebSearchEnabled}
+        onSetClipboardEnabled={settings.setClipboardEnabled}
+        onSetClipboardPrefix={settings.setClipboardPrefix}
+        onSetClipboardMaxItems={settings.setClipboardMaxItems}
+        clipboardSettingsError={settings.clipboardSettingsError}
+        folders={settings.folders}
+        onAddFolder={settings.addFolder}
+        onToggleFolder={settings.toggleFolder}
+        onRemoveFolder={settings.removeFolder}
+        onClose={closeSettings}
+      />
+    );
+  }
+
+  return (
+    <div className="relative flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
+      {/* システムコマンド確認モーダル */}
+      {search.pendingCommand && (
+        <SystemCommandModal
+          command={search.pendingCommand}
+          onCancel={search.cancelSystemCommand}
+          onConfirm={search.confirmSystemCommand}
+        />
+      )}
+
+      <SearchBox
+        inputRef={inputRef}
+        query={search.query}
+        onQueryChange={search.setQuery}
+        onKeyDown={handleKeyDown}
+        disabled={search.pendingCommand !== null}
+        onOpenSettings={openSettings}
+      />
+
+      {/* 検索結果 / 計算結果 / クリップボード履歴 */}
+      {search.clipboardMode ? (
+        <ClipboardPanel
+          entries={clipboard.clipboardEntries}
+          selected={search.selected}
+          onSelect={search.setSelected}
+          onSelectEntry={clipboard.selectClipboardEntry}
+        />
+      ) : (
+        <ResultList
+          calcMode={search.calcMode}
+          calcResult={search.calcResult}
+          systemMode={search.systemMode}
+          systemMatches={search.systemMatches}
+          results={search.results}
+          query={search.query}
+          selected={search.selected}
+          baseLength={baseLength}
+          webSearchVisible={webSearchVisible}
+          onSelect={search.setSelected}
+          onCopyResult={search.copyResult}
+          onRequestSystemCommand={search.requestSystemCommand}
+          onLaunchFile={search.launchFile}
+          onOpenWebSearch={search.openWebSearch}
+        />
+      )}
+
+      {/* フッター */}
+      <StatusFooter
+        pendingCommand={search.pendingCommand !== null}
+        webSearchVisible={webSearchVisible}
+        isWebSearchSelected={search.selected === baseLength}
+        clipboardMode={search.clipboardMode}
+        calcMode={search.calcMode}
+        systemMode={search.systemMode}
+      />
+    </div>
+  );
+}
