@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatTimestamp } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import {
@@ -8,26 +8,71 @@ import {
 } from "../types";
 
 const CLIPBOARD_TEXT_PREVIEW_LENGTH = 40;
+const DEFAULT_LEFT_WIDTH = 224;
 
 export function ClipboardPanel({
   entries,
   selected,
   onSelect,
   onSelectEntry,
+  initialLeftWidth = DEFAULT_LEFT_WIDTH,
+  onWidthChange,
 }: {
   entries: ClipboardEntry[];
   selected: number;
   onSelect: (index: number) => void;
   onSelectEntry: (entry: ClipboardEntry) => void;
+  initialLeftWidth?: number;
+  onWidthChange?: (width: number) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useScrollSelectedIntoView(containerRef, selected);
+  const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useScrollSelectedIntoView(listRef, selected);
+
+  const [leftWidth, setLeftWidth] = useState(initialLeftWidth);
+  const leftWidthRef = useRef(initialLeftWidth);
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const panelEl = panelRef.current;
+      if (!panelEl) return;
+      const rect = panelEl.getBoundingClientRect();
+      const maxWidth = rect.width * 0.6;
+      const newWidth = Math.max(150, Math.min(maxWidth, e.clientX - rect.left));
+      leftWidthRef.current = newWidth;
+      setLeftWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      onWidthChange?.(leftWidthRef.current);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [onWidthChange]);
+
+  const handleDividerMouseDown = () => {
+    isDragging.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div ref={panelRef} className="flex-1 flex overflow-hidden">
       <div
-        ref={containerRef}
-        className="w-56 flex-shrink-0 overflow-y-auto border-r border-gray-200/60"
+        ref={listRef}
+        className="flex-shrink-0 overflow-y-auto"
+        style={{ width: leftWidth }}
       >
         {entries.length === 0 ? (
           <div className="flex items-center justify-center text-center text-gray-400 text-sm py-6 px-2">
@@ -85,6 +130,13 @@ export function ClipboardPanel({
           ))
         )}
       </div>
+
+      {/* Draggable divider */}
+      <div
+        className="w-1 flex-shrink-0 bg-gray-200/60 hover:bg-blue-400/60 cursor-col-resize transition-colors"
+        onMouseDown={handleDividerMouseDown}
+      />
+
       <div className="flex-1 overflow-y-auto p-3">
         {entries[selected] ? (
           entries[selected].type === "text" ? (
@@ -101,7 +153,9 @@ export function ClipboardPanel({
             <div className="flex flex-col h-full">
               <div className="flex-1 flex items-center justify-center overflow-hidden min-h-0">
                 <img
-                  src={(entries[selected] as ClipboardImageEntry).thumbnailDataUrl}
+                  src={
+                    (entries[selected] as ClipboardImageEntry).thumbnailDataUrl
+                  }
                   alt=""
                   className="max-w-full max-h-full object-contain"
                 />

@@ -173,6 +173,7 @@ win-launcher/
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
   - `windowSize: { width, height }`（ウィンドウサイズ、論理ピクセル。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接書き込み、Rust 側が起動時に読み込んで適用する。詳細は「ウィンドウ」節を参照）
+  - `clipboardPaneWidth: number`（クリップボード履歴パネルの左ペイン幅、px。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。ドラッグ終了時（mouseup）およびフォーカスアウト時（blur）に保存する。Rust コマンドは追加しない）
 - 各カテゴリの内容
   - **全般**：起動ホットキーの表示・変更（修飾キーのチェックボックス＋通常キーのプルダウン。「グローバルホットキー」節を参照）
   - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）
@@ -251,6 +252,14 @@ win-launcher/
   - 画像の書き戻しは `paste_clipboard_image(id)`（Rust コマンド）を呼ぶだけ。フロントエンドはエントリの `id` を渡すのみで、画像バイナリを一切扱わない
     - Rust 側は `ClipboardImageCache` から `id` に対応する PNG バイナリを取得し、`image::load_from_memory` で RGBA にデコードしたうえで Win32 API（`OpenClipboard` → `EmptyClipboard` → `SetClipboardData(CF_DIB, ...)` → `CloseClipboard`）を直接呼んでクリップボードへ書き込む（`GlobalAlloc`/`GlobalLock`/`GlobalUnlock` で確保した `GMEM_MOVEABLE` メモリに BITMAPINFOHEADER ＋ ボトムアップ BGRA ピクセル列を書き込み、`SetClipboardData` に渡す。渡したメモリの所有権は OS に移るため明示的な解放は行わない）
     - `CF_DIB` は `Win32_System_Ole` feature、`GlobalAlloc` 等は `Win32_System_Memory` feature（いずれも `Cargo.toml` に追加）
+- 分割線リサイズ：`ClipboardPanel` コンポーネントが左右ペイン間に分割線要素（幅 4px）を描画し、`onMouseDown` でドラッグ開始を検出する
+  - 左ペイン幅を `useState` でコンポーネント内部管理し、`initialLeftWidth` props（App.tsx が store から読み込んで渡す）で初期値を設定する（デフォルト 224px）
+  - ドラッグ中は `document` レベルの `mousemove`/`mouseup` を `useEffect` で登録して追従し、`useEffect` のクリーンアップで解除する。`isDragging`（ref）と `leftWidthRef`（現在幅を mouseup コールバックに伝えるための ref）の 2 本を使って実装する
+  - 左ペインの最小幅 150px、最大幅はパネル全体の 60%（`panelRef` で外コンテナを計測）
+  - ドラッグ中は `document.body.style.cursor = "col-resize"` / `userSelect = "none"` をセットし、mouseup で元に戻す
+  - 幅確定（mouseup）時に `onWidthChange` コールバックを呼ぶ。App.tsx はこのコールバックで `settings.json` の `"clipboardPaneWidth"` を即時保存する
+  - フォーカスアウト（blur）時にも App.tsx の `clipboardPaneWidthRef`（mouseup で常に最新値を保持するための ref）を使って同キーへ保存する
+  - `clipboardPaneWidthRef`（mouseup コールバック用）と `clipboardPaneWidth` state（ClipboardPanel への props 用）は必ず同時に更新する。ref のみ更新して state を更新しないと、パネル再マウント時に古い幅が渡されるバグになる
 - 右パネル：クリップボード履歴モードのときのみ、左リストの右側に詳細パネルを表示する2カラムレイアウトに切り替える（他のモードは従来通り単一カラム）。選択中のエントリがテキストなら本文（折り返し表示）とコピー日時・文字数、画像ならサムネイル（`<img src={thumbnailDataUrl}>`）とコピー日時・画像サイズ（元画像の `width`×`height`）を表示する
 - 必要な権限（`capabilities/default.json`）：`clipboard-manager:allow-read-text`（テキスト取得用。画像の読み書きは Rust 内部で直接 `app.clipboard()` / Win32 API を呼ぶため JS 側のコマンド許可は不要で `allow-read-image` / `allow-write-image` は付与しない）
 
@@ -338,3 +347,9 @@ npm run tauri dev
 # プロダクションビルド
 npm run tauri build
 ```
+
+## テスト方針
+
+- ビルド確認は `cargo build` で行う
+- 動作確認は `npm run tauri dev` で起動して目視確認する
+- `npm run tauri dev` 起動後の PowerShell + スクリーンキャプチャによる自動 GUI テストは実施しない

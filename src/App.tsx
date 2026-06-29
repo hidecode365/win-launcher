@@ -14,9 +14,15 @@ import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
 import type { ClipboardTextEntry, FrecencyMap } from "./types";
 
+const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
+
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0);
+  const [clipboardPaneWidth, setClipboardPaneWidth] = useState(
+    DEFAULT_CLIPBOARD_PANE_WIDTH
+  );
+  const clipboardPaneWidthRef = useRef(DEFAULT_CLIPBOARD_PANE_WIDTH);
   const storeRef = useRef<Store | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -32,8 +38,10 @@ export default function App() {
   );
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (!showSettings) {
+      inputRef.current?.focus();
+    }
+  }, [showSettings]);
 
   // ファイル起動履歴（frecency）とクリップボードのテキスト履歴を読み込む。
   // Rust 側にコマンドを追加せず、settings.json を Rust と共有する
@@ -45,11 +53,15 @@ export default function App() {
         return Promise.all([
           store.get<FrecencyMap>("frecency"),
           store.get<ClipboardTextEntry[]>("clipboardHistory"),
+          store.get<number>("clipboardPaneWidth"),
         ]);
       })
-      .then(([frecencyData, clipboardData]) => {
+      .then(([frecencyData, clipboardData, paneWidthData]) => {
         search.setInitialFrecency(frecencyData ?? {});
         clipboard.setInitialHistory(clipboardData ?? []);
+        const paneWidth = paneWidthData ?? DEFAULT_CLIPBOARD_PANE_WIDTH;
+        clipboardPaneWidthRef.current = paneWidth;
+        setClipboardPaneWidth(paneWidth);
       })
       .catch(console.error);
   }, []);
@@ -85,6 +97,15 @@ export default function App() {
       if (resizeTimer !== undefined) clearTimeout(resizeTimer);
       unlisten?.();
     };
+  }, []);
+
+  const handlePaneWidthChange = useCallback(async (width: number) => {
+    clipboardPaneWidthRef.current = width;
+    setClipboardPaneWidth(width);
+    const store = storeRef.current;
+    if (!store) return;
+    await store.set("clipboardPaneWidth", width);
+    await store.save();
   }, []);
 
   const openSettings = useCallback(() => {
@@ -233,7 +254,17 @@ export default function App() {
             const stillFocused = await getCurrentWindow()
               .isFocused()
               .catch(() => false);
-            if (!stillFocused) hideWindow();
+            if (!stillFocused) {
+              const store = storeRef.current;
+              if (store) {
+                await store.set(
+                  "clipboardPaneWidth",
+                  clipboardPaneWidthRef.current
+                );
+                await store.save();
+              }
+              hideWindow();
+            }
           }, 150);
         }
       })
@@ -298,6 +329,8 @@ export default function App() {
           selected={search.selected}
           onSelect={search.setSelected}
           onSelectEntry={clipboard.selectClipboardEntry}
+          initialLeftWidth={clipboardPaneWidth}
+          onWidthChange={handlePaneWidthChange}
         />
       ) : (
         <ResultList
