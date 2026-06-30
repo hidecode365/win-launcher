@@ -1,5 +1,7 @@
 # WinLauncher
 
+![Readme](docs/screenshot-readme.png)
+
 A fast, keyboard-driven launcher for Windows 11 — built with Tauri v2, React, and Rust.
 
 ![WinLauncher](docs/screenshot-search.png)
