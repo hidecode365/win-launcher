@@ -953,6 +953,7 @@ fn load_tray_icon() -> Image<'static> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -1014,6 +1015,7 @@ fn main() {
             let menu = MenuBuilder::new(app)
                 .text("show", "Show WinLauncher")
                 .item(&autostart_item)
+                .text("restart", "Restart")
                 .text("quit", "Quit")
                 .build()?;
 
@@ -1042,6 +1044,7 @@ fn main() {
                             let _ = autostart_item.set_checked(!now_enabled);
                         }
                     }
+                    "restart" => app.request_restart(),
                     "quit" => app.exit(0),
                     _ => {}
                 })

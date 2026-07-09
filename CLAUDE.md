@@ -89,6 +89,7 @@ win-launcher/
 | `tauri-plugin-store` | 検索フォルダ・各機能 ON/OFF・ホットキー設定・ウィンドウサイズ・ファイル起動の frecency 履歴の永続化（`settings.json`）。frecency 履歴・ウィンドウサイズは Rust コマンドを介さず、フロントエンドが JS パッケージ `@tauri-apps/plugin-store` で直接読み書きする |
 | `tauri-plugin-dialog` | フォルダ選択ダイアログ |
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
+| `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
 | `tauri` (tray-icon feature) | システムトレイ常駐 |
 
 ## 設計方針
@@ -277,10 +278,11 @@ win-launcher/
 - Tauri v2 の `tray-icon` 機能を使用
 - トレイアイコンは `icons/32x32.png`（`npm run tauri icon` で生成されるアプリアイコン）を `include_bytes!` でコンパイル時に埋め込み、`image` クレートで RGBA にデコードして使用する
   - `include_bytes!` はファイル内容をビルドの依存関係として記録するため、アイコン差し替え後は次の `cargo build` で自動的に再コンパイルされる（手動で `build.rs` を touch する必要はない）
-- 左クリック / 「Show」メニューでウィンドウ表示
-- 「Quit」メニューでアプリ終了
-- 「Start with Windows」をチェック付きメニュー項目として表示し、現在の自動起動状態を反映
-  - クリックで `tauri-plugin-autostart` の有効/無効をトグルし、メニューのチェック状態を更新
+- トレイメニューの項目構成（この順で配置）
+  - 「Show WinLauncher」：左クリック / メニュークリックでウィンドウ表示（`window.center()` → `show()` → `set_focus()`）
+  - 「Start with Windows」：チェック付きメニュー項目。現在の自動起動状態を反映し、クリックで `tauri-plugin-autostart` の有効/無効をトグルしてチェック状態を更新
+  - 「Restart」：`app.request_restart()`（`tauri-plugin-process` プラグイン登録後に `AppHandle` が持つメソッド）でアプリケーションを再起動する。トレイトのインポートは不要
+  - 「Quit」：`app.exit(0)` でアプリケーションを終了する
 - ツールチップは `"WinLauncher — {hotkey}"` 形式（`{hotkey}` は `appSettings.hotkey`）
   - トレイは `TrayIconBuilder::with_id("main-tray")` で構築するため、`app.tray_by_id("main-tray")` で後から `TrayIcon` ハンドルを取得できる
   - アプリ起動時（`setup`）：登録した起動ホットキー文字列（パース失敗時はデフォルトへフォールバック後の値）でツールチップを組み立てて `.tooltip(...)` に渡す
