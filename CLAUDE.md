@@ -10,14 +10,11 @@
 
 ソースを直接変更する前に、変更内容が要件・設計方針と矛盾しないか確認し、矛盾があれば先に `CLAUDE.md` を更新してから着手する。
 
-### 要件差分の検出（スナップショット運用）
+## テストに関する制約
 
-ユーザが「要件を変更したので改修して」のように具体的な変更内容を示さず指示してくる場合があるため、
-直前の改修完了時点の `REQUIREMENTS.md` を `.claude/REQUIREMENTS.snapshot.md` に保持しておく。
-
-- **改修開始時**：`REQUIREMENTS.md` と `.claude/REQUIREMENTS.snapshot.md` を diff し、変更箇所を特定してから着手する
-- **改修完了時**：現在の `REQUIREMENTS.md` の内容を `.claude/REQUIREMENTS.snapshot.md` に上書きコピーし、次回の差分検出に備える
-- スナップショットが存在しない、または diff が取れない場合は `REQUIREMENTS.md` 全体を読み直して要件を再確認する
+- `npm run tauri dev` でアプリを起動した後、PowerShell やスクリーンキャプチャ等を用いた自動GUIテストは一切実施しないこと
+- 動作確認は `cargo build` や `tsc` などの静的なビルド検証までとし、実際のGUI操作・画面キャプチャ・自動操作によるテストはユーザーが手動で行う
+- ビルドが通り、アプリが起動できることを確認した時点で、ユーザーに動作確認を依頼して終了すること
 
 ## 概要
 
@@ -40,9 +37,11 @@ win-launcher/
 │   │   ├── useSettings.ts    # AppSettings・検索フォルダの読み込み・保存
 │   │   ├── useHotkey.ts      # 起動ホットキーの変更（set_hotkey）
 │   │   ├── useSearch.ts      # クエリ・検索/計算/システムコマンド判定・frecency・起動系コマンド
-│   │   └── useClipboard.ts   # クリップボード履歴の記録・永続化・呼び出し
+│   │   ├── useClipboard.ts   # クリップボード履歴の記録・永続化・呼び出し
+│   │   └── useOcr.ts         # OCR状態管理（ローディング・結果・エラー・クリア）
 │   ├── components/
-│   │   ├── SearchBox.tsx           # 検索入力欄（ドラッグ領域・歯車ボタン含む）
+│   │   ├── SearchBox.tsx           # 検索入力欄（ドラッグ領域・歯車ボタン含む）。画像ペーストを検出して onImagePaste を呼ぶ
+│   │   ├── OcrPreview.tsx          # OCR結果プレビュー（編集可能テキストエリア＋コピー・閉じるボタン）
 │   │   ├── ResultList.tsx          # 計算結果/システムコマンド候補/ファイル検索結果のリスト
 │   │   ├── ClipboardPanel.tsx      # クリップボード履歴モードの2カラムパネル
 │   │   ├── WebSearchRow.tsx        # 「Googleで〇〇を検索」行
@@ -55,7 +54,8 @@ win-launcher/
 │   │   ├── CalcSettings.tsx        # 数式計算タブ
 │   │   ├── SystemCommandSettings.tsx # システムコマンドタブ
 │   │   ├── WebSearchSettings.tsx   # Web検索タブ
-│   │   └── ClipboardSettings.tsx   # クリップボードタブ
+│   │   ├── ClipboardSettings.tsx   # クリップボードタブ
+│   │   └── OcrSettings.tsx         # OCRタブ
 │   └── styles.css
 ├── src-tauri/
 │   ├── src/main.rs         # Rust バックエンド（全ロジック）
@@ -170,19 +170,20 @@ win-launcher/
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
   - `folders: { path, enabled }[]`（ファイル検索カテゴリの検索フォルダ一覧）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems }`（全般のホットキー、各機能の ON/OFF、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しプレフィックスと最大件数。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`clipboardPrefix` のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`）
+  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled }`（全般のホットキー、各機能の ON/OFF、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しプレフィックスと最大件数、OCR機能 ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`clipboardPrefix` のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`）
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
   - `windowSize: { width, height }`（ウィンドウサイズ、論理ピクセル。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接書き込み、Rust 側が起動時に読み込んで適用する。詳細は「ウィンドウ」節を参照）
   - `clipboardPaneWidth: number`（クリップボード履歴パネルの左ペイン幅、px。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。ドラッグ終了時（mouseup）およびフォーカスアウト時（blur）に保存する。Rust コマンドは追加しない）
 - 各カテゴリの内容
   - **全般**：起動ホットキーの表示・変更（修飾キーのチェックボックス＋通常キーのプルダウン。「グローバルホットキー」節を参照）
-  - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）
+  - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）。各フォルダパステキストは既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶクリッカブルボタンとして実装し、クリックでエクスプローラーを開く（追加の Rust コマンドや権限は不要）。ボタンにはホバー時 `cursor-pointer` + 下線を付与し、チェックボックス・削除ボタンの動作には影響しない
   - **数式計算**：機能 ON/OFF トグル＋クリップボードコピー時のカンマ区切り ON/OFF トグル（「計算結果をカンマ区切りでコピー」。「計算機能」節を参照）
   - **システムコマンド**：機能 ON/OFF トグルのみ
   - **Web検索**：機能 ON/OFF トグルのみ（「Web検索機能」節を参照）
   - **クリップボード**：機能 ON/OFF トグル＋呼び出しプレフィックスのテキスト入力＋最大保持件数の数値入力（「クリップボード履歴」節を参照）
-- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
+  - **OCR**：機能 ON/OFF トグルのみ（「OCR機能」節を参照）
+- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_ocr_enabled`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
 - フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定（計算モード／システムコマンドモード／ファイル検索／Web検索行の表示／クリップボード履歴モード）に反映する。OFF の機能は対応する Tauri コマンド（`calculate` / `search_files`、システムコマンドの候補表示、Web検索行の表示、クリップボード履歴モードへの切替）自体を呼び出さない・表示しない
 
 ### 計算機能（Rust / フロントエンド）
@@ -319,6 +320,8 @@ win-launcher/
 | `set_clipboard_max_items(maxItems)` | クリップボード履歴の最大保持件数を変更して `AppSettings` を返す。`1` 未満はエラーを返して保存しない |
 | `paste_clipboard_image(id)` | `ClipboardImageCache` から `id` に対応する画像バイナリを取得し、Win32 API でクリップボードへ直接書き込む |
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
+| `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（`chars().all(|c| c.is_ascii_alphanumeric())`）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
+| `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |
 
 ## フロントエンド
 
@@ -332,16 +335,26 @@ win-launcher/
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
 - 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Esc で非表示、`Ctrl+S` で設定パネルを開く
 - クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（他のモードは単一カラムのまま。詳細は「クリップボード履歴」節を参照）
+- OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。`App.tsx` で `ocrActive` を導出し、条件付きレンダリングで制御する
+- `OcrPreview` の「閉じる」「コピーして閉じる」ボタンはそれぞれ独立したコールバック（`onClose` / `onCopyAndClose`）を `App.tsx` から受け取り、ボタン内部では invoke やウィンドウ制御を行わない（表示専用コンポーネントの原則を維持するため）
+  - 「閉じる」（`onClose` = `handleOcrClose`）：`ocr.clearOcr()` で OCR state をリセットしたうえで、`requestAnimationFrame` 経由で `inputRef.current?.focus()` を呼び検索ボックスへフォーカスを戻す（`SearchBox` は `ocrActive` に関わらず常にマウントされているため、フォーカス移動のみで足りる）
+  - 「コピーして閉じる」（`onCopyAndClose` = `handleOcrCopyAndClose`）：`copy_to_clipboard` invoke → ルートコンテナに `ocrClosing` state で opacity 0 へのフェードアウト（Tailwind `transition-opacity duration-[180ms]`、180ms はホットキー等による他の非表示処理とは別に、この操作専用の視覚効果として追加するもの）を適用 → 180ms 待機後に `hideWindow()` → `ocrClosing` を戻しつつ `ocr.clearOcr()` で state をリセットする。ホットキー再表示やフォーカスアウトによる非表示にはこのフェードは適用しない（既存の即時 `hide()` のまま）
+  - いずれの経路でも `ocr.clearOcr()` を通るため、次回ウィンドウ表示時は `ocrActive` が `false`（通常の検索画面）に戻っている
+- `OcrPreview` は `flex-1` でウィンドウ残高を占有する（検索ボックスの直下からウィンドウ下端まで全高を使う）。テキスト表示時はテキストエリアを `flex-1 min-h-0 overflow-y-auto` にして内部スクロール可能にし、ボタン行は `flex-shrink-0` で下端に固定する。ローディング・エラー時はコンテンツ高さのみ使用し残高は空白になる
 - 設定パネル：タブ構成（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード）、`Ctrl+S` または Esc で検索 UI に戻る
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
 - `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` イベントを受信する
 - `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス
 
+## コマンド実行時の注意
+
+- `npm run tauri dev` や `cargo build` を実行する際、`cd` で作業ディレクトリを移動する必要はない（既にプロジェクトルートが作業ディレクトリとして設定されているため）。`cd` を挟んだ複合コマンドは避け、単体のコマンドとしてそのまま実行すること
+
 ## ビルド
 
 ```bash
 # Rust のみコンパイル確認
-cd src-tauri && cargo build
+cargo build --manifest-path src-tauri/Cargo.toml
 
 # 開発サーバー起動（フロント + Rust）
 npm run tauri dev

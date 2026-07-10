@@ -26,6 +26,7 @@ export interface AppSettings {
   clipboardEnabled: boolean;
   clipboardPrefix: string;
   clipboardMaxItems: number;
+  ocrEnabled: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -38,6 +39,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   clipboardEnabled: true,
   clipboardPrefix: "cb",
   clipboardMaxItems: 50,
+  ocrEnabled: true,
 };
 
 export interface SystemCommand {

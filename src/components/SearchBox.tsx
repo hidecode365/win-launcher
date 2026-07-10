@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { ClipboardEvent, RefObject } from "react";
 
 export function SearchBox({
   inputRef,
@@ -7,6 +7,7 @@ export function SearchBox({
   onKeyDown,
   disabled,
   onOpenSettings,
+  onImagePaste,
 }: {
   inputRef: RefObject<HTMLInputElement>;
   query: string;
@@ -14,7 +15,22 @@ export function SearchBox({
   onKeyDown: (e: React.KeyboardEvent) => void;
   disabled: boolean;
   onOpenSettings: () => void;
+  onImagePaste?: (file: File) => void;
 }) {
+  const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    if (!onImagePaste) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) onImagePaste(file);
+        return;
+      }
+    }
+  };
+
   return (
     <div
       data-tauri-drag-region="deep"
@@ -39,6 +55,7 @@ export function SearchBox({
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={handlePaste}
         placeholder="検索..."
         className="flex-1 bg-transparent outline-none text-lg text-gray-800 placeholder-gray-400 read-only:opacity-50"
         autoComplete="off"

@@ -314,6 +314,7 @@ struct AppSettings {
     clipboard_enabled: bool,
     clipboard_prefix: String,
     clipboard_max_items: u32,
+    ocr_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -328,6 +329,7 @@ impl Default for AppSettings {
             clipboard_enabled: true,
             clipboard_prefix: DEFAULT_CLIPBOARD_PREFIX.to_string(),
             clipboard_max_items: DEFAULT_CLIPBOARD_MAX_ITEMS,
+            ocr_enabled: true,
         }
     }
 }
@@ -422,6 +424,156 @@ fn set_clipboard_max_items(app: AppHandle, max_items: u32) -> Result<AppSettings
     settings.clipboard_max_items = max_items;
     save_app_settings(&app, &settings)?;
     Ok(settings)
+}
+
+#[tauri::command]
+fn set_ocr_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.ocr_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+/// Windows OCR API (Windows.Media.Ocr) 経由でテキスト抽出を行う。
+/// COM の初期化とブロッキング WinRT 呼び出しが必要なため、spawn_blocking で呼ぶ。
+#[cfg(windows)]
+mod ocr {
+    use windows::Globalization::Language;
+    use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
+    use windows::Media::Ocr::OcrEngine;
+    use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
+    use windows::core::HSTRING;
+
+    /// CoInitializeEx の RAII ラッパー。成功した初期化（S_OK / S_FALSE）は
+    /// Drop 時に CoUninitialize を呼ぶ。RPC_E_CHANGED_MODE はエラーのため呼ばない。
+    struct ComInit(bool);
+    impl ComInit {
+        fn new() -> Self {
+            let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+            Self(hr.is_ok())
+        }
+    }
+    impl Drop for ComInit {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { CoUninitialize() }
+            }
+        }
+    }
+
+    pub fn run(rgba: &[u8], width: u32, height: u32) -> Result<String, String> {
+        let _com = ComInit::new();
+
+        // RGBA bytes → IBuffer（DataWriter の内部バッファ経由。StoreAsync 不要）
+        let stream = InMemoryRandomAccessStream::new().map_err(|e| e.to_string())?;
+        let writer = DataWriter::CreateDataWriter(&stream).map_err(|e| e.to_string())?;
+        writer.WriteBytes(rgba).map_err(|e| e.to_string())?;
+        let buffer = writer.DetachBuffer().map_err(|e| e.to_string())?;
+        drop(writer);
+        drop(stream);
+
+        // IBuffer → SoftwareBitmap (Rgba8 形式)
+        let bitmap = SoftwareBitmap::CreateCopyFromBuffer(
+            &buffer,
+            BitmapPixelFormat::Rgba8,
+            width as i32,
+            height as i32,
+        )
+        .map_err(|e| e.to_string())?;
+
+        // Bgra8 に変換（OcrEngine が推奨するフォーマット）
+        let bitmap = SoftwareBitmap::Convert(&bitmap, BitmapPixelFormat::Bgra8)
+            .map_err(|e| e.to_string())?;
+
+        // OCR エンジン（日本語優先・英語フォールバック）
+        let engine = try_lang("ja")
+            .or_else(|| try_lang("en"))
+            .ok_or_else(|| {
+                "OCR言語パックが見つかりません。\
+                 設定→時刻と言語→言語から日本語または英語のOCRパックをインストールしてください。"
+                    .to_string()
+            })?;
+
+        // OCR 実行。.get() でブロッキング待機（spawn_blocking 内なので安全）
+        let result = engine
+            .RecognizeAsync(&bitmap)
+            .map_err(|e| e.to_string())?
+            .get()
+            .map_err(|e| e.to_string())?;
+
+        // 各行を (Y座標, テキスト) で収集し、縦位置昇順にソートして改行結合。
+        // OcrLine 自体は BoundingRect を持たないため、先頭ワードの BoundingRect.Y を代用する。
+        // 単語連結: 直前と現在の単語が両方とも ASCII 英数字のみの場合にのみスペースを挿入し、
+        // それ以外（日本語・CJK 等を含む組み合わせ）はスペースなしで連結する。
+        let lines = result.Lines().map_err(|e| e.to_string())?;
+        let count = lines.Size().map_err(|e| e.to_string())?;
+        let mut entries: Vec<(f32, String)> = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let line = lines.GetAt(i).map_err(|e| e.to_string())?;
+            let words = line.Words().map_err(|e| e.to_string())?;
+            let wc = words.Size().map_err(|e| e.to_string())?;
+
+            let y = words
+                .GetAt(0)
+                .ok()
+                .and_then(|w| w.BoundingRect().ok())
+                .map(|r| r.Y)
+                .unwrap_or(0.0);
+
+            let mut line_text = String::new();
+            let mut prev_ascii_alnum = false;
+            for j in 0..wc {
+                let w = words.GetAt(j).map_err(|e| e.to_string())?;
+                let word = w.Text().map_err(|e| e.to_string())?.to_string();
+                let curr_ascii_alnum = word.chars().all(|c| c.is_ascii_alphanumeric());
+                if !line_text.is_empty() && prev_ascii_alnum && curr_ascii_alnum {
+                    line_text.push(' ');
+                }
+                line_text.push_str(&word);
+                prev_ascii_alnum = curr_ascii_alnum;
+            }
+
+            entries.push((y, line_text));
+        }
+        entries.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(entries.into_iter().map(|(_, t)| t).collect::<Vec<_>>().join("\n"))
+    }
+
+    fn try_lang(code: &str) -> Option<OcrEngine> {
+        Language::CreateLanguage(&HSTRING::from(code))
+            .ok()
+            .and_then(|l| OcrEngine::TryCreateFromLanguage(&l).ok())
+    }
+}
+
+#[cfg(windows)]
+fn run_ocr(rgba: Vec<u8>, width: u32, height: u32) -> Result<String, String> {
+    ocr::run(&rgba, width, height)
+}
+
+#[cfg(not(windows))]
+fn run_ocr(_rgba: Vec<u8>, _width: u32, _height: u32) -> Result<String, String> {
+    Err("Windows専用機能です".to_string())
+}
+
+#[tauri::command]
+async fn ocr_from_clipboard(app: AppHandle) -> Result<String, String> {
+    let settings = load_app_settings(&app);
+    if !settings.ocr_enabled {
+        return Err("OCR機能が無効です".to_string());
+    }
+    let image = app
+        .clipboard()
+        .read_image()
+        .map_err(|_| "クリップボードに画像がありません".to_string())?;
+    let width = image.width();
+    let height = image.height();
+    let rgba = image.rgba().to_vec();
+
+    tauri::async_runtime::spawn_blocking(move || run_ocr(rgba, width, height))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1092,7 +1244,9 @@ fn main() {
             set_clipboard_prefix,
             set_clipboard_max_items,
             paste_clipboard_image,
-            set_hotkey
+            set_hotkey,
+            set_ocr_enabled,
+            ocr_from_clipboard
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

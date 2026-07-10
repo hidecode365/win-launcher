@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
 import { useSettings } from "./hooks/useSettings";
 import { useHotkey } from "./hooks/useHotkey";
 import { useSearch } from "./hooks/useSearch";
 import { useClipboard } from "./hooks/useClipboard";
+import { useOcr } from "./hooks/useOcr";
 import { SearchBox } from "./components/SearchBox";
+import { OcrPreview } from "./components/OcrPreview";
 import { ResultList } from "./components/ResultList";
 import { ClipboardPanel } from "./components/ClipboardPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -19,6 +22,7 @@ const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0);
+  const [ocrClosing, setOcrClosing] = useState(false);
   const [clipboardPaneWidth, setClipboardPaneWidth] = useState(
     DEFAULT_CLIPBOARD_PANE_WIDTH
   );
@@ -29,6 +33,7 @@ export default function App() {
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
   const search = useSearch(settings.appSettings, settingsVersion, storeRef);
+  const ocr = useOcr();
   const clipboard = useClipboard(
     settings.appSettingsRef,
     search.clipboardMode,
@@ -42,6 +47,24 @@ export default function App() {
       inputRef.current?.focus();
     }
   }, [showSettings]);
+
+  const handleOcrClose = useCallback(() => {
+    ocr.clearOcr();
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [ocr.clearOcr]);
+
+  const handleOcrCopyAndClose = useCallback(async () => {
+    if (ocr.ocrText !== null) {
+      await invoke("copy_to_clipboard", { text: ocr.ocrText }).catch(
+        console.error
+      );
+    }
+    setOcrClosing(true);
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    await hideWindow();
+    setOcrClosing(false);
+    ocr.clearOcr();
+  }, [ocr.ocrText, ocr.clearOcr]);
 
   // ファイル起動履歴（frecency）とクリップボードのテキスト履歴を読み込む。
   // Rust 側にコマンドを追加せず、settings.json を Rust と共有する
@@ -293,17 +316,26 @@ export default function App() {
         onSetClipboardPrefix={settings.setClipboardPrefix}
         onSetClipboardMaxItems={settings.setClipboardMaxItems}
         clipboardSettingsError={settings.clipboardSettingsError}
+        onSetOcrEnabled={settings.setOcrEnabled}
         folders={settings.folders}
         onAddFolder={settings.addFolder}
         onToggleFolder={settings.toggleFolder}
         onRemoveFolder={settings.removeFolder}
+        onOpenFolder={settings.openFolder}
         onClose={closeSettings}
       />
     );
   }
 
+  const ocrActive =
+    ocr.ocrLoading || ocr.ocrText !== null || ocr.ocrError !== null;
+
   return (
-    <div className="relative flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
+    <div
+      className={`relative flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl transition-opacity duration-[180ms] ${
+        ocrClosing ? "opacity-0" : "opacity-100"
+      }`}
+    >
       {/* システムコマンド確認モーダル */}
       {search.pendingCommand && (
         <SystemCommandModal
@@ -320,46 +352,68 @@ export default function App() {
         onKeyDown={handleKeyDown}
         disabled={search.pendingCommand !== null}
         onOpenSettings={openSettings}
+        onImagePaste={
+          settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
+        }
       />
 
-      {/* 検索結果 / 計算結果 / クリップボード履歴 */}
-      {search.clipboardMode ? (
-        <ClipboardPanel
-          entries={clipboard.clipboardEntries}
-          selected={search.selected}
-          onSelect={search.setSelected}
-          onSelectEntry={clipboard.selectClipboardEntry}
-          initialLeftWidth={clipboardPaneWidth}
-          onWidthChange={handlePaneWidthChange}
-        />
-      ) : (
-        <ResultList
-          calcMode={search.calcMode}
-          calcResult={search.calcResult}
-          systemMode={search.systemMode}
-          systemMatches={search.systemMatches}
-          results={search.results}
-          query={search.query}
-          selected={search.selected}
-          baseLength={baseLength}
-          webSearchVisible={webSearchVisible}
-          onSelect={search.setSelected}
-          onCopyResult={search.copyResult}
-          onRequestSystemCommand={search.requestSystemCommand}
-          onLaunchFile={search.launchFile}
-          onOpenWebSearch={search.openWebSearch}
+      {/* OCR プレビュー（画像ペースト時に表示。表示中は検索結果エリアを非表示にする） */}
+      {/* key に ocrRunId を使い、新しい画像が貼り付けられるたびに再マウントして
+          左右ペインの分割幅を 50:50 の初期状態にリセットする */}
+      {ocrActive && (
+        <OcrPreview
+          key={ocr.ocrRunId}
+          imageUrl={ocr.ocrImageUrl}
+          loading={ocr.ocrLoading}
+          text={ocr.ocrText}
+          error={ocr.ocrError}
+          onTextChange={ocr.setOcrText}
+          onClose={handleOcrClose}
+          onCopyAndClose={handleOcrCopyAndClose}
         />
       )}
 
-      {/* フッター */}
-      <StatusFooter
-        pendingCommand={search.pendingCommand !== null}
-        webSearchVisible={webSearchVisible}
-        isWebSearchSelected={search.selected === baseLength}
-        clipboardMode={search.clipboardMode}
-        calcMode={search.calcMode}
-        systemMode={search.systemMode}
-      />
+      {/* 検索結果 / 計算結果 / クリップボード履歴（OCR プレビュー中は非表示） */}
+      {!ocrActive &&
+        (search.clipboardMode ? (
+          <ClipboardPanel
+            entries={clipboard.clipboardEntries}
+            selected={search.selected}
+            onSelect={search.setSelected}
+            onSelectEntry={clipboard.selectClipboardEntry}
+            initialLeftWidth={clipboardPaneWidth}
+            onWidthChange={handlePaneWidthChange}
+          />
+        ) : (
+          <ResultList
+            calcMode={search.calcMode}
+            calcResult={search.calcResult}
+            systemMode={search.systemMode}
+            systemMatches={search.systemMatches}
+            results={search.results}
+            query={search.query}
+            selected={search.selected}
+            baseLength={baseLength}
+            webSearchVisible={webSearchVisible}
+            onSelect={search.setSelected}
+            onCopyResult={search.copyResult}
+            onRequestSystemCommand={search.requestSystemCommand}
+            onLaunchFile={search.launchFile}
+            onOpenWebSearch={search.openWebSearch}
+          />
+        ))}
+
+      {/* フッター（OCR プレビュー中は非表示） */}
+      {!ocrActive && (
+        <StatusFooter
+          pendingCommand={search.pendingCommand !== null}
+          webSearchVisible={webSearchVisible}
+          isWebSearchSelected={search.selected === baseLength}
+          clipboardMode={search.clipboardMode}
+          calcMode={search.calcMode}
+          systemMode={search.systemMode}
+        />
+      )}
     </div>
   );
 }

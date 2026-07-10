@@ -90,6 +90,13 @@ export function useSettings(showSettings: boolean) {
     }
   }, []);
 
+  const setOcrEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_ocr_enabled", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
   const addFolder = useCallback(async () => {
     const path = await invoke<string | null>("pick_folder").catch(() => null);
     if (!path) return;
@@ -113,6 +120,10 @@ export function useSettings(showSettings: boolean) {
     if (updated) setFolders(updated);
   }, []);
 
+  const openFolder = useCallback(async (path: string) => {
+    await invoke("launch_file", { path }).catch(console.error);
+  }, []);
+
   const resetClipboardSettingsError = useCallback(() => {
     setClipboardSettingsError(null);
   }, []);
@@ -132,8 +143,10 @@ export function useSettings(showSettings: boolean) {
     setClipboardEnabled,
     setClipboardPrefix,
     setClipboardMaxItems,
+    setOcrEnabled,
     addFolder,
     toggleFolder,
     removeFolder,
+    openFolder,
   };
 }

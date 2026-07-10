@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { AppSettings, FolderEntry } from "../types";
 import { GeneralSettings } from "./GeneralSettings";
 import { FileSearchSettings } from "./FileSearchSettings";
@@ -6,6 +7,7 @@ import { CalcSettings } from "./CalcSettings";
 import { SystemCommandSettings } from "./SystemCommandSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { ClipboardSettings } from "./ClipboardSettings";
+import { OcrSettings } from "./OcrSettings";
 
 type SettingsTab =
   | "general"
@@ -13,7 +15,8 @@ type SettingsTab =
   | "calc"
   | "systemCommand"
   | "webSearch"
-  | "clipboard";
+  | "clipboard"
+  | "ocr";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "全般" },
@@ -22,6 +25,7 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "systemCommand", label: "システムコマンド" },
   { id: "webSearch", label: "Web検索" },
   { id: "clipboard", label: "クリップボード" },
+  { id: "ocr", label: "OCR" },
 ];
 
 export function SettingsPanel({
@@ -37,10 +41,12 @@ export function SettingsPanel({
   onSetClipboardPrefix,
   onSetClipboardMaxItems,
   clipboardSettingsError,
+  onSetOcrEnabled,
   folders,
   onAddFolder,
   onToggleFolder,
   onRemoveFolder,
+  onOpenFolder,
   onClose,
 }: {
   appSettings: AppSettings;
@@ -55,13 +61,20 @@ export function SettingsPanel({
   onSetClipboardPrefix: (prefix: string) => void;
   onSetClipboardMaxItems: (maxItems: number) => void;
   clipboardSettingsError: string | null;
+  onSetOcrEnabled: (checked: boolean) => void;
   folders: FolderEntry[];
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
   onRemoveFolder: (path: string) => void;
+  onOpenFolder: (path: string) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
+  const [version, setVersion] = useState<string>("");
+
+  useEffect(() => {
+    getVersion().then((v) => setVersion(v));
+  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
@@ -126,6 +139,7 @@ export function SettingsPanel({
               onAddFolder={onAddFolder}
               onToggleFolder={onToggleFolder}
               onRemoveFolder={onRemoveFolder}
+              onOpenFolder={onOpenFolder}
             />
           )}
           {tab === "calc" && (
@@ -159,8 +173,20 @@ export function SettingsPanel({
               error={clipboardSettingsError}
             />
           )}
+          {tab === "ocr" && (
+            <OcrSettings
+              enabled={appSettings.ocrEnabled}
+              onToggle={onSetOcrEnabled}
+            />
+          )}
         </div>
       </div>
+
+      {version && (
+        <div className="px-4 py-2 border-t border-gray-200/60 text-right">
+          <span className="text-xs text-gray-400">v{version}</span>
+        </div>
+      )}
     </div>
   );
 }

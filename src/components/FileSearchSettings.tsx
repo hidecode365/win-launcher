@@ -8,6 +8,7 @@ export function FileSearchSettings({
   onAddFolder,
   onToggleFolder,
   onRemoveFolder,
+  onOpenFolder,
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
@@ -15,6 +16,7 @@ export function FileSearchSettings({
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
   onRemoveFolder: (path: string) => void;
+  onOpenFolder: (path: string) => void;
 }) {
   return (
     <div className="flex flex-col h-full">
@@ -43,9 +45,14 @@ export function FileSearchSettings({
                 onChange={() => onToggleFolder(f.path)}
                 className="flex-shrink-0"
               />
-              <span className="flex-1 min-w-0 truncate text-sm text-gray-700">
+              <button
+                type="button"
+                onClick={() => onOpenFolder(f.path)}
+                className="flex-1 min-w-0 truncate text-sm text-gray-700 text-left cursor-pointer hover:underline"
+                title={f.path}
+              >
                 {f.path}
-              </span>
+              </button>
               <button
                 type="button"
                 onClick={() => onRemoveFolder(f.path)}
