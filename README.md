@@ -39,6 +39,10 @@ Download the installer from [Releases](https://github.com/hidecode365/win-launch
 | `Ctrl+S` | Open settings |
 | `cb` | Open clipboard history |
 
+## Security Note
+
+Clipboard text history is stored **unencrypted** in plain text on disk. Avoid copying sensitive information (passwords, tokens, etc.) while clipboard history is enabled, or disable the feature from settings if this is a concern. Encrypted storage is planned for a future release.
+
 ## Requirements
 
 - Windows 11 (x64)
