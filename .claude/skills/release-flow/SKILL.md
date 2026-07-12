@@ -27,11 +27,13 @@ WinLauncher（`D:\ai_work\dev_win\win-launcher`）のリリース作業を行う
 4. **リリースノート更新**：`last-release-notes.md` を今回のリリース内容に更新する
 5. **git commit / tag / push**：`git commit` → `git push` → `git tag vX.Y.Z` → `git push --tags`
 6. **GitHub Release 作成**：`gh release create vX.Y.Z --title "..." --notes-file last-release-notes.md`
-7. **アセットアップロード**：`gh release upload vX.Y.Z` で以下の **4つ** をすべて添付する（署名文字列自体は `latest.json` に埋め込み済みのため、updater は `*.sig` ファイルを別途ダウンロードしない。`.sig` の添付は他アセットとの一貫性・参照用）
+7. **アセットアップロード**：`gh release upload vX.Y.Z` で以下の **5つ** をすべて添付する（署名文字列自体は `latest.json` に埋め込み済みのため、updater は `*.sig` ファイルを別途ダウンロードしない。`.sig` の添付は他アセットとの一貫性・参照用）
    - NSIS インストーラー本体（`*_x64-setup.exe`。`latest.json` の `url` が直接参照するダウンロード対象）
-   - 署名ファイル（`*_x64-setup.exe.sig`）
+   - NSIS 用署名ファイル（`*_x64-setup.exe.sig`）
    - MSI インストーラー（`*_x64_en-US.msi`。任意だが従来通り添付する）
+   - MSI 用署名ファイル（`*_x64_en-US.msi.sig`。ステップ2で MSI と対になって生成される。exe 側の `.sig` とは別ファイルのため、MSI を添付するならこちらも忘れず添付する）
    - `latest.json`（**アセット名は必ず `latest.json` にすること**。`tauri.conf.json` の `plugins.updater.endpoints` が参照する URL 末尾のファイル名と一致させる必要があるため、リネームせずそのままアップロードする）
+   - **アップロード前チェック**：`.exe` / `.exe.sig` / `.msi` / `.msi.sig` / `latest.json` の **5点セット**が揃っているか、`src-tauri/target/release/bundle/{nsis,msi}` を実際に見て確認してから `gh release upload` を実行する（v0.3.2 リリースで `.msi.sig` のみアップロード漏れが発生した。原因は本チェックリストが「4つ」と誤って数えており、MSI 本体とその署名ファイルを別々の項目として明記していなかったこと）
 
 git push・タグ push・`gh release create`・アセットアップロードはいずれも公開・共有状態を変更する操作のため、実行前に対象バージョンとコマンド内容をユーザーに提示し、確認を得てから実行すること。
 
