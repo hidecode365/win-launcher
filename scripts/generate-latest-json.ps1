@@ -35,14 +35,15 @@ $version = $conf.version
 
 $bundleRoot = Join-Path $repoRoot "src-tauri/target/release/bundle"
 $candidateDirs = @(
-    @{ Dir = (Join-Path $bundleRoot "nsis"); Filter = "*.exe.sig" },
-    @{ Dir = (Join-Path $bundleRoot "msi"); Filter = "*.msi.sig" }
+    @{ Dir = (Join-Path $bundleRoot "nsis"); Filter = "*_${version}_*.exe.sig" },
+    @{ Dir = (Join-Path $bundleRoot "msi"); Filter = "*_${version}_*.msi.sig" }
 )
 
 $sigFile = $null
 foreach ($candidate in $candidateDirs) {
     if (Test-Path $candidate.Dir) {
-        $found = Get-ChildItem -Path $candidate.Dir -Filter $candidate.Filter -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found = Get-ChildItem -Path $candidate.Dir -Filter $candidate.Filter -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($found) {
             $sigFile = $found
             break

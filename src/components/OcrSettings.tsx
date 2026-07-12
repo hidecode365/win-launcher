@@ -15,10 +15,13 @@ export function OcrSettings({
         checked={enabled}
         onChange={onToggle}
       />
-      <div className="text-xs text-gray-400 leading-relaxed">
-        Windows OCR APIを使用します。日本語・英語の混在に対応しています。
-        <br />
-        対応言語が利用できない場合は、設定→時刻と言語→言語から該当言語のOCRパックをインストールしてください。
+      <div className="flex items-start gap-3">
+        <input type="checkbox" aria-hidden="true" tabIndex={-1} className="mt-0.5 flex-shrink-0 invisible" />
+        <div className="text-xs text-gray-400 leading-relaxed">
+          日本語のOCR言語パックが導入されている前提で、Windows OCR APIを使用します。
+          <br />
+          対応言語が不足する場合は、設定→時刻と言語→言語からOCR言語パックを追加してください。
+        </div>
       </div>
     </div>
   );

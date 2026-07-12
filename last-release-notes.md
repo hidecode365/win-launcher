@@ -1,9 +1,4 @@
-## v0.3.0
+## v0.3.1
 
-### Added
-- Auto-update functionality
-  - Checks for new versions on startup (can be toggled off in Settings)
-  - Manual check available via the "Check for Updates" tray menu item
-  - Update dialog shows the new version number and release notes before installing
-  - Updates are only downloaded and installed after explicit user confirmation
-  - Update packages are verified via a signed manifest before installation
+- Fixed misleading OCR description text that claimed support for mixed Japanese/English recognition. The text now correctly reflects that Windows OCR API is used assuming the Japanese language pack is installed, with guidance to add additional OCR language packs via Settings → Time & Language → Language if needed.
+- Fixed misaligned indentation in the OCR settings description text.
