@@ -22,6 +22,7 @@ A fast, keyboard-driven launcher for Windows 11 — built with Tauri v2, React, 
 - **System Commands** — Shutdown, restart, or sleep with confirmation
 - **Customizable Hotkey** — Default `Alt+Space`, configurable from settings
 - **System Tray** — Runs silently in the background
+- **Auto-Update** — Checks for new versions on startup (configurable) or on demand via the tray menu
 
 ## Installation
 

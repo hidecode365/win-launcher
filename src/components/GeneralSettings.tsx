@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FeatureToggle } from "./FeatureToggle";
 
 interface ModifierState {
   ctrl: boolean;
@@ -58,10 +59,14 @@ export function GeneralSettings({
   hotkey,
   error,
   onSave,
+  checkUpdateOnStartup,
+  onToggleCheckUpdateOnStartup,
 }: {
   hotkey: string;
   error: string | null;
   onSave: (accelerator: string) => void;
+  checkUpdateOnStartup: boolean;
+  onToggleCheckUpdateOnStartup: (checked: boolean) => void;
 }) {
   const [mods, setMods] = useState<ModifierState>(() => parseAccelerator(hotkey).mods);
   const [mainKey, setMainKey] = useState<string>(() => parseAccelerator(hotkey).mainKey);
@@ -131,6 +136,15 @@ export function GeneralSettings({
       </button>
 
       {error && <div className="mt-2 text-xs text-red-500">{error}</div>}
+
+      <div className="mt-5 pt-3 border-t border-gray-200/60">
+        <FeatureToggle
+          label="起動時にアップデートを自動チェックする"
+          description="アプリ起動時に新しいバージョンがないか自動で確認します。"
+          checked={checkUpdateOnStartup}
+          onChange={onToggleCheckUpdateOnStartup}
+        />
+      </div>
     </div>
   );
 }

@@ -17,6 +17,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tauri_plugin_store::StoreExt;
+use tauri_plugin_updater::UpdaterExt;
 use walkdir::WalkDir;
 
 const SETTINGS_STORE: &str = "settings.json";
@@ -315,6 +316,7 @@ struct AppSettings {
     clipboard_prefix: String,
     clipboard_max_items: u32,
     ocr_enabled: bool,
+    check_update_on_startup: bool,
 }
 
 impl Default for AppSettings {
@@ -330,6 +332,7 @@ impl Default for AppSettings {
             clipboard_prefix: DEFAULT_CLIPBOARD_PREFIX.to_string(),
             clipboard_max_items: DEFAULT_CLIPBOARD_MAX_ITEMS,
             ocr_enabled: true,
+            check_update_on_startup: true,
         }
     }
 }
@@ -430,6 +433,14 @@ fn set_clipboard_max_items(app: AppHandle, max_items: u32) -> Result<AppSettings
 fn set_ocr_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.ocr_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_check_update_on_startup(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.check_update_on_startup = enabled;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -1091,6 +1102,74 @@ fn copy_to_clipboard(app: tauri::AppHandle, text: String) -> Result<(), String> 
     app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
+/// `check_for_update` で見つかった更新は、ユーザーが同意して `download_and_install_update`
+/// を呼ぶまでの間、確認済みの `Update` オブジェクトとして保持しておく（再チェックを避けるため）。
+struct PendingUpdate(Mutex<Option<tauri_plugin_updater::Update>>);
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheckResult {
+    available: bool,
+    version: Option<String>,
+    notes: Option<String>,
+}
+
+#[tauri::command]
+async fn check_for_update(
+    app: AppHandle,
+    pending: tauri::State<'_, PendingUpdate>,
+) -> Result<UpdateCheckResult, String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let result = match &update {
+        Some(u) => UpdateCheckResult {
+            available: true,
+            version: Some(u.version.clone()),
+            notes: u.body.clone(),
+        },
+        None => UpdateCheckResult {
+            available: false,
+            version: None,
+            notes: None,
+        },
+    };
+
+    *pending.0.lock().unwrap() = update;
+    Ok(result)
+}
+
+/// ダウンロード＆インストールを実行する。`Update::install`（Windows実装）は内部で
+/// `updater_builder()` に既定で組み込まれている `on_before_exit` フック（後述）を
+/// 呼んだ後、インストーラーを起動して `std::process::exit(0)` でアプリを終了させる
+/// （呼び出し元に制御が戻ることはない）。
+///
+/// on_before_exit フックについて：`tauri_plugin_updater::UpdaterExt::updater_builder()` は
+/// デフォルトで `AppHandle::cleanup_before_exit()` を呼ぶよう既に配線されている。この関数は
+/// トレイアイコン（`tray-icon` feature 使用時）・各ウィンドウ・リソーステーブルの後片付けを
+/// 行う実装になっており、本アプリのトレイ実装（`TrayIconBuilder::with_id("main-tray")` で
+/// 登録した単一のトレイアイコン）はこの汎用クリーンアップの対象に含まれる。そのため
+/// `app.updater()`（内部で `updater_builder().build()` を呼ぶだけ）を使う限り、個別の
+/// トレイ後片付けコードを追加する必要はない。
+#[tauri::command]
+async fn download_and_install_update(pending: tauri::State<'_, PendingUpdate>) -> Result<(), String> {
+    let update = pending
+        .0
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| "確認済みのアップデートがありません".to_string())?;
+
+    update
+        .download_and_install(|_chunk_len, _content_len| {}, || {})
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn load_tray_icon() -> Image<'static> {
     // `npm run tauri icon` で生成される icons/32x32.png をコンパイル時に埋め込む。
     // include_bytes! はファイル内容に対する依存関係としてビルドに記録されるため、
@@ -1114,6 +1193,7 @@ fn main() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -1147,6 +1227,7 @@ fn main() {
             // クリップボード変更の監視。画像はバイナリのまま Rust 側メモリにキャッシュし、
             // フロントエンドには ID とサムネイルのみを渡す（詳細はキャッシュ・関数のコメント参照）
             app.manage(ClipboardImageCache::new());
+            app.manage(PendingUpdate(Mutex::new(None)));
             let _ = APP_HANDLE.set(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 // 保存済みウィンドウサイズの復元（未保存ならデフォルトの 640x420 のまま）。
@@ -1166,6 +1247,7 @@ fn main() {
             // システムトレイのメニュー
             let menu = MenuBuilder::new(app)
                 .text("show", "Show WinLauncher")
+                .text("check_for_updates", "Check for Updates")
                 .item(&autostart_item)
                 .text("restart", "Restart")
                 .text("quit", "Quit")
@@ -1183,6 +1265,14 @@ fn main() {
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
+                    }
+                    "check_for_updates" => {
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.center();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                        let _ = app.emit("check-for-update-requested", ());
                     }
                     "autostart" => {
                         let autolaunch = app.autolaunch();
@@ -1246,7 +1336,10 @@ fn main() {
             paste_clipboard_image,
             set_hotkey,
             set_ocr_enabled,
-            ocr_from_clipboard
+            ocr_from_clipboard,
+            set_check_update_on_startup,
+            check_for_update,
+            download_and_install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

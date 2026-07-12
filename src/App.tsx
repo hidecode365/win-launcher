@@ -7,12 +7,14 @@ import { useHotkey } from "./hooks/useHotkey";
 import { useSearch } from "./hooks/useSearch";
 import { useClipboard } from "./hooks/useClipboard";
 import { useOcr } from "./hooks/useOcr";
+import { useUpdater } from "./hooks/useUpdater";
 import { SearchBox } from "./components/SearchBox";
 import { OcrPreview } from "./components/OcrPreview";
 import { ResultList } from "./components/ResultList";
 import { ClipboardPanel } from "./components/ClipboardPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
 import type { ClipboardTextEntry, FrecencyMap } from "./types";
@@ -34,6 +36,7 @@ export default function App() {
   const hotkey = useHotkey(settings.setAppSettings);
   const search = useSearch(settings.appSettings, settingsVersion, storeRef);
   const ocr = useOcr();
+  const updater = useUpdater();
   const clipboard = useClipboard(
     settings.appSettingsRef,
     search.clipboardMode,
@@ -52,6 +55,19 @@ export default function App() {
     ocr.clearOcr();
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [ocr.clearOcr]);
+
+  // 起動時アップデートチェック。設定の初回読み込みが完了した時点で一度だけ行う
+  // （appSettings は他の設定変更でも更新されるため、settingsLoaded 遷移時のみに限定する）。
+  // 失敗時もコンソールログのみに留め、起動シーケンスは妨げない（useUpdater.runCheck の
+  // silent オプションが「見つからない／失敗」時のダイアログ表示を抑制する）。
+  const didStartupUpdateCheckRef = useRef(false);
+  useEffect(() => {
+    if (!settings.settingsLoaded || didStartupUpdateCheckRef.current) return;
+    didStartupUpdateCheckRef.current = true;
+    if (settings.appSettings.checkUpdateOnStartup) {
+      updater.runCheck({ silent: true }).catch(console.error);
+    }
+  }, [settings.settingsLoaded, settings.appSettings.checkUpdateOnStartup, updater.runCheck]);
 
   const handleOcrCopyAndClose = useCallback(async () => {
     if (ocr.ocrText !== null) {
@@ -317,6 +333,7 @@ export default function App() {
         onSetClipboardMaxItems={settings.setClipboardMaxItems}
         clipboardSettingsError={settings.clipboardSettingsError}
         onSetOcrEnabled={settings.setOcrEnabled}
+        onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
         folders={settings.folders}
         onAddFolder={settings.addFolder}
         onToggleFolder={settings.toggleFolder}
@@ -342,6 +359,15 @@ export default function App() {
           command={search.pendingCommand}
           onCancel={search.cancelSystemCommand}
           onConfirm={search.confirmSystemCommand}
+        />
+      )}
+
+      {/* アップデート確認/インストールダイアログ */}
+      {updater.dialog && (
+        <UpdateDialog
+          state={updater.dialog}
+          onInstall={updater.installUpdate}
+          onDismiss={updater.dismiss}
         />
       )}
 

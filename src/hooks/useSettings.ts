@@ -11,9 +11,13 @@ export function useSettings(showSettings: boolean) {
   const [clipboardSettingsError, setClipboardSettingsError] = useState<
     string | null
   >(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
-    invoke<AppSettings>("get_app_settings").then(setAppSettings).catch(console.error);
+    invoke<AppSettings>("get_app_settings")
+      .then(setAppSettings)
+      .catch(console.error)
+      .finally(() => setSettingsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -97,6 +101,13 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  const setCheckUpdateOnStartup = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_check_update_on_startup", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
   const addFolder = useCallback(async () => {
     const path = await invoke<string | null>("pick_folder").catch(() => null);
     if (!path) return;
@@ -132,6 +143,7 @@ export function useSettings(showSettings: boolean) {
     appSettings,
     setAppSettings,
     appSettingsRef,
+    settingsLoaded,
     folders,
     clipboardSettingsError,
     resetClipboardSettingsError,
@@ -144,6 +156,7 @@ export function useSettings(showSettings: boolean) {
     setClipboardPrefix,
     setClipboardMaxItems,
     setOcrEnabled,
+    setCheckUpdateOnStartup,
     addFolder,
     toggleFolder,
     removeFolder,

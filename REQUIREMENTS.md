@@ -92,6 +92,39 @@ Windows 11 向けキーボードランチャー（Tauri v2 + React + Tailwind CS
   - それ以外の組み合わせ（日本語・記号・CJK文字を含む場合等）は、スペースを挿入せずそのまま連結する
 - OCR結果の行の並び順は、認識順ではなく、各行の位置情報（バウンディングボックスの縦位置）を基準に上から下へ並べ替えてから連結し、視覚的なレイアウトと一致させる
 
+### 自動アップデート機能
+
+- Tauri v2 公式の `tauri-plugin-updater` を使用し、アプリ内から新バージョンの検出・ダウンロード・インストールを行う
+- 配信方式は GitHub Releases ＋静的 `latest.json` 方式とし、既存のリリースフローと統合する
+
+#### 起動時チェック
+
+- アプリ起動時に自動でアップデートの有無をチェックする
+- この挙動は設定画面でON/OFF切り替え可能とする（デフォルトはON）
+- バックグラウンドでの定期的な自動チェックは行わない（起動時チェックのみで、アプリ起動中の再チェックはしない）
+
+#### 手動チェック
+
+- トレイメニューに「Check for Updates」項目を追加する（ラベルは英語固定）
+- クリックすると起動時チェックと同じロジックでアップデートの有無を確認する
+
+#### 更新確認〜インストールの流れ
+
+- チェックの結果、新しいバージョンが見つかった場合、新バージョン番号とリリースノート（GitHub Releases の本文をそのまま、または要約して表示）をユーザーに簡易表示する
+- ユーザーが明示的に同意（実行操作）した場合のみダウンロード＆インストールを行う。ユーザーの意図しないタイミングでの再起動を避けるため、サイレントでの自動更新は行わない
+- Windows の制約上、インストール前にアプリは自動終了する。終了時（`on_before_exit` フック）にトレイアイコンの後片付けなど必要な終了処理を行う
+- インストール完了後、アプリを自動的に再起動する
+
+#### 署名
+
+- Tauri Updater 独自の鍵ペア（`tauri signer generate` で生成、minisign方式）で更新パッケージに署名する
+- これは Windows のコード署名（Authenticode）とは別物であり、今回のスコープには含めない
+- 秘密鍵は GitHub Actions の Secrets 等、安全な場所で管理する
+
+#### リリースフローへの影響
+
+- 既存のリリース手順（`npm run tauri build` → `last-release-notes.md` 更新 → git commit/push/tag → `gh release create` → `gh release upload`）に、`latest.json` の生成・アップロードのステップが追加される
+
 ### キー操作
 
 - 上下キーで候補選択
@@ -112,6 +145,7 @@ Windows 11 向けキーボードランチャー（Tauri v2 + React + Tailwind CS
 - デフォルトは Alt+Space
 - 修飾キー（Ctrl/Alt/Shift/Win）を1つ以上選択しないと保存できず、インラインでエラーを表示する
 - 保存に失敗した場合（他アプリが使用中など）はエラーを表示し、変更前の設定を維持する
+- 起動時の自動アップデートチェックのON/OFFトグル（デフォルトはON）
 
 #### ファイル検索
 
@@ -154,6 +188,7 @@ Windows 11 向けキーボードランチャー（Tauri v2 + React + Tailwind CS
 - システムトレイ常駐
 - トレイメニューの項目構成は以下の順とする
   - 「Show WinLauncher」：ウィンドウを表示
+  - 「Check for Updates」：手動でのアップデートチェックを実行する（起動時チェックと同じロジック。ラベルは英語固定）
   - 「Start with Windows」：自動スタートのON/OFF切替（現在の状態をメニューに表示し、クリックでトグル）
   - 「Restart」：アプリケーションを再起動する（現在のプロセスを終了し、同じ実行ファイルを再度起動する。Tauri の process プラグインの relaunch 機能等を使用する）
   - 「Quit」：アプリケーションを終了する
@@ -176,5 +211,5 @@ Windows 11 向けキーボードランチャー（Tauri v2 + React + Tailwind CS
 | --- | --- |
 | フレームワーク | Tauri v2 |
 | フロントエンド | React + Tailwind CSS + TypeScript |
-| Tauri プラグイン | plugin-global-shortcut, plugin-shell, plugin-autostart, plugin-clipboard-manager, plugin-tray-icon |
+| Tauri プラグイン | plugin-global-shortcut, plugin-shell, plugin-autostart, plugin-clipboard-manager, plugin-tray-icon, plugin-updater |
 | 設定永続化 | Tauri store plugin（plugin-store） |

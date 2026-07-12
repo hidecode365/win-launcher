@@ -20,3 +20,6 @@ dist/
 
 # Tauri 自動生成スキーマ
 src-tauri/gen/schemas/
+
+# Tauri Updater 署名鍵（秘密鍵を含むため絶対にコミットしない）
+src-tauri/keys/

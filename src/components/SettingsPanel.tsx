@@ -42,6 +42,7 @@ export function SettingsPanel({
   onSetClipboardMaxItems,
   clipboardSettingsError,
   onSetOcrEnabled,
+  onSetCheckUpdateOnStartup,
   folders,
   onAddFolder,
   onToggleFolder,
@@ -62,6 +63,7 @@ export function SettingsPanel({
   onSetClipboardMaxItems: (maxItems: number) => void;
   clipboardSettingsError: string | null;
   onSetOcrEnabled: (checked: boolean) => void;
+  onSetCheckUpdateOnStartup: (checked: boolean) => void;
   folders: FolderEntry[];
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
@@ -129,6 +131,8 @@ export function SettingsPanel({
               hotkey={appSettings.hotkey}
               error={hotkeyError}
               onSave={onSaveHotkey}
+              checkUpdateOnStartup={appSettings.checkUpdateOnStartup}
+              onToggleCheckUpdateOnStartup={onSetCheckUpdateOnStartup}
             />
           )}
           {tab === "fileSearch" && (

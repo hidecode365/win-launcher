@@ -27,6 +27,7 @@ export interface AppSettings {
   clipboardPrefix: string;
   clipboardMaxItems: number;
   ocrEnabled: boolean;
+  checkUpdateOnStartup: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -40,7 +41,15 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   clipboardPrefix: "cb",
   clipboardMaxItems: 50,
   ocrEnabled: true,
+  checkUpdateOnStartup: true,
 };
+
+// Rust の `check_for_update` コマンドの戻り値。
+export interface UpdateCheckResult {
+  available: boolean;
+  version: string | null;
+  notes: string | null;
+}
 
 export interface SystemCommand {
   action: "shutdown" | "restart" | "sleep";

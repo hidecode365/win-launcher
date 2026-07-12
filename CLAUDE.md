@@ -38,7 +38,8 @@ win-launcher/
 │   │   ├── useHotkey.ts      # 起動ホットキーの変更（set_hotkey）
 │   │   ├── useSearch.ts      # クエリ・検索/計算/システムコマンド判定・frecency・起動系コマンド
 │   │   ├── useClipboard.ts   # クリップボード履歴の記録・永続化・呼び出し
-│   │   └── useOcr.ts         # OCR状態管理（ローディング・結果・エラー・クリア）
+│   │   ├── useOcr.ts         # OCR状態管理（ローディング・結果・エラー・クリア）
+│   │   └── useUpdater.ts     # アップデートダイアログの状態管理・check_for_update/download_and_install_update呼び出し
 │   ├── components/
 │   │   ├── SearchBox.tsx           # 検索入力欄（ドラッグ領域・歯車ボタン含む）。画像ペーストを検出して onImagePaste を呼ぶ
 │   │   ├── OcrPreview.tsx          # OCR結果プレビュー（編集可能テキストエリア＋コピー・閉じるボタン）
@@ -55,7 +56,8 @@ win-launcher/
 │   │   ├── SystemCommandSettings.tsx # システムコマンドタブ
 │   │   ├── WebSearchSettings.tsx   # Web検索タブ
 │   │   ├── ClipboardSettings.tsx   # クリップボードタブ
-│   │   └── OcrSettings.tsx         # OCRタブ
+│   │   ├── OcrSettings.tsx         # OCRタブ
+│   │   └── UpdateDialog.tsx        # アップデート確認/ダウンロード中ダイアログ
 │   └── styles.css
 ├── src-tauri/
 │   ├── src/main.rs         # Rust バックエンド（全ロジック）
@@ -65,6 +67,11 @@ win-launcher/
 │   ├── Cargo.toml
 │   ├── build.rs
 │   └── tauri.conf.json
+├── scripts/
+│   └── generate-latest-json.ps1  # リリース時に latest.json（Tauri Updater 用）を生成する
+├── .claude/
+│   └── skills/
+│       └── release-flow/SKILL.md  # リリース手順（詳細は「リリース手順」節を参照）
 ├── REQUIREMENTS.md          # 要件定義（ユーザ管理）
 └── CLAUDE.md                # 本ファイル（設計方針）
 ```
@@ -90,6 +97,7 @@ win-launcher/
 | `tauri-plugin-dialog` | フォルダ選択ダイアログ |
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
 | `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
+| `tauri-plugin-updater` | 自動アップデート（GitHub Releases + `latest.json` の確認・ダウンロード・インストール） |
 | `tauri` (tray-icon feature) | システムトレイ常駐 |
 
 ## 設計方針
@@ -170,20 +178,20 @@ win-launcher/
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
   - `folders: { path, enabled }[]`（ファイル検索カテゴリの検索フォルダ一覧）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled }`（全般のホットキー、各機能の ON/OFF、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しプレフィックスと最大件数、OCR機能 ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`clipboardPrefix` のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`）
+  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled, checkUpdateOnStartup }`（全般のホットキー、各機能の ON/OFF、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しプレフィックスと最大件数、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`clipboardPrefix` のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`）
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
   - `windowSize: { width, height }`（ウィンドウサイズ、論理ピクセル。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接書き込み、Rust 側が起動時に読み込んで適用する。詳細は「ウィンドウ」節を参照）
   - `clipboardPaneWidth: number`（クリップボード履歴パネルの左ペイン幅、px。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。ドラッグ終了時（mouseup）およびフォーカスアウト時（blur）に保存する。Rust コマンドは追加しない）
 - 各カテゴリの内容
-  - **全般**：起動ホットキーの表示・変更（修飾キーのチェックボックス＋通常キーのプルダウン。「グローバルホットキー」節を参照）
+  - **全般**：起動ホットキーの表示・変更（修飾キーのチェックボックス＋通常キーのプルダウン。「グローバルホットキー」節を参照）＋起動時アップデートチェック ON/OFF トグル（「自動アップデート機能」節を参照）
   - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）。各フォルダパステキストは既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶクリッカブルボタンとして実装し、クリックでエクスプローラーを開く（追加の Rust コマンドや権限は不要）。ボタンにはホバー時 `cursor-pointer` + 下線を付与し、チェックボックス・削除ボタンの動作には影響しない
   - **数式計算**：機能 ON/OFF トグル＋クリップボードコピー時のカンマ区切り ON/OFF トグル（「計算結果をカンマ区切りでコピー」。「計算機能」節を参照）
   - **システムコマンド**：機能 ON/OFF トグルのみ
   - **Web検索**：機能 ON/OFF トグルのみ（「Web検索機能」節を参照）
   - **クリップボード**：機能 ON/OFF トグル＋呼び出しプレフィックスのテキスト入力＋最大保持件数の数値入力（「クリップボード履歴」節を参照）
   - **OCR**：機能 ON/OFF トグルのみ（「OCR機能」節を参照）
-- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_ocr_enabled`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
+- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_ocr_enabled` / `set_check_update_on_startup`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
 - フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定（計算モード／システムコマンドモード／ファイル検索／Web検索行の表示／クリップボード履歴モード）に反映する。OFF の機能は対応する Tauri コマンド（`calculate` / `search_files`、システムコマンドの候補表示、Web検索行の表示、クリップボード履歴モードへの切替）自体を呼び出さない・表示しない
 
 ### 計算機能（Rust / フロントエンド）
@@ -281,6 +289,7 @@ win-launcher/
   - `include_bytes!` はファイル内容をビルドの依存関係として記録するため、アイコン差し替え後は次の `cargo build` で自動的に再コンパイルされる（手動で `build.rs` を touch する必要はない）
 - トレイメニューの項目構成（この順で配置）
   - 「Show WinLauncher」：左クリック / メニュークリックでウィンドウ表示（`window.center()` → `show()` → `set_focus()`）
+  - 「Check for Updates」：ウィンドウを表示（「Show WinLauncher」と同じ `center()` → `show()` → `set_focus()`）したうえで `"check-for-update-requested"` イベントを emit する。実際のチェック処理（`check_for_update` の呼び出し・結果に応じたダイアログ表示）はフロントエンド（`useUpdater`）が行う（詳細は「自動アップデート機能」節を参照）
   - 「Start with Windows」：チェック付きメニュー項目。現在の自動起動状態を反映し、クリックで `tauri-plugin-autostart` の有効/無効をトグルしてチェック状態を更新
   - 「Restart」：`app.request_restart()`（`tauri-plugin-process` プラグイン登録後に `AppHandle` が持つメソッド）でアプリケーションを再起動する。トレイトのインポートは不要
   - 「Quit」：`app.exit(0)` でアプリケーションを終了する
@@ -294,6 +303,26 @@ win-launcher/
 - `tauri-plugin-autostart` でレジストリ登録
 - 起動時に `is_enabled()` で現在の状態を取得し、トレイメニューのチェック状態に反映
 - トレイメニューの「Start with Windows」クリックで `enable()` / `disable()` をトグル
+
+### 自動アップデート機能（Rust / フロントエンド）
+
+- `tauri-plugin-updater` を使用。配信方式は GitHub Releases + 静的 `latest.json`（`tauri.conf.json` の `plugins.updater.endpoints` に URL を設定）
+- 署名鍵は `tauri signer generate`（minisign 方式）で生成し、秘密鍵は `src-tauri/keys/`（`.gitignore` 対象、コミットしない）に保存する。公開鍵（`.pub` ファイルの中身をそのまま）を `tauri.conf.json` の `plugins.updater.pubkey` に設定する
+- `tauri.conf.json` の `plugins.updater.windows.installMode` は `"passive"`（進捗バーのみ表示する無人インストール）
+- `tauri.conf.json` の `bundle.createUpdaterArtifacts: true` により、`npm run tauri build` 時に NSIS インストーラー本体（`.exe`）に対して署名済み `.exe.sig` が直接生成される（現行の `@tauri-apps/cli` v2 は Windows 向け updater アーティファクトとして zip ラッピングを行わない）。この成果物から `latest.json` を生成し GitHub Releases へアップロードするリリース手順の詳細は「リリース手順」節を参照
+- Rust コマンド
+  - `check_for_update()`：`app.updater().check()` を呼び、`{ available, version, notes }`（`UpdateCheckResult`）を返す。見つかった `tauri_plugin_updater::Update` は次の `download_and_install_update` 呼び出しに備えて `PendingUpdate`（`Mutex<Option<Update>>`、`app.manage()` で管理）に保持する（再チェックを避けるため）
+  - `download_and_install_update()`：`PendingUpdate` から取り出した `Update` の `download_and_install()` を呼ぶ。Windows 実装は内部でダウンロード完了後にインストーラーを起動し `std::process::exit(0)` でプロセスごと終了するため、成功時はこの呼び出しから制御が戻らない（＝フロントエンドの `invoke` の Promise は解決されない）
+  - `on_before_exit` フックは明示的な上書きを行わない。`UpdaterExt::updater_builder()`（`app.updater()` の内部実装）が既定で `AppHandle::cleanup_before_exit()` を呼ぶよう配線済みであり、これがトレイアイコン（`TrayIconBuilder::with_id("main-tray")` で登録した単一アイコン）・各ウィンドウ・リソーステーブルの後片付けを行う。個別のトレイ後片付けコードは不要と判断した
+  - ダウンロード進捗のコールバック（`download_and_install` の `on_chunk`/`on_download_finish` 引数）は no-op（フロントエンドへの進捗通知は行わない。UI 側はスピナー表示のみ）
+- 設定：`appSettings.checkUpdateOnStartup`（デフォルト `true`）。`set_check_update_on_startup(enabled)` は他の `set_*` と同一パターンで実装する
+- 起動時チェック（フロントエンド）：`useSettings` が公開する `settingsLoaded` フラグが `true` になった時点（＝ `get_app_settings` の初回取得完了時）で一度だけ、`appSettings.checkUpdateOnStartup` が `true` の場合のみ `useUpdater().runCheck({ silent: true })` を呼ぶ（`App.tsx` の `didStartupUpdateCheckRef` で一度きりに制御。`appSettings` は他の設定変更でも更新されるため、変更の度に再実行されないようにするため）
+  - `silent: true` はチェック失敗時・「更新なし」時のダイアログ表示を抑制する（コンソールログのみ）。新しいバージョンが見つかった場合は `silent` に関わらずダイアログを表示する
+- 手動チェック（トレイ）：トレイの「Check for Updates」クリックで Rust が emit する `"check-for-update-requested"` イベントを `useUpdater` が `listen` で受信し、`runCheck({ silent: false })` を呼ぶ（＝見つからなかった場合や失敗時も結果をダイアログで表示する）
+- `useUpdater` フックが返す `dialog` state（`UpdateDialogState`：`checking` / `upToDate` / `error` / `available` / `installing` の判別共用体）を `UpdateDialog` コンポーネントが描画する。表示は `SystemCommandModal` と同じオーバーレイ＋カードの見た目（`absolute inset-0 bg-black/30 backdrop-blur-sm` ＋白いカード）を踏襲し、新規デザインパターンは作らない
+  - `available`：新バージョン番号とリリースノート（GitHub Releases の本文をそのまま、長い場合は内部スクロール）を表示し、「後で」（ダイアログを閉じるのみ）と「今すぐ更新」（`download_and_install_update` を呼ぶ）の2ボタンを出す
+  - `installing`：スピナー＋「ダウンロード中です…」「完了後、更新を適用するためアプリを再起動します。」を表示する。ダウンロード完了後は Rust 側でプロセスごと終了するため、これ以降の画面遷移は作り込まない（`invoke` が正常応答を返すことはない前提のため、成功パスの後処理コードは書かない）
+  - `checking` / `upToDate` / `error` は手動チェック時のみ経由する（起動時チェックは `silent: true` のためこれらの state を経由しない）
 
 ## Tauri コマンド
 
@@ -322,6 +351,9 @@ win-launcher/
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
 | `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（`chars().all(|c| c.is_ascii_alphanumeric())`）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
 | `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |
+| `check_for_update()` | GitHub Releases（`latest.json`）に対してアップデートの有無を確認し、`{ available, version, notes }` を返す。見つかった更新は次の `download_and_install_update` 呼び出しに備えて Rust 側に保持する |
+| `download_and_install_update()` | 保持しておいた更新をダウンロード＆インストールする。成功時は内部でアプリを終了するため呼び出し元に制御は戻らない |
+| `set_check_update_on_startup(enabled)` | 起動時アップデートチェックの ON/OFF を切り替えて `AppSettings` を返す |
 
 ## フロントエンド
 
@@ -331,6 +363,7 @@ win-launcher/
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
   - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/システムコマンド判定・ファイル検索・frecency・ファイル起動／コピー／Web検索を一括管理する。クリップボードモードの判定（`clipboardMode`/`clipboardFilterText`）もここで行う（クエリとプレフィックスのみに依存し、履歴データには依存しないため）
   - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, setQuery)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し
+  - `useUpdater()`：アップデートダイアログの状態（`checking`/`upToDate`/`error`/`available`/`installing`）管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は「自動アップデート機能」節を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ（frecency・clipboardHistory の初期値も `App.tsx` の読み込み完了時に各フックの `setInitial*` で反映する）
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
 - 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Esc で非表示、`Ctrl+S` で設定パネルを開く
@@ -343,7 +376,7 @@ win-launcher/
 - `OcrPreview` は `flex-1` でウィンドウ残高を占有する（検索ボックスの直下からウィンドウ下端まで全高を使う）。テキスト表示時はテキストエリアを `flex-1 min-h-0 overflow-y-auto` にして内部スクロール可能にし、ボタン行は `flex-shrink-0` で下端に固定する。ローディング・エラー時はコンテンツ高さのみ使用し残高は空白になる
 - 設定パネル：タブ構成（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード）、`Ctrl+S` または Esc で検索 UI に戻る
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
-- `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` イベントを受信する
+- `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` / `check-for-update-requested` イベントを受信する
 - `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス
 
 ## コマンド実行時の注意
@@ -368,3 +401,7 @@ npm run tauri build
 - ビルド確認は `cargo build` で行う
 - 動作確認は `npm run tauri dev` で起動して目視確認する
 - `npm run tauri dev` 起動後の PowerShell + スクリーンキャプチャによる自動 GUI テストは実施しない
+
+## リリース手順
+
+詳細な手順（バージョン bump → 署名付きビルド → `latest.json` 生成 → リリースノート更新 → git commit/tag/push → `gh release create` → アセットアップロード、およびリリース後の動作確認チェックリスト）は `.claude/skills/release-flow/SKILL.md` を参照。「リリースして」「新バージョンを公開して」等の依頼時はこのスキルを使う。

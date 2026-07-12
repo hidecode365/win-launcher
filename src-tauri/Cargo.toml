@@ -1,6 +1,6 @@
 [package]
 name = "win-launcher"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 
 [build-dependencies]
@@ -15,6 +15,7 @@ tauri-plugin-clipboard-manager = "2"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 walkdir = "2"

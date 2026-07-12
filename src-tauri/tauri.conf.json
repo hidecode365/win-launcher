@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "win-launcher",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "identifier": "com.win-launcher.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -37,6 +37,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -44,5 +45,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3RTYyQTJDNkFGNkEyMzkKUldRNW92WnFMQ3JtbDlkd0NDd1VhRlJPbUlBMlE2L2RTSzQxTUhCNnpJeXovRHVUZCtTQkN6UUQK",
+      "endpoints": [
+        "https://github.com/hidecode365/win-launcher/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
