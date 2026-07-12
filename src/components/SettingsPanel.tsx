@@ -3,7 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { AppSettings, FolderEntry } from "../types";
 import { GeneralSettings } from "./GeneralSettings";
 import { FileSearchSettings } from "./FileSearchSettings";
-import { CalcSettings } from "./CalcSettings";
+import { ConvertSettings } from "./ConvertSettings";
 import { SystemCommandSettings } from "./SystemCommandSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { ClipboardSettings } from "./ClipboardSettings";
@@ -12,7 +12,7 @@ import { OcrSettings } from "./OcrSettings";
 type SettingsTab =
   | "general"
   | "fileSearch"
-  | "calc"
+  | "convert"
   | "systemCommand"
   | "webSearch"
   | "clipboard"
@@ -21,7 +21,7 @@ type SettingsTab =
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "全般" },
   { id: "fileSearch", label: "ファイル検索" },
-  { id: "calc", label: "数式計算" },
+  { id: "convert", label: "計算・変換" },
   { id: "systemCommand", label: "システムコマンド" },
   { id: "webSearch", label: "Web検索" },
   { id: "clipboard", label: "クリップボード" },
@@ -35,6 +35,7 @@ export function SettingsPanel({
   onSetFileSearchEnabled,
   onSetCalcEnabled,
   onSetCopyWithComma,
+  onSetUrlConvertEnabled,
   onSetSystemCommandEnabled,
   onSetWebSearchEnabled,
   onSetClipboardEnabled,
@@ -56,6 +57,7 @@ export function SettingsPanel({
   onSetFileSearchEnabled: (checked: boolean) => void;
   onSetCalcEnabled: (checked: boolean) => void;
   onSetCopyWithComma: (checked: boolean) => void;
+  onSetUrlConvertEnabled: (checked: boolean) => void;
   onSetSystemCommandEnabled: (checked: boolean) => void;
   onSetWebSearchEnabled: (checked: boolean) => void;
   onSetClipboardEnabled: (checked: boolean) => void;
@@ -146,12 +148,14 @@ export function SettingsPanel({
               onOpenFolder={onOpenFolder}
             />
           )}
-          {tab === "calc" && (
-            <CalcSettings
-              enabled={appSettings.calcEnabled}
-              onToggle={onSetCalcEnabled}
+          {tab === "convert" && (
+            <ConvertSettings
+              calcEnabled={appSettings.calcEnabled}
+              onToggleCalc={onSetCalcEnabled}
               copyWithComma={appSettings.copyWithComma}
               onToggleCopyWithComma={onSetCopyWithComma}
+              urlConvertEnabled={appSettings.urlConvertEnabled}
+              onToggleUrlConvert={onSetUrlConvertEnabled}
             />
           )}
           {tab === "systemCommand" && (

@@ -28,6 +28,7 @@ export interface AppSettings {
   clipboardMaxItems: number;
   ocrEnabled: boolean;
   checkUpdateOnStartup: boolean;
+  urlConvertEnabled: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -42,6 +43,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   clipboardMaxItems: 50,
   ocrEnabled: true,
   checkUpdateOnStartup: true,
+  urlConvertEnabled: true,
 };
 
 // Rust の `check_for_update` コマンドの戻り値。

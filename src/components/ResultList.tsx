@@ -10,6 +10,7 @@ export function ResultList({
   systemMode,
   systemMatches,
   results,
+  urlConvertResult,
   query,
   selected,
   baseLength,
@@ -19,12 +20,14 @@ export function ResultList({
   onRequestSystemCommand,
   onLaunchFile,
   onOpenWebSearch,
+  onCopyUrlConvertResult,
 }: {
   calcMode: boolean;
   calcResult: string | null;
   systemMode: boolean;
   systemMatches: SystemCommand[];
   results: FileEntry[];
+  urlConvertResult: string | null;
   query: string;
   selected: number;
   baseLength: number;
@@ -34,6 +37,7 @@ export function ResultList({
   onRequestSystemCommand: (cmd: SystemCommand) => void;
   onLaunchFile: (path: string) => void;
   onOpenWebSearch: (query: string) => void;
+  onCopyUrlConvertResult: (text: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
@@ -123,22 +127,64 @@ export function ResultList({
         </>
       ) : (
         <>
+          {urlConvertResult !== null && (
+            <button
+              data-index={0}
+              className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
+                selected === 0
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+              onClick={() => onCopyUrlConvertResult(urlConvertResult)}
+              onMouseEnter={() => onSelect(0)}
+            >
+              <svg
+                className={`w-4 h-4 mr-3 flex-shrink-0 ${
+                  selected === 0 ? "text-white" : "text-blue-500"
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 115.656 5.656l-4 4a4 4 0 01-5.656 0"
+                />
+              </svg>
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">
+                  {urlConvertResult}
+                </div>
+                <div
+                  className={`text-xs truncate ${
+                    selected === 0 ? "text-blue-100" : "text-gray-400"
+                  }`}
+                >
+                  Enter でコピー
+                </div>
+              </div>
+            </button>
+          )}
           {results.length === 0 && query.length > 0 && (
             <div className="flex items-center justify-center text-gray-400 text-sm py-6">
               見つかりませんでした
             </div>
           )}
-          {results.map((item, i) => (
+          {results.map((item, i) => {
+            const index = i + (urlConvertResult !== null ? 1 : 0);
+            return (
             <button
               key={item.path}
-              data-index={i}
+              data-index={index}
               className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
-                i === selected
+                index === selected
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onLaunchFile(item.path)}
-              onMouseEnter={() => onSelect(i)}
+              onMouseEnter={() => onSelect(index)}
             >
               {item.icon ? (
                 <img
@@ -165,14 +211,15 @@ export function ResultList({
                 <div className="text-sm font-medium truncate">{item.name}</div>
                 <div
                   className={`text-xs truncate ${
-                    i === selected ? "text-blue-100" : "text-gray-400"
+                    index === selected ? "text-blue-100" : "text-gray-400"
                   }`}
                 >
                   {item.path}
                 </div>
               </div>
             </button>
-          ))}
+            );
+          })}
           {webSearchVisible && (
             <WebSearchRow
               query={query}

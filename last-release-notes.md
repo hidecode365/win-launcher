@@ -1,4 +1,5 @@
-## v0.3.1
+## v0.3.2
 
-- Fixed misleading OCR description text that claimed support for mixed Japanese/English recognition. The text now correctly reflects that Windows OCR API is used assuming the Japanese language pack is installed, with guidance to add additional OCR language packs via Settings → Time & Language → Language if needed.
-- Fixed misaligned indentation in the OCR settings description text.
+- Added URL encode/decode auto-detection in search results: pasting a URL-encoded string decodes it, and pasting text containing non-ASCII characters (e.g. Japanese) encodes it using `encodeURI`-equivalent behavior (preserving URL structural characters like `:`, `/`, `?`, `#`, etc.). Results can be copied to clipboard via Enter.
+- Renamed the "Calculator" settings category to "Calculator & Conversion" to accommodate the new URL encode/decode feature as a sibling toggle, and restructured the settings UI into reusable "feature block" groups (main toggle + indented sub-settings, grayed out when disabled).
+- Fixed a bug where the calculator's expression detection (`/[+\-*/]/` regex) was too permissive and misfired on URLs and other strings containing digits and slashes, blocking the URL decode result from being shown.

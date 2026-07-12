@@ -5,6 +5,7 @@ export function StatusFooter({
   clipboardMode,
   calcMode,
   systemMode,
+  isUrlConvertSelected,
 }: {
   pendingCommand: boolean;
   webSearchVisible: boolean;
@@ -12,6 +13,7 @@ export function StatusFooter({
   clipboardMode: boolean;
   calcMode: boolean;
   systemMode: boolean;
+  isUrlConvertSelected: boolean;
 }) {
   return (
     <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400">
@@ -32,7 +34,9 @@ export function StatusFooter({
                   ? "Enter コピー"
                   : systemMode
                     ? "Enter 確認"
-                    : "Enter 起動"}
+                    : isUrlConvertSelected
+                      ? "Enter コピー"
+                      : "Enter 起動"}
           </span>
           <span>Esc 閉じる</span>
         </>

@@ -181,13 +181,14 @@ export default function App() {
   }, [showSettings, search.pendingCommand, openSettings, closeSettings]);
 
   const calcLength = search.calcResult !== null ? 1 : 0;
+  const urlConvertLength = search.urlConvertResult !== null ? 1 : 0;
   const baseLength = search.clipboardMode
     ? clipboard.clipboardEntries.length
     : search.calcMode
       ? calcLength
       : search.systemMode
         ? search.systemMatches.length
-        : search.results.length;
+        : search.results.length + urlConvertLength;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
@@ -230,8 +231,12 @@ export default function App() {
             if (search.systemMatches[search.selected]) {
               search.requestSystemCommand(search.systemMatches[search.selected]);
             }
-          } else if (search.results[search.selected]) {
-            search.launchFile(search.results[search.selected].path);
+          } else if (search.urlConvertResult !== null && search.selected === 0) {
+            search.copyUrlConvertResult(search.urlConvertResult);
+          } else if (search.results[search.selected - urlConvertLength]) {
+            search.launchFile(
+              search.results[search.selected - urlConvertLength].path
+            );
           }
           break;
         case "Escape":
@@ -259,6 +264,9 @@ export default function App() {
       search.systemMode,
       search.systemMatches,
       search.requestSystemCommand,
+      search.urlConvertResult,
+      search.copyUrlConvertResult,
+      urlConvertLength,
       search.results,
       search.launchFile,
     ]
@@ -326,6 +334,7 @@ export default function App() {
         onSetFileSearchEnabled={settings.setFileSearchEnabled}
         onSetCalcEnabled={settings.setCalcEnabled}
         onSetCopyWithComma={settings.setCopyWithComma}
+        onSetUrlConvertEnabled={settings.setUrlConvertEnabled}
         onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
         onSetWebSearchEnabled={settings.setWebSearchEnabled}
         onSetClipboardEnabled={settings.setClipboardEnabled}
@@ -417,6 +426,7 @@ export default function App() {
             systemMode={search.systemMode}
             systemMatches={search.systemMatches}
             results={search.results}
+            urlConvertResult={search.urlConvertResult}
             query={search.query}
             selected={search.selected}
             baseLength={baseLength}
@@ -426,6 +436,7 @@ export default function App() {
             onRequestSystemCommand={search.requestSystemCommand}
             onLaunchFile={search.launchFile}
             onOpenWebSearch={search.openWebSearch}
+            onCopyUrlConvertResult={search.copyUrlConvertResult}
           />
         ))}
 
@@ -438,6 +449,9 @@ export default function App() {
           clipboardMode={search.clipboardMode}
           calcMode={search.calcMode}
           systemMode={search.systemMode}
+          isUrlConvertSelected={
+            search.urlConvertResult !== null && search.selected === 0
+          }
         />
       )}
     </div>

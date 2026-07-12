@@ -44,8 +44,39 @@ function sortByFrecency(files: FileEntry[], frecency: FrecencyMap): FileEntry[] 
   });
 }
 
+// クエリ全体が数字・演算子・空白・小数点のみで構成される場合のみ計算式とみなす。
+// 単に `/` や数字が含まれるだけで計算式と誤判定しないよう（例: URL の「https://」や
+// パーセントエンコード文字列に含まれる数字・`/`）、文字種を丸ごと制限したうえで
+// 数字・演算子の両方を含むことを確認する。
 function isCalcExpression(q: string): boolean {
-  return /\d/.test(q) && /[+\-*/]/.test(q);
+  const trimmed = q.trim();
+  if (!trimmed) return false;
+  if (!/^[\d+\-*/.\s]+$/.test(trimmed)) return false;
+  return /\d/.test(trimmed) && /[+\-*/]/.test(trimmed);
+}
+
+// クエリに応じて URL デコード/エンコードの自動変換結果を返す（該当しない場合は null）。
+// 1. `%XX`（16進数2桁）パターンを含む場合はデコードを試み、有効な文字列に変換でき
+//    元の入力と異なる結果が得られた場合のみそれを返す（decodeURIComponent は不正な
+//    エスケープシーケンスに対して URIError を投げるため、その場合は null とする）
+// 2. 上記に該当せず非ASCII文字を含む場合はエンコード結果を返す
+//    （encodeURIComponent ではなく encodeURI を使う。`: / ? # [ ] @ ! $ & ' ( ) * + , ; =`
+//    などの URL 構造を保つ記号はエンコードせず、非ASCII文字のみをパーセントエンコードするため）
+// 3. どちらにも該当しない場合は null（追加の検索結果を表示しない）
+function detectUrlConvertResult(q: string): string | null {
+  if (!q) return null;
+  if (/%[0-9A-Fa-f]{2}/.test(q)) {
+    try {
+      const decoded = decodeURIComponent(q);
+      return decoded !== q ? decoded : null;
+    } catch {
+      return null;
+    }
+  }
+  if (/[^\x00-\x7F]/.test(q)) {
+    return encodeURI(q);
+  }
+  return null;
 }
 
 const SYSTEM_COMMANDS: SystemCommand[] = [
@@ -98,6 +129,14 @@ export function useSearch(
     ? clipboardModeFilter(query, appSettings.clipboardPrefix)
     : null;
   const clipboardMode = clipboardFilterText !== null;
+
+  // URLエンコード/デコード結果はファイル検索結果を置き換えず、その先頭に共存表示する
+  // （calcMode/systemMode/clipboardMode のような排他モードにはしない）。
+  const urlConvertResult = useMemo(() => {
+    if (!appSettings.urlConvertEnabled) return null;
+    if (calcMode || systemMode || clipboardMode) return null;
+    return detectUrlConvertResult(query);
+  }, [appSettings.urlConvertEnabled, calcMode, systemMode, clipboardMode, query]);
 
   useEffect(() => {
     setSelected(0);
@@ -170,6 +209,12 @@ export function useSearch(
     [appSettings.copyWithComma]
   );
 
+  const copyUrlConvertResult = useCallback(async (text: string) => {
+    await invoke("copy_to_clipboard", { text }).catch(console.error);
+    setQuery("");
+    await hideWindow();
+  }, []);
+
   const openWebSearch = useCallback(async (q: string) => {
     await open(
       `https://www.google.com/search?q=${encodeURIComponent(q)}`
@@ -213,12 +258,14 @@ export function useSearch(
     systemMode,
     clipboardFilterText,
     clipboardMode,
+    urlConvertResult,
     pendingCommand,
     requestSystemCommand,
     cancelSystemCommand,
     confirmSystemCommand,
     launchFile,
     copyResult,
+    copyUrlConvertResult,
     openWebSearch,
     setInitialFrecency,
   };

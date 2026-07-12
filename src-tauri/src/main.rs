@@ -303,6 +303,14 @@ fn toggle_folder(app: AppHandle, path: String) -> Result<Vec<FolderEntry>, Strin
     Ok(folders)
 }
 
+// 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで
+// 保存された settings.json（このフィールドを持たない）の読み込み時に
+// deserialize が失敗し、AppSettings 全体が Default::default() にフォールバックして
+// 既存ユーザーの他の設定まで巻き添えで消えてしまうため付与する。
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -317,6 +325,8 @@ struct AppSettings {
     clipboard_max_items: u32,
     ocr_enabled: bool,
     check_update_on_startup: bool,
+    #[serde(default = "default_true")]
+    url_convert_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -333,6 +343,7 @@ impl Default for AppSettings {
             clipboard_max_items: DEFAULT_CLIPBOARD_MAX_ITEMS,
             ocr_enabled: true,
             check_update_on_startup: true,
+            url_convert_enabled: true,
         }
     }
 }
@@ -394,6 +405,14 @@ fn set_web_search_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, 
 fn set_copy_with_comma(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.copy_with_comma = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_url_convert_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.url_convert_enabled = enabled;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -1330,6 +1349,7 @@ fn main() {
             set_system_command_enabled,
             set_web_search_enabled,
             set_copy_with_comma,
+            set_url_convert_enabled,
             set_clipboard_enabled,
             set_clipboard_prefix,
             set_clipboard_max_items,
