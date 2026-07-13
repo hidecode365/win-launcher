@@ -1,3 +1,3 @@
-## v0.3.4
+## v0.3.5
 
-- The URL encode/decode auto-detection feature now only activates when the input starts with `http://` or `https://`. Previously, any input containing non-ASCII characters (e.g. a plain Japanese search term) would trigger an encode result, pushing more relevant results (like file matches) further down the list. Restricting the feature to URL-like input eliminates this noise.
+- Added a new "About" category in Settings, showing the app version and links to the GitHub repository, X (@hidecode365), and Buy Me a Coffee to support the developer.

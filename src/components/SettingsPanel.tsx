@@ -8,6 +8,7 @@ import { SystemCommandSettings } from "./SystemCommandSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { ClipboardSettings } from "./ClipboardSettings";
 import { OcrSettings } from "./OcrSettings";
+import { AboutSettings } from "./AboutSettings";
 
 type SettingsTab =
   | "general"
@@ -16,7 +17,8 @@ type SettingsTab =
   | "systemCommand"
   | "webSearch"
   | "clipboard"
-  | "ocr";
+  | "ocr"
+  | "about";
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "全般" },
@@ -26,6 +28,7 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "webSearch", label: "Web検索" },
   { id: "clipboard", label: "クリップボード" },
   { id: "ocr", label: "OCR" },
+  { id: "about", label: "このアプリについて" },
 ];
 
 export function SettingsPanel({
@@ -191,6 +194,7 @@ export function SettingsPanel({
               onToggle={onSetOcrEnabled}
             />
           )}
+          {tab === "about" && <AboutSettings />}
         </div>
       </div>
 
