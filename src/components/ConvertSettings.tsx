@@ -11,6 +11,8 @@ export function ConvertSettings({
   onToggleCopyWithComma,
   urlConvertEnabled,
   onToggleUrlConvert,
+  urlConvertKeepSpaceEncoded,
+  onToggleUrlConvertKeepSpaceEncoded,
 }: {
   calcEnabled: boolean;
   onToggleCalc: (checked: boolean) => void;
@@ -18,6 +20,8 @@ export function ConvertSettings({
   onToggleCopyWithComma: (checked: boolean) => void;
   urlConvertEnabled: boolean;
   onToggleUrlConvert: (checked: boolean) => void;
+  urlConvertKeepSpaceEncoded: boolean;
+  onToggleUrlConvertKeepSpaceEncoded: (checked: boolean) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -41,7 +45,14 @@ export function ConvertSettings({
           description="検索ボックスの入力内容に応じて URL エンコード/デコード結果を検索結果に自動表示します。"
           checked={urlConvertEnabled}
           onChange={onToggleUrlConvert}
-        />
+        >
+          <FeatureToggle
+            label="スペースは%20のまま保持する"
+            description="OFFの場合、デコード結果のスペースは半角スペースとして表示されます。ONにすると、スペースだけは%20のまま保持されます（スペースをURLの終端と誤認識するアプリ対策）。"
+            checked={urlConvertKeepSpaceEncoded}
+            onChange={onToggleUrlConvertKeepSpaceEncoded}
+          />
+        </FeatureBlock>
       </div>
     </div>
   );

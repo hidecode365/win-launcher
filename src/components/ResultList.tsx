@@ -1,7 +1,12 @@
 import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
-import { FileEntry, SystemCommand } from "../types";
+import { FileEntry, SystemCommand, UrlConvertResult } from "../types";
+
+const URL_CONVERT_KIND_LABEL: Record<UrlConvertResult["kind"], string> = {
+  decode: "デコード結果",
+  encode: "エンコード結果",
+};
 import { WebSearchRow } from "./WebSearchRow";
 
 export function ResultList({
@@ -27,7 +32,7 @@ export function ResultList({
   systemMode: boolean;
   systemMatches: SystemCommand[];
   results: FileEntry[];
-  urlConvertResult: string | null;
+  urlConvertResult: UrlConvertResult | null;
   query: string;
   selected: number;
   baseLength: number;
@@ -135,7 +140,7 @@ export function ResultList({
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
               }`}
-              onClick={() => onCopyUrlConvertResult(urlConvertResult)}
+              onClick={() => onCopyUrlConvertResult(urlConvertResult.text)}
               onMouseEnter={() => onSelect(0)}
             >
               <svg
@@ -154,8 +159,15 @@ export function ResultList({
                 />
               </svg>
               <div className="min-w-0">
+                <div
+                  className={`text-[11px] truncate ${
+                    selected === 0 ? "text-blue-100" : "text-gray-400"
+                  }`}
+                >
+                  {URL_CONVERT_KIND_LABEL[urlConvertResult.kind]}
+                </div>
                 <div className="text-sm font-medium truncate">
-                  {urlConvertResult}
+                  {urlConvertResult.text}
                 </div>
                 <div
                   className={`text-xs truncate ${

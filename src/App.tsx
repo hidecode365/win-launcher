@@ -232,7 +232,7 @@ export default function App() {
               search.requestSystemCommand(search.systemMatches[search.selected]);
             }
           } else if (search.urlConvertResult !== null && search.selected === 0) {
-            search.copyUrlConvertResult(search.urlConvertResult);
+            search.copyUrlConvertResult(search.urlConvertResult.text);
           } else if (search.results[search.selected - urlConvertLength]) {
             search.launchFile(
               search.results[search.selected - urlConvertLength].path
@@ -335,6 +335,7 @@ export default function App() {
         onSetCalcEnabled={settings.setCalcEnabled}
         onSetCopyWithComma={settings.setCopyWithComma}
         onSetUrlConvertEnabled={settings.setUrlConvertEnabled}
+        onSetUrlConvertKeepSpaceEncoded={settings.setUrlConvertKeepSpaceEncoded}
         onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
         onSetWebSearchEnabled={settings.setWebSearchEnabled}
         onSetClipboardEnabled={settings.setClipboardEnabled}

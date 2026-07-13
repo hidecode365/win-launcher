@@ -29,6 +29,7 @@ export interface AppSettings {
   ocrEnabled: boolean;
   checkUpdateOnStartup: boolean;
   urlConvertEnabled: boolean;
+  urlConvertKeepSpaceEncoded: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -44,6 +45,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   ocrEnabled: true,
   checkUpdateOnStartup: true,
   urlConvertEnabled: true,
+  urlConvertKeepSpaceEncoded: false,
 };
 
 // Rust の `check_for_update` コマンドの戻り値。
@@ -51,6 +53,13 @@ export interface UpdateCheckResult {
   available: boolean;
   version: string | null;
   notes: string | null;
+}
+
+// URLエンコード/デコードの自動表示結果。kind でどちらの処理結果かを識別し、
+// 検索結果アイテムのラベル表示（「デコード結果」/「エンコード結果」）に使う。
+export interface UrlConvertResult {
+  text: string;
+  kind: "decode" | "encode";
 }
 
 export interface SystemCommand {

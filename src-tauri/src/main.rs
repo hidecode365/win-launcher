@@ -327,6 +327,8 @@ struct AppSettings {
     check_update_on_startup: bool,
     #[serde(default = "default_true")]
     url_convert_enabled: bool,
+    #[serde(default)]
+    url_convert_keep_space_encoded: bool,
 }
 
 impl Default for AppSettings {
@@ -344,6 +346,7 @@ impl Default for AppSettings {
             ocr_enabled: true,
             check_update_on_startup: true,
             url_convert_enabled: true,
+            url_convert_keep_space_encoded: false,
         }
     }
 }
@@ -413,6 +416,17 @@ fn set_copy_with_comma(app: AppHandle, enabled: bool) -> Result<AppSettings, Str
 fn set_url_convert_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.url_convert_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_url_convert_keep_space_encoded(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.url_convert_keep_space_encoded = enabled;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -1350,6 +1364,7 @@ fn main() {
             set_web_search_enabled,
             set_copy_with_comma,
             set_url_convert_enabled,
+            set_url_convert_keep_space_encoded,
             set_clipboard_enabled,
             set_clipboard_prefix,
             set_clipboard_max_items,

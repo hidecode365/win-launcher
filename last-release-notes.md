@@ -1,5 +1,4 @@
-## v0.3.2
+## v0.3.3
 
-- Added URL encode/decode auto-detection in search results: pasting a URL-encoded string decodes it, and pasting text containing non-ASCII characters (e.g. Japanese) encodes it using `encodeURI`-equivalent behavior (preserving URL structural characters like `:`, `/`, `?`, `#`, etc.). Results can be copied to clipboard via Enter.
-- Renamed the "Calculator" settings category to "Calculator & Conversion" to accommodate the new URL encode/decode feature as a sibling toggle, and restructured the settings UI into reusable "feature block" groups (main toggle + indented sub-settings, grayed out when disabled).
-- Fixed a bug where the calculator's expression detection (`/[+\-*/]/` regex) was too permissive and misfired on URLs and other strings containing digits and slashes, blocking the URL decode result from being shown.
+- Added a "Keep %20 as-is" option to the URL encode/decode auto-detection feature (Settings → Calculator & Conversion, off by default). When enabled, only the space character (`%20`) is left undecoded during URL decoding — useful for apps that misinterpret a literal space as the end of a URL — while all other `%XX` sequences are still decoded normally. This setting only affects decoding and has no effect on the encode path.
+- Added a small label ("Decoded result" / "Encoded result") above the URL encode/decode result in the search list, making it clear which operation produced the displayed text.

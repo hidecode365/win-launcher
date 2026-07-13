@@ -11,7 +11,13 @@ import { open } from "@tauri-apps/plugin-shell";
 import type { Store } from "@tauri-apps/plugin-store";
 import { hideWindow } from "../lib/window";
 import { formatWithCommas } from "../lib/format";
-import { AppSettings, FileEntry, FrecencyMap, SystemCommand } from "../types";
+import {
+  AppSettings,
+  FileEntry,
+  FrecencyMap,
+  SystemCommand,
+  UrlConvertResult,
+} from "../types";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -55,26 +61,51 @@ function isCalcExpression(q: string): boolean {
   return /\d/.test(trimmed) && /[+\-*/]/.test(trimmed);
 }
 
+// keepSpaceEncoded が true の場合、リテラル "%20" の箇所だけをデコード対象から
+// 除外する。%20 は3文字固定のトークンで他の %XX エスケープと重なり得ないため、
+// 文字列として split → 各断片を個別に decodeURIComponent → "%20" で join するだけで、
+// 前後の他のエスケープシーケンスを壊さずに「%20 だけ残す」を実現できる。
+function decodeUrl(q: string, keepSpaceEncoded: boolean): string {
+  if (!keepSpaceEncoded) return decodeURIComponent(q);
+  return q
+    .split(/%20/gi)
+    .map((part) => decodeURIComponent(part))
+    .join("%20");
+}
+
 // クエリに応じて URL デコード/エンコードの自動変換結果を返す（該当しない場合は null）。
-// 1. `%XX`（16進数2桁）パターンを含む場合はデコードを試み、有効な文字列に変換でき
-//    元の入力と異なる結果が得られた場合のみそれを返す（decodeURIComponent は不正な
-//    エスケープシーケンスに対して URIError を投げるため、その場合は null とする）
+// 1. `%XX`（16進数2桁）パターンを含む場合はデコードを試みる。
+//    無変化判定（結果を表示するかどうか）は、スペース保持設定を無視した完全デコード
+//    （decodeURIComponent(q) そのもの）と入力の比較で行う。こうすることで、
+//    `%20` 以外に実際にデコードされる要素がない入力かどうかを正しく判定できる
+//    （decodeURIComponent は不正なエスケープシーケンスに対して URIError を投げるため、
+//    その場合は null とする）。
+//    完全デコード結果が入力と異なる場合（＝ %20 を含め何かしら実際にデコードされる
+//    要素がある場合）は有効なデコード対象とみなし、表示用の文字列自体は
+//    keepSpaceEncoded を反映したもの（`%20` のみデコードせずそのまま残す。
+//    スペースをURLの終端と誤認識するアプリ対策）を返す。この場合、表示文字列が
+//    入力と見た目上一致することもあるが、それは正しい挙動である
+//    （呼び出し側が kind: "decode" のラベルで区別する）
 // 2. 上記に該当せず非ASCII文字を含む場合はエンコード結果を返す
 //    （encodeURIComponent ではなく encodeURI を使う。`: / ? # [ ] @ ! $ & ' ( ) * + , ; =`
 //    などの URL 構造を保つ記号はエンコードせず、非ASCII文字のみをパーセントエンコードするため）
 // 3. どちらにも該当しない場合は null（追加の検索結果を表示しない）
-function detectUrlConvertResult(q: string): string | null {
+function detectUrlConvertResult(
+  q: string,
+  keepSpaceEncoded: boolean
+): UrlConvertResult | null {
   if (!q) return null;
   if (/%[0-9A-Fa-f]{2}/.test(q)) {
     try {
-      const decoded = decodeURIComponent(q);
-      return decoded !== q ? decoded : null;
+      const fullyDecoded = decodeURIComponent(q);
+      if (fullyDecoded === q) return null;
+      return { text: decodeUrl(q, keepSpaceEncoded), kind: "decode" };
     } catch {
       return null;
     }
   }
   if (/[^\x00-\x7F]/.test(q)) {
-    return encodeURI(q);
+    return { text: encodeURI(q), kind: "encode" };
   }
   return null;
 }
@@ -135,8 +166,15 @@ export function useSearch(
   const urlConvertResult = useMemo(() => {
     if (!appSettings.urlConvertEnabled) return null;
     if (calcMode || systemMode || clipboardMode) return null;
-    return detectUrlConvertResult(query);
-  }, [appSettings.urlConvertEnabled, calcMode, systemMode, clipboardMode, query]);
+    return detectUrlConvertResult(query, appSettings.urlConvertKeepSpaceEncoded);
+  }, [
+    appSettings.urlConvertEnabled,
+    appSettings.urlConvertKeepSpaceEncoded,
+    calcMode,
+    systemMode,
+    clipboardMode,
+    query,
+  ]);
 
   useEffect(() => {
     setSelected(0);

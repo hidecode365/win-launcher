@@ -58,6 +58,14 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  const setUrlConvertKeepSpaceEncoded = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>(
+      "set_url_convert_keep_space_encoded",
+      { enabled }
+    ).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
   const setSystemCommandEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_system_command_enabled", {
       enabled,
@@ -158,6 +166,7 @@ export function useSettings(showSettings: boolean) {
     setCalcEnabled,
     setCopyWithComma,
     setUrlConvertEnabled,
+    setUrlConvertKeepSpaceEncoded,
     setSystemCommandEnabled,
     setWebSearchEnabled,
     setClipboardEnabled,

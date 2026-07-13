@@ -36,6 +36,7 @@ export function SettingsPanel({
   onSetCalcEnabled,
   onSetCopyWithComma,
   onSetUrlConvertEnabled,
+  onSetUrlConvertKeepSpaceEncoded,
   onSetSystemCommandEnabled,
   onSetWebSearchEnabled,
   onSetClipboardEnabled,
@@ -58,6 +59,7 @@ export function SettingsPanel({
   onSetCalcEnabled: (checked: boolean) => void;
   onSetCopyWithComma: (checked: boolean) => void;
   onSetUrlConvertEnabled: (checked: boolean) => void;
+  onSetUrlConvertKeepSpaceEncoded: (checked: boolean) => void;
   onSetSystemCommandEnabled: (checked: boolean) => void;
   onSetWebSearchEnabled: (checked: boolean) => void;
   onSetClipboardEnabled: (checked: boolean) => void;
@@ -156,6 +158,8 @@ export function SettingsPanel({
               onToggleCopyWithComma={onSetCopyWithComma}
               urlConvertEnabled={appSettings.urlConvertEnabled}
               onToggleUrlConvert={onSetUrlConvertEnabled}
+              urlConvertKeepSpaceEncoded={appSettings.urlConvertKeepSpaceEncoded}
+              onToggleUrlConvertKeepSpaceEncoded={onSetUrlConvertKeepSpaceEncoded}
             />
           )}
           {tab === "systemCommand" && (
