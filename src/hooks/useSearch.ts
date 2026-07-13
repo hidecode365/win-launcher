@@ -73,7 +73,17 @@ function decodeUrl(q: string, keepSpaceEncoded: boolean): string {
     .join("%20");
 }
 
+// 入力（前後空白除去後）が `http://` または `https://` で始まる場合のみ true。
+// これを満たさない入力は、%XX パターンや非ASCII文字を含んでいてもエンコード/デコード
+// 結果を一切表示しない（通常の日本語検索がエンコード結果扱いされ、本来優先すべき
+// ファイル検索結果等を押し下げてしまうノイズを防ぐため）。
+function isUrlLikeInput(q: string): boolean {
+  const trimmed = q.trim();
+  return /^https?:\/\//i.test(trimmed);
+}
+
 // クエリに応じて URL デコード/エンコードの自動変換結果を返す（該当しない場合は null）。
+// 0. 入力が http(s):// で始まらない場合は、以降の判定を行わず null を返す
 // 1. `%XX`（16進数2桁）パターンを含む場合はデコードを試みる。
 //    無変化判定（結果を表示するかどうか）は、スペース保持設定を無視した完全デコード
 //    （decodeURIComponent(q) そのもの）と入力の比較で行う。こうすることで、
@@ -95,6 +105,7 @@ function detectUrlConvertResult(
   keepSpaceEncoded: boolean
 ): UrlConvertResult | null {
   if (!q) return null;
+  if (!isUrlLikeInput(q)) return null;
   if (/%[0-9A-Fa-f]{2}/.test(q)) {
     try {
       const fullyDecoded = decodeURIComponent(q);

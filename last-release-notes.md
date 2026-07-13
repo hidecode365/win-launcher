@@ -1,4 +1,3 @@
-## v0.3.3
+## v0.3.4
 
-- Added a "Keep %20 as-is" option to the URL encode/decode auto-detection feature (Settings → Calculator & Conversion, off by default). When enabled, only the space character (`%20`) is left undecoded during URL decoding — useful for apps that misinterpret a literal space as the end of a URL — while all other `%XX` sequences are still decoded normally. This setting only affects decoding and has no effect on the encode path.
-- Added a small label ("Decoded result" / "Encoded result") above the URL encode/decode result in the search list, making it clear which operation produced the displayed text.
+- The URL encode/decode auto-detection feature now only activates when the input starts with `http://` or `https://`. Previously, any input containing non-ASCII characters (e.g. a plain Japanese search term) would trigger an encode result, pushing more relevant results (like file matches) further down the list. Restricting the feature to URL-like input eliminates this noise.
