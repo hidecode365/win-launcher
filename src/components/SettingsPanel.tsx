@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { AppSettings, FolderEntry } from "../types";
+import {
+  AppSettings,
+  FolderEntry,
+  SystemCommandAction,
+  SystemCommandKeywordErrors,
+} from "../types";
 import { GeneralSettings } from "./GeneralSettings";
 import { FileSearchSettings } from "./FileSearchSettings";
 import { ConvertSettings } from "./ConvertSettings";
@@ -41,6 +46,8 @@ export function SettingsPanel({
   onSetUrlConvertEnabled,
   onSetUrlConvertKeepSpaceEncoded,
   onSetSystemCommandEnabled,
+  onSetSystemCommandKeyword,
+  systemCommandKeywordErrors,
   onSetWebSearchEnabled,
   onSetClipboardEnabled,
   onSetClipboardPrefix,
@@ -64,6 +71,11 @@ export function SettingsPanel({
   onSetUrlConvertEnabled: (checked: boolean) => void;
   onSetUrlConvertKeepSpaceEncoded: (checked: boolean) => void;
   onSetSystemCommandEnabled: (checked: boolean) => void;
+  onSetSystemCommandKeyword: (
+    command: SystemCommandAction,
+    keyword: string
+  ) => void;
+  systemCommandKeywordErrors: SystemCommandKeywordErrors;
   onSetWebSearchEnabled: (checked: boolean) => void;
   onSetClipboardEnabled: (checked: boolean) => void;
   onSetClipboardPrefix: (prefix: string) => void;
@@ -169,6 +181,11 @@ export function SettingsPanel({
             <SystemCommandSettings
               enabled={appSettings.systemCommandEnabled}
               onToggle={onSetSystemCommandEnabled}
+              shutdownKeyword={appSettings.shutdownKeyword}
+              restartKeyword={appSettings.restartKeyword}
+              sleepKeyword={appSettings.sleepKeyword}
+              onChangeKeyword={onSetSystemCommandKeyword}
+              errors={systemCommandKeywordErrors}
             />
           )}
           {tab === "webSearch" && (

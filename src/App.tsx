@@ -91,12 +91,14 @@ export default function App() {
         storeRef.current = store;
         return Promise.all([
           store.get<FrecencyMap>("frecency"),
+          store.get<FrecencyMap>("prefixCommandFrecency"),
           store.get<ClipboardTextEntry[]>("clipboardHistory"),
           store.get<number>("clipboardPaneWidth"),
         ]);
       })
-      .then(([frecencyData, clipboardData, paneWidthData]) => {
+      .then(([frecencyData, prefixCommandFrecencyData, clipboardData, paneWidthData]) => {
         search.setInitialFrecency(frecencyData ?? {});
+        search.setInitialPrefixCommandFrecency(prefixCommandFrecencyData ?? {});
         clipboard.setInitialHistory(clipboardData ?? []);
         const paneWidth = paneWidthData ?? DEFAULT_CLIPBOARD_PANE_WIDTH;
         clipboardPaneWidthRef.current = paneWidth;
@@ -156,7 +158,12 @@ export default function App() {
     setSettingsVersion((v) => v + 1);
     hotkey.resetHotkeyError();
     settings.resetClipboardSettingsError();
-  }, [hotkey.resetHotkeyError, settings.resetClipboardSettingsError]);
+    settings.resetSystemCommandKeywordErrors();
+  }, [
+    hotkey.resetHotkeyError,
+    settings.resetClipboardSettingsError,
+    settings.resetSystemCommandKeywordErrors,
+  ]);
 
   // 設定パネルの開閉は document レベルの keydown で処理する。
   // input 要素のローカル onKeyDown に持たせると、フォーカス状態や
@@ -184,11 +191,9 @@ export default function App() {
   const urlConvertLength = search.urlConvertResult !== null ? 1 : 0;
   const baseLength = search.clipboardMode
     ? clipboard.clipboardEntries.length
-    : search.calcMode
-      ? calcLength
-      : search.systemMode
-        ? search.systemMatches.length
-        : search.results.length + urlConvertLength;
+    : search.prefixCommandMode
+      ? search.prefixCommandCandidates.length
+      : search.results.length + calcLength + urlConvertLength;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
@@ -225,17 +230,25 @@ export default function App() {
                 clipboard.clipboardEntries[search.selected]
               );
             }
-          } else if (search.calcMode) {
-            if (search.calcResult !== null) search.copyResult(search.calcResult);
-          } else if (search.systemMode) {
-            if (search.systemMatches[search.selected]) {
-              search.requestSystemCommand(search.systemMatches[search.selected]);
+          } else if (search.prefixCommandMode) {
+            if (search.prefixCommandCandidates[search.selected]) {
+              search.selectPrefixCommand(
+                search.prefixCommandCandidates[search.selected]
+              );
             }
-          } else if (search.urlConvertResult !== null && search.selected === 0) {
+          } else if (search.calcResult !== null && search.selected === 0) {
+            search.copyResult(search.calcResult);
+          } else if (
+            search.urlConvertResult !== null &&
+            search.selected === calcLength
+          ) {
             search.copyUrlConvertResult(search.urlConvertResult.text);
-          } else if (search.results[search.selected - urlConvertLength]) {
+          } else if (
+            search.results[search.selected - calcLength - urlConvertLength]
+          ) {
             search.launchFile(
-              search.results[search.selected - urlConvertLength].path
+              search.results[search.selected - calcLength - urlConvertLength]
+                .path
             );
           }
           break;
@@ -258,12 +271,12 @@ export default function App() {
       search.clipboardMode,
       clipboard.clipboardEntries,
       clipboard.selectClipboardEntry,
-      search.calcMode,
+      calcLength,
       search.calcResult,
       search.copyResult,
-      search.systemMode,
-      search.systemMatches,
-      search.requestSystemCommand,
+      search.prefixCommandMode,
+      search.prefixCommandCandidates,
+      search.selectPrefixCommand,
       search.urlConvertResult,
       search.copyUrlConvertResult,
       urlConvertLength,
@@ -337,6 +350,8 @@ export default function App() {
         onSetUrlConvertEnabled={settings.setUrlConvertEnabled}
         onSetUrlConvertKeepSpaceEncoded={settings.setUrlConvertKeepSpaceEncoded}
         onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
+        onSetSystemCommandKeyword={settings.setSystemCommandKeyword}
+        systemCommandKeywordErrors={settings.systemCommandKeywordErrors}
         onSetWebSearchEnabled={settings.setWebSearchEnabled}
         onSetClipboardEnabled={settings.setClipboardEnabled}
         onSetClipboardPrefix={settings.setClipboardPrefix}
@@ -422,10 +437,9 @@ export default function App() {
           />
         ) : (
           <ResultList
-            calcMode={search.calcMode}
             calcResult={search.calcResult}
-            systemMode={search.systemMode}
-            systemMatches={search.systemMatches}
+            prefixCommandMode={search.prefixCommandMode}
+            prefixCommandCandidates={search.prefixCommandCandidates}
             results={search.results}
             urlConvertResult={search.urlConvertResult}
             query={search.query}
@@ -434,7 +448,7 @@ export default function App() {
             webSearchVisible={webSearchVisible}
             onSelect={search.setSelected}
             onCopyResult={search.copyResult}
-            onRequestSystemCommand={search.requestSystemCommand}
+            onSelectPrefixCommand={search.selectPrefixCommand}
             onLaunchFile={search.launchFile}
             onOpenWebSearch={search.openWebSearch}
             onCopyUrlConvertResult={search.copyUrlConvertResult}
@@ -448,10 +462,12 @@ export default function App() {
           webSearchVisible={webSearchVisible}
           isWebSearchSelected={search.selected === baseLength}
           clipboardMode={search.clipboardMode}
-          calcMode={search.calcMode}
-          systemMode={search.systemMode}
+          isCalcSelected={
+            search.calcResult !== null && search.selected === 0
+          }
+          prefixCommandMode={search.prefixCommandMode}
           isUrlConvertSelected={
-            search.urlConvertResult !== null && search.selected === 0
+            search.urlConvertResult !== null && search.selected === calcLength
           }
         />
       )}

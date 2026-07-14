@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
-import { FileEntry, SystemCommand, UrlConvertResult } from "../types";
+import { FileEntry, PrefixCommand, UrlConvertResult } from "../types";
 
 const URL_CONVERT_KIND_LABEL: Record<UrlConvertResult["kind"], string> = {
   decode: "デコード結果",
@@ -9,11 +9,16 @@ const URL_CONVERT_KIND_LABEL: Record<UrlConvertResult["kind"], string> = {
 };
 import { WebSearchRow } from "./WebSearchRow";
 
+const PREFIX_COMMAND_ICON_PATH: Record<PrefixCommand["kind"], string> = {
+  system: "M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9",
+  clipboard:
+    "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+};
+
 export function ResultList({
-  calcMode,
   calcResult,
-  systemMode,
-  systemMatches,
+  prefixCommandMode,
+  prefixCommandCandidates,
   results,
   urlConvertResult,
   query,
@@ -22,15 +27,14 @@ export function ResultList({
   webSearchVisible,
   onSelect,
   onCopyResult,
-  onRequestSystemCommand,
+  onSelectPrefixCommand,
   onLaunchFile,
   onOpenWebSearch,
   onCopyUrlConvertResult,
 }: {
-  calcMode: boolean;
   calcResult: string | null;
-  systemMode: boolean;
-  systemMatches: SystemCommand[];
+  prefixCommandMode: boolean;
+  prefixCommandCandidates: PrefixCommand[];
   results: FileEntry[];
   urlConvertResult: UrlConvertResult | null;
   query: string;
@@ -39,60 +43,30 @@ export function ResultList({
   webSearchVisible: boolean;
   onSelect: (index: number) => void;
   onCopyResult: (text: string) => void;
-  onRequestSystemCommand: (cmd: SystemCommand) => void;
+  onSelectPrefixCommand: (cmd: PrefixCommand) => void;
   onLaunchFile: (path: string) => void;
   onOpenWebSearch: (query: string) => void;
   onCopyUrlConvertResult: (text: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
+  const calcOffset = calcResult !== null ? 1 : 0;
+  const urlConvertOffset = urlConvertResult !== null ? 1 : 0;
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto">
-      {calcMode ? (
+      {prefixCommandMode ? (
         <>
-          {calcResult !== null ? (
+          {prefixCommandCandidates.map((cmd, i) => (
             <button
-              data-index={0}
-              className="w-full flex items-center px-4 py-2.5 text-left bg-blue-500 text-white"
-              onClick={() => onCopyResult(calcResult)}
-            >
-              <div className="min-w-0">
-                <div className="text-sm font-medium truncate">
-                  {formatWithCommas(calcResult)}
-                </div>
-                <div className="text-xs truncate text-blue-100">
-                  Enter でコピー
-                </div>
-              </div>
-            </button>
-          ) : (
-            <div className="flex items-center justify-center text-gray-400 text-sm py-6">
-              計算できません
-            </div>
-          )}
-          {webSearchVisible && (
-            <WebSearchRow
-              query={query}
-              active={selected === baseLength}
-              index={baseLength}
-              onClick={() => onOpenWebSearch(query)}
-              onMouseEnter={() => onSelect(baseLength)}
-            />
-          )}
-        </>
-      ) : systemMode ? (
-        <>
-          {systemMatches.map((cmd, i) => (
-            <button
-              key={cmd.action}
+              key={cmd.keyword}
               data-index={i}
               className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
                 i === selected
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
               }`}
-              onClick={() => onRequestSystemCommand(cmd)}
+              onClick={() => onSelectPrefixCommand(cmd)}
               onMouseEnter={() => onSelect(i)}
             >
               <svg
@@ -105,17 +79,17 @@ export function ResultList({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9"
+                  d={PREFIX_COMMAND_ICON_PATH[cmd.kind]}
                 />
               </svg>
               <div className="min-w-0">
-                <div className="text-sm font-medium truncate">{cmd.label}</div>
+                <div className="text-sm font-medium truncate">{cmd.keyword}</div>
                 <div
                   className={`text-xs truncate ${
                     i === selected ? "text-blue-100" : "text-gray-400"
                   }`}
                 >
-                  Enter で実行
+                  {cmd.description}
                 </div>
               </div>
             </button>
@@ -132,7 +106,7 @@ export function ResultList({
         </>
       ) : (
         <>
-          {urlConvertResult !== null && (
+          {calcResult !== null && (
             <button
               data-index={0}
               className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
@@ -140,12 +114,37 @@ export function ResultList({
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
               }`}
-              onClick={() => onCopyUrlConvertResult(urlConvertResult.text)}
+              onClick={() => onCopyResult(calcResult)}
               onMouseEnter={() => onSelect(0)}
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">
+                  {formatWithCommas(calcResult)}
+                </div>
+                <div
+                  className={`text-xs truncate ${
+                    selected === 0 ? "text-blue-100" : "text-gray-400"
+                  }`}
+                >
+                  Enter でコピー
+                </div>
+              </div>
+            </button>
+          )}
+          {urlConvertResult !== null && (
+            <button
+              data-index={calcOffset}
+              className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
+                selected === calcOffset
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+              onClick={() => onCopyUrlConvertResult(urlConvertResult.text)}
+              onMouseEnter={() => onSelect(calcOffset)}
             >
               <svg
                 className={`w-4 h-4 mr-3 flex-shrink-0 ${
-                  selected === 0 ? "text-white" : "text-blue-500"
+                  selected === calcOffset ? "text-white" : "text-blue-500"
                 }`}
                 fill="none"
                 stroke="currentColor"
@@ -161,7 +160,7 @@ export function ResultList({
               <div className="min-w-0">
                 <div
                   className={`text-[11px] truncate ${
-                    selected === 0 ? "text-blue-100" : "text-gray-400"
+                    selected === calcOffset ? "text-blue-100" : "text-gray-400"
                   }`}
                 >
                   {URL_CONVERT_KIND_LABEL[urlConvertResult.kind]}
@@ -171,7 +170,7 @@ export function ResultList({
                 </div>
                 <div
                   className={`text-xs truncate ${
-                    selected === 0 ? "text-blue-100" : "text-gray-400"
+                    selected === calcOffset ? "text-blue-100" : "text-gray-400"
                   }`}
                 >
                   Enter でコピー
@@ -185,7 +184,7 @@ export function ResultList({
             </div>
           )}
           {results.map((item, i) => {
-            const index = i + (urlConvertResult !== null ? 1 : 0);
+            const index = i + calcOffset + urlConvertOffset;
             return (
             <button
               key={item.path}

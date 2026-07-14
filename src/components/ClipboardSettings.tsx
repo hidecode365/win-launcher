@@ -28,13 +28,14 @@ export function ClipboardSettings({
     <div className="flex flex-col gap-4">
       <FeatureToggle
         label="クリップボード履歴"
-        description="クリップボードの変化を監視し、検索ボックスにプレフィックスを入力すると履歴を呼び出せます。"
+        description="クリップボードの変化を監視し、検索ボックスに「/」＋呼び出しキーワードを入力すると履歴を呼び出せます。"
         checked={enabled}
         onChange={onToggle}
       />
       <div className="pt-3 border-t border-gray-200/60">
-        <div className="text-sm font-medium text-gray-800 mb-1">呼び出しプレフィックス</div>
+        <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
         <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-400">/</span>
           <input
             type="text"
             value={prefixInput}
@@ -48,6 +49,9 @@ export function ClipboardSettings({
           >
             保存
           </button>
+        </div>
+        <div className="text-xs text-gray-400 mt-1">
+          「/」が自動的に先頭に付与されます
         </div>
       </div>
       <div className="pt-3 border-t border-gray-200/60">

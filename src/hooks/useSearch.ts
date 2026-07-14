@@ -15,6 +15,7 @@ import {
   AppSettings,
   FileEntry,
   FrecencyMap,
+  PrefixCommand,
   SystemCommand,
   UrlConvertResult,
 } from "../types";
@@ -50,14 +51,14 @@ function sortByFrecency(files: FileEntry[], frecency: FrecencyMap): FileEntry[] 
   });
 }
 
-// クエリ全体が数字・演算子・空白・小数点のみで構成される場合のみ計算式とみなす。
+// クエリ全体が数字・演算子・括弧・空白・小数点のみで構成される場合のみ計算式とみなす。
 // 単に `/` や数字が含まれるだけで計算式と誤判定しないよう（例: URL の「https://」や
 // パーセントエンコード文字列に含まれる数字・`/`）、文字種を丸ごと制限したうえで
 // 数字・演算子の両方を含むことを確認する。
 function isCalcExpression(q: string): boolean {
   const trimmed = q.trim();
   if (!trimmed) return false;
-  if (!/^[\d+\-*/.\s]+$/.test(trimmed)) return false;
+  if (!/^[\d+\-*/.()\s]+$/.test(trimmed)) return false;
   return /\d/.test(trimmed) && /[+\-*/]/.test(trimmed);
 }
 
@@ -121,26 +122,115 @@ function detectUrlConvertResult(
   return null;
 }
 
+// 明示プレフィックスの固定区切り文字。ユーザーは変更できない
+// （変更可能なのは "/" に続くキーワード部分のみ）。
+const PREFIX_CHAR = "/";
+
 const SYSTEM_COMMANDS: SystemCommand[] = [
-  { action: "shutdown", label: "シャットダウン", keywords: ["shutdown"] },
-  { action: "restart", label: "再起動", keywords: ["restart", "reboot"] },
-  { action: "sleep", label: "スリープ", keywords: ["sleep"] },
+  { action: "shutdown", label: "シャットダウン" },
+  { action: "restart", label: "再起動" },
+  { action: "sleep", label: "スリープ" },
 ];
 
-function matchSystemCommands(q: string): SystemCommand[] {
-  const query = q.trim().toLowerCase();
-  if (!query) return [];
-  return SYSTEM_COMMANDS.filter((cmd) =>
-    cmd.keywords.some((kw) => kw.startsWith(query))
-  );
+function systemCommandKeyword(
+  action: SystemCommand["action"],
+  appSettings: AppSettings
+): string {
+  switch (action) {
+    case "shutdown":
+      return appSettings.shutdownKeyword;
+    case "restart":
+      return appSettings.restartKeyword;
+    case "sleep":
+      return appSettings.sleepKeyword;
+  }
 }
 
-// クエリがクリップボード呼び出しプレフィックスに前方一致する場合、続く文字列
-// （履歴のテキストフィルタ）を返す。一致しない場合は null（モード非アクティブ）。
-function clipboardModeFilter(query: string, prefix: string): string | null {
-  if (!prefix) return null;
-  if (!query.toLowerCase().startsWith(prefix.toLowerCase())) return null;
-  return query.slice(prefix.length).trim();
+// システムコマンドはコマンドごとに独立したキーワードを持つため、クリップボード履歴の
+// ような「共通プレフィックス＋残り文字列の抽出」ではなく、コマンドごとに "/" + キーワード
+// 全体を対象にクエリとの前方一致を判定する（クエリがその文字列の先頭部分であれば候補になる。
+// 例: キーワードが既定の "restart" のままなら "/re" が "/restart" に前方一致する）。
+function matchSystemCommands(
+  query: string,
+  appSettings: AppSettings
+): SystemCommand[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return SYSTEM_COMMANDS.filter((cmd) => {
+    const full = (
+      PREFIX_CHAR + systemCommandKeyword(cmd.action, appSettings)
+    ).toLowerCase();
+    return full.startsWith(q);
+  });
+}
+
+// クエリが "/" + 呼び出しキーワードに前方一致する場合、続く文字列（履歴のテキストフィルタ）
+// を返す。一致しない場合は null（モード非アクティブ）。
+function clipboardModeFilter(
+  query: string,
+  clipboardPrefix: string
+): string | null {
+  const full = PREFIX_CHAR + clipboardPrefix;
+  if (!query.toLowerCase().startsWith(full.toLowerCase())) return null;
+  return query.slice(full.length).trim();
+}
+
+const PREFIX_COMMAND_FRECENCY_KEY = "prefixCommandFrecency";
+
+// クエリが "/" から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋
+// クリップボード履歴。それぞれのキーワード判定ロジック自体は matchSystemCommands /
+// clipboardModeFilter と変えず、ここでは「候補として並べて表示する」ための一覧を
+// 組み立てるだけ）のうち、クエリに前方一致するものを返す。
+// 例: クエリが "/" 単体なら全件、"/sh" なら "/shutdown" のみに絞り込まれる。
+function buildPrefixCommandCandidates(
+  query: string,
+  appSettings: AppSettings
+): PrefixCommand[] {
+  const q = query.trim().toLowerCase();
+  if (!q.startsWith(PREFIX_CHAR)) return [];
+
+  const candidates: PrefixCommand[] = [];
+
+  if (appSettings.systemCommandEnabled) {
+    for (const cmd of matchSystemCommands(query, appSettings)) {
+      candidates.push({
+        keyword: PREFIX_CHAR + systemCommandKeyword(cmd.action, appSettings),
+        description: cmd.label,
+        kind: "system",
+        action: cmd.action,
+      });
+    }
+  }
+
+  if (appSettings.clipboardEnabled) {
+    const full = PREFIX_CHAR + appSettings.clipboardPrefix;
+    if (full.toLowerCase().startsWith(q)) {
+      candidates.push({
+        keyword: full,
+        description: "クリップボード履歴",
+        kind: "clipboard",
+        action: null,
+      });
+    }
+  }
+
+  return candidates;
+}
+
+// ファイル検索結果の frecency（sortByFrecency）と同じスコア計算・decay を、
+// プレフィックスコマンド候補にも適用する。キーは呼び出し文字列（"/shutdown" 等）。
+function sortPrefixCommandsByFrecency(
+  candidates: PrefixCommand[],
+  frecency: FrecencyMap
+): PrefixCommand[] {
+  const now = Date.now();
+  return [...candidates].sort((a, b) => {
+    const scoreDiff =
+      frecencyScore(frecency[b.keyword], now) -
+      frecencyScore(frecency[a.keyword], now);
+    if (scoreDiff !== 0) return scoreDiff;
+    return a.keyword.localeCompare(b.keyword);
+  });
 }
 
 export function useSearch(
@@ -157,54 +247,74 @@ export function useSearch(
   );
   const [frecency, setFrecency] = useState<FrecencyMap>({});
   const frecencyRef = useRef<FrecencyMap>({});
+  const [prefixCommandFrecency, setPrefixCommandFrecency] =
+    useState<FrecencyMap>({});
+  const prefixCommandFrecencyRef = useRef<FrecencyMap>({});
 
   const calcMode = appSettings.calcEnabled && isCalcExpression(query);
-  const systemMatches = useMemo(
-    () =>
-      calcMode || !appSettings.systemCommandEnabled
-        ? []
-        : matchSystemCommands(query),
-    [calcMode, query, appSettings.systemCommandEnabled]
-  );
-  const systemMode = systemMatches.length > 0;
   const clipboardFilterText = appSettings.clipboardEnabled
     ? clipboardModeFilter(query, appSettings.clipboardPrefix)
     : null;
   const clipboardMode = clipboardFilterText !== null;
 
-  // URLエンコード/デコード結果はファイル検索結果を置き換えず、その先頭に共存表示する
-  // （calcMode/systemMode/clipboardMode のような排他モードにはしない）。
+  // クリップボード履歴モード（完全な呼び出しキーワードが入力済み）が有効な間は、
+  // 候補一覧ではなく既存の clipboardMode（2カラムパネル）を優先する。
+  const prefixCommandCandidates = useMemo(
+    () =>
+      calcMode || clipboardMode
+        ? []
+        : sortPrefixCommandsByFrecency(
+            buildPrefixCommandCandidates(query, appSettings),
+            prefixCommandFrecency
+          ),
+    [calcMode, clipboardMode, query, appSettings, prefixCommandFrecency]
+  );
+  const prefixCommandMode = prefixCommandCandidates.length > 0;
+
+  // URLエンコード/デコード結果はファイル検索結果を置き換えず、その先頭付近に共存表示する
+  // （prefixCommandMode/clipboardMode のような排他モードにはしない）。
+  // calcMode（数式らしい入力）は isCalcExpression の許容文字クラスが数字・演算子・括弧・
+  // 空白・小数点のみでレターを含まないため、`http(s)://` から始まる URL 的な入力とは
+  // 構造上同時に true にならない。よってここで calcMode を明示的に除外しなくても
+  // urlConvertResult と calcResult が同時に発生することはない。
   const urlConvertResult = useMemo(() => {
     if (!appSettings.urlConvertEnabled) return null;
-    if (calcMode || systemMode || clipboardMode) return null;
+    if (prefixCommandMode || clipboardMode) return null;
     return detectUrlConvertResult(query, appSettings.urlConvertKeepSpaceEncoded);
   }, [
     appSettings.urlConvertEnabled,
     appSettings.urlConvertKeepSpaceEncoded,
-    calcMode,
-    systemMode,
+    prefixCommandMode,
     clipboardMode,
     query,
   ]);
 
+  // calcMode（数式らしい入力）とファイル検索は排他にせず、両方を独立して実行する。
+  // 計算結果は urlConvertResult と同様にファイル検索結果とは別枠の固定表示領域として
+  // 共存表示するため（詳細は ResultList を参照）、ここでは setResults([]) による
+  // ファイル検索結果のクリアは行わない。
   useEffect(() => {
     setSelected(0);
     if (clipboardMode) {
       setResults([]);
       setCalcResult(null);
-    } else if (appSettings.calcEnabled && isCalcExpression(query)) {
+      return;
+    }
+    if (prefixCommandMode) {
       setResults([]);
+      setCalcResult(null);
+      return;
+    }
+
+    if (appSettings.calcEnabled && isCalcExpression(query)) {
       invoke<string | null>("calculate", { expr: query })
         .then(setCalcResult)
         .catch(console.error);
-    } else if (
-      appSettings.systemCommandEnabled &&
-      matchSystemCommands(query).length > 0
-    ) {
-      setResults([]);
+    } else {
       setCalcResult(null);
-    } else if (appSettings.fileSearchEnabled) {
-      setCalcResult(null);
+    }
+
+    if (appSettings.fileSearchEnabled) {
       invoke<FileEntry[]>("search_files", { query })
         .then((files) => {
           setResults(sortByFrecency(files, frecency));
@@ -212,10 +322,16 @@ export function useSearch(
         })
         .catch(console.error);
     } else {
-      setCalcResult(null);
       setResults([]);
     }
-  }, [query, settingsVersion, appSettings, frecency, clipboardMode]);
+  }, [
+    query,
+    settingsVersion,
+    appSettings,
+    frecency,
+    clipboardMode,
+    prefixCommandMode,
+  ]);
 
   // 起動回数・最終起動時刻を更新し、settings.json の "frecency" キーへ即時永続化する。
   // frecencyRef は useCallback の古いクロージャに残った state を参照してしまうのを避けるための鏡。
@@ -232,6 +348,25 @@ export function useSearch(
     const store = storeRef.current;
     if (store) {
       await store.set("frecency", updated);
+      await store.save();
+    }
+  }, []);
+
+  // プレフィックスコマンド候補の使用回数・最終使用時刻を更新し、settings.json の
+  // "prefixCommandFrecency" キーへ即時永続化する（ファイル検索の frecency と同じ方式）。
+  const recordPrefixCommandFrecency = useCallback(async (keyword: string) => {
+    const now = Date.now();
+    const existing = prefixCommandFrecencyRef.current[keyword];
+    const updated: FrecencyMap = {
+      ...prefixCommandFrecencyRef.current,
+      [keyword]: { count: (existing?.count ?? 0) + 1, lastUsed: now },
+    };
+    prefixCommandFrecencyRef.current = updated;
+    setPrefixCommandFrecency(updated);
+
+    const store = storeRef.current;
+    if (store) {
+      await store.set(PREFIX_COMMAND_FRECENCY_KEY, updated);
       await store.save();
     }
   }, []);
@@ -276,6 +411,25 @@ export function useSearch(
     setPendingCommand(cmd);
   }, []);
 
+  // プレフィックスコマンド候補（システムコマンド／クリップボード履歴）を選択した時点で
+  // 直接実行する。システムコマンドの確認モーダル・重複しないキーワード判定など、個別の
+  // 発火ロジック自体は変更せず、そのまま呼び出すだけ。使用実績は選択（Enter／クリック）
+  // した時点で記録する（システムコマンドは確認モーダルの確定を待たない）。
+  const selectPrefixCommand = useCallback(
+    (candidate: PrefixCommand) => {
+      recordPrefixCommandFrecency(candidate.keyword);
+      if (candidate.kind === "system" && candidate.action) {
+        requestSystemCommand({
+          action: candidate.action,
+          label: candidate.description,
+        });
+      } else if (candidate.kind === "clipboard") {
+        setQuery(candidate.keyword);
+      }
+    },
+    [recordPrefixCommandFrecency, requestSystemCommand]
+  );
+
   const cancelSystemCommand = useCallback(() => {
     setPendingCommand(null);
   }, []);
@@ -295,6 +449,11 @@ export function useSearch(
     setFrecency(data);
   }, []);
 
+  const setInitialPrefixCommandFrecency = useCallback((data: FrecencyMap) => {
+    prefixCommandFrecencyRef.current = data;
+    setPrefixCommandFrecency(data);
+  }, []);
+
   return {
     query,
     setQuery,
@@ -302,9 +461,9 @@ export function useSearch(
     selected,
     setSelected,
     calcResult,
-    calcMode,
-    systemMatches,
-    systemMode,
+    prefixCommandCandidates,
+    prefixCommandMode,
+    selectPrefixCommand,
     clipboardFilterText,
     clipboardMode,
     urlConvertResult,
@@ -317,5 +476,6 @@ export function useSearch(
     copyUrlConvertResult,
     openWebSearch,
     setInitialFrecency,
+    setInitialPrefixCommandFrecency,
   };
 }

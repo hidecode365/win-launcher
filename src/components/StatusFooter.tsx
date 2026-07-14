@@ -3,16 +3,16 @@ export function StatusFooter({
   webSearchVisible,
   isWebSearchSelected,
   clipboardMode,
-  calcMode,
-  systemMode,
+  isCalcSelected,
+  prefixCommandMode,
   isUrlConvertSelected,
 }: {
   pendingCommand: boolean;
   webSearchVisible: boolean;
   isWebSearchSelected: boolean;
   clipboardMode: boolean;
-  calcMode: boolean;
-  systemMode: boolean;
+  isCalcSelected: boolean;
+  prefixCommandMode: boolean;
   isUrlConvertSelected: boolean;
 }) {
   return (
@@ -30,13 +30,11 @@ export function StatusFooter({
               ? "Enter ブラウザで開く"
               : clipboardMode
                 ? "Enter クリップボードにセット"
-                : calcMode
-                  ? "Enter コピー"
-                  : systemMode
-                    ? "Enter 確認"
-                    : isUrlConvertSelected
-                      ? "Enter コピー"
-                      : "Enter 起動"}
+                : prefixCommandMode
+                  ? "Enter 実行"
+                  : isCalcSelected || isUrlConvertSelected
+                    ? "Enter コピー"
+                    : "Enter 起動"}
           </span>
           <span>Esc 閉じる</span>
         </>

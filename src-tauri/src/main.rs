@@ -22,6 +22,9 @@ use walkdir::WalkDir;
 
 const SETTINGS_STORE: &str = "settings.json";
 const DEFAULT_HOTKEY: &str = "Alt+Space";
+const DEFAULT_SHUTDOWN_KEYWORD: &str = "shutdown";
+const DEFAULT_RESTART_KEYWORD: &str = "restart";
+const DEFAULT_SLEEP_KEYWORD: &str = "sleep";
 const DEFAULT_CLIPBOARD_PREFIX: &str = "cb";
 const DEFAULT_CLIPBOARD_MAX_ITEMS: u32 = 50;
 const CLIPBOARD_THUMBNAIL_MAX_WIDTH: u32 = 320;
@@ -311,6 +314,22 @@ fn default_true() -> bool {
     true
 }
 
+// shutdown/restart/sleep_keyword は既存の url_convert_enabled 等と同様、後から追加した
+// フィールド。旧バージョンの settings.json（このキーを持たない）を読み込んだ際に
+// deserialize が失敗して AppSettings 全体がデフォルトへフォールバックしないよう、
+// serde(default) で個別にデフォルト値を補う。
+fn default_shutdown_keyword() -> String {
+    DEFAULT_SHUTDOWN_KEYWORD.to_string()
+}
+
+fn default_restart_keyword() -> String {
+    DEFAULT_RESTART_KEYWORD.to_string()
+}
+
+fn default_sleep_keyword() -> String {
+    DEFAULT_SLEEP_KEYWORD.to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -318,6 +337,12 @@ struct AppSettings {
     file_search_enabled: bool,
     calc_enabled: bool,
     system_command_enabled: bool,
+    #[serde(default = "default_shutdown_keyword")]
+    shutdown_keyword: String,
+    #[serde(default = "default_restart_keyword")]
+    restart_keyword: String,
+    #[serde(default = "default_sleep_keyword")]
+    sleep_keyword: String,
     web_search_enabled: bool,
     copy_with_comma: bool,
     clipboard_enabled: bool,
@@ -338,6 +363,9 @@ impl Default for AppSettings {
             file_search_enabled: true,
             calc_enabled: true,
             system_command_enabled: true,
+            shutdown_keyword: DEFAULT_SHUTDOWN_KEYWORD.to_string(),
+            restart_keyword: DEFAULT_RESTART_KEYWORD.to_string(),
+            sleep_keyword: DEFAULT_SLEEP_KEYWORD.to_string(),
             web_search_enabled: true,
             copy_with_comma: true,
             clipboard_enabled: true,
@@ -349,6 +377,31 @@ impl Default for AppSettings {
             url_convert_keep_space_encoded: false,
         }
     }
+}
+
+// システムコマンド3キーワード＋クリップボード呼び出しキーワードは、"/" に続く文字列として
+// 互いに重複してはならない（重複すると前方一致判定でどちらのモードか一意に決まらないため）。
+// `changing` には変更しようとしているフィールドの識別子（"shutdown"/"restart"/"sleep"/
+// "clipboard"）を渡し、自分自身は比較対象から除外する。大文字小文字の区別は、フロントエンド
+// の前方一致判定ロジック（`toLowerCase()` による比較）に合わせて行わない。
+fn validate_unique_keyword(
+    settings: &AppSettings,
+    changing: &str,
+    new_value: &str,
+) -> Result<(), String> {
+    let entries: [(&str, &str); 4] = [
+        ("shutdown", settings.shutdown_keyword.as_str()),
+        ("restart", settings.restart_keyword.as_str()),
+        ("sleep", settings.sleep_keyword.as_str()),
+        ("clipboard", settings.clipboard_prefix.as_str()),
+    ];
+    let conflict = entries
+        .iter()
+        .any(|(name, kw)| *name != changing && kw.to_lowercase() == new_value.to_lowercase());
+    if conflict {
+        return Err("他のキーワードと重複しています".to_string());
+    }
+    Ok(())
 }
 
 fn load_app_settings(app: &AppHandle) -> AppSettings {
@@ -392,6 +445,28 @@ fn set_calc_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String
 fn set_system_command_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.system_command_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_system_command_keyword(
+    app: AppHandle,
+    command: String,
+    keyword: String,
+) -> Result<AppSettings, String> {
+    let trimmed = keyword.trim();
+    if trimmed.is_empty() {
+        return Err("キーワードを入力してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    validate_unique_keyword(&settings, command.as_str(), trimmed)?;
+    match command.as_str() {
+        "shutdown" => settings.shutdown_keyword = trimmed.to_string(),
+        "restart" => settings.restart_keyword = trimmed.to_string(),
+        "sleep" => settings.sleep_keyword = trimmed.to_string(),
+        _ => return Err(format!("unknown command: {command}")),
+    }
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -446,6 +521,7 @@ fn set_clipboard_prefix(app: AppHandle, prefix: String) -> Result<AppSettings, S
         return Err("プレフィックスを入力してください".to_string());
     }
     let mut settings = load_app_settings(&app);
+    validate_unique_keyword(&settings, "clipboard", trimmed)?;
     settings.clipboard_prefix = trimmed.to_string();
     save_app_settings(&app, &settings)?;
     Ok(settings)
@@ -987,6 +1063,8 @@ enum Token {
     Minus,
     Star,
     Slash,
+    LParen,
+    RParen,
 }
 
 fn tokenize(input: &str) -> Option<Vec<Token>> {
@@ -1011,6 +1089,14 @@ fn tokenize(input: &str) -> Option<Vec<Token>> {
             }
             '/' => {
                 tokens.push(Token::Slash);
+                i += 1;
+            }
+            '(' => {
+                tokens.push(Token::LParen);
+                i += 1;
+            }
+            ')' => {
+                tokens.push(Token::RParen);
                 i += 1;
             }
             _ if c.is_ascii_digit() || c == '.' => {
@@ -1079,7 +1165,7 @@ impl Parser {
         Some(value)
     }
 
-    // factor := ('+' | '-')* number
+    // factor := ('+' | '-')* (number | '(' expr ')')
     fn parse_factor(&mut self) -> Option<f64> {
         match self.peek()? {
             Token::Minus => {
@@ -1093,6 +1179,17 @@ impl Parser {
             Token::Num(n) => {
                 self.pos += 1;
                 Some(n)
+            }
+            Token::LParen => {
+                self.pos += 1;
+                let value = self.parse_expr()?;
+                match self.peek() {
+                    Some(Token::RParen) => {
+                        self.pos += 1;
+                        Some(value)
+                    }
+                    _ => None,
+                }
             }
             _ => None,
         }
@@ -1361,6 +1458,7 @@ fn main() {
             set_file_search_enabled,
             set_calc_enabled,
             set_system_command_enabled,
+            set_system_command_keyword,
             set_web_search_enabled,
             set_copy_with_comma,
             set_url_convert_enabled,

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AppSettings, DEFAULT_APP_SETTINGS, FolderEntry } from "../types";
+import {
+  AppSettings,
+  DEFAULT_APP_SETTINGS,
+  FolderEntry,
+  SystemCommandAction,
+  SystemCommandKeywordErrors,
+} from "../types";
 
 export function useSettings(showSettings: boolean) {
   const [appSettings, setAppSettings] = useState<AppSettings>(
@@ -11,6 +17,12 @@ export function useSettings(showSettings: boolean) {
   const [clipboardSettingsError, setClipboardSettingsError] = useState<
     string | null
   >(null);
+  const [systemCommandKeywordErrors, setSystemCommandKeywordErrors] =
+    useState<SystemCommandKeywordErrors>({
+      shutdown: null,
+      restart: null,
+      sleep: null,
+    });
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
@@ -72,6 +84,25 @@ export function useSettings(showSettings: boolean) {
     }).catch(() => null);
     if (updated) setAppSettings(updated);
   }, []);
+
+  const setSystemCommandKeyword = useCallback(
+    async (command: SystemCommandAction, keyword: string) => {
+      setSystemCommandKeywordErrors((prev) => ({ ...prev, [command]: null }));
+      try {
+        const updated = await invoke<AppSettings>(
+          "set_system_command_keyword",
+          { command, keyword }
+        );
+        setAppSettings(updated);
+      } catch (e) {
+        setSystemCommandKeywordErrors((prev) => ({
+          ...prev,
+          [command]: String(e),
+        }));
+      }
+    },
+    []
+  );
 
   const setWebSearchEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_web_search_enabled", {
@@ -154,6 +185,10 @@ export function useSettings(showSettings: boolean) {
     setClipboardSettingsError(null);
   }, []);
 
+  const resetSystemCommandKeywordErrors = useCallback(() => {
+    setSystemCommandKeywordErrors({ shutdown: null, restart: null, sleep: null });
+  }, []);
+
   return {
     appSettings,
     setAppSettings,
@@ -162,12 +197,15 @@ export function useSettings(showSettings: boolean) {
     folders,
     clipboardSettingsError,
     resetClipboardSettingsError,
+    systemCommandKeywordErrors,
+    resetSystemCommandKeywordErrors,
     setFileSearchEnabled,
     setCalcEnabled,
     setCopyWithComma,
     setUrlConvertEnabled,
     setUrlConvertKeepSpaceEncoded,
     setSystemCommandEnabled,
+    setSystemCommandKeyword,
     setWebSearchEnabled,
     setClipboardEnabled,
     setClipboardPrefix,

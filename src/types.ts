@@ -21,6 +21,9 @@ export interface AppSettings {
   fileSearchEnabled: boolean;
   calcEnabled: boolean;
   systemCommandEnabled: boolean;
+  shutdownKeyword: string;
+  restartKeyword: string;
+  sleepKeyword: string;
   webSearchEnabled: boolean;
   copyWithComma: boolean;
   clipboardEnabled: boolean;
@@ -37,6 +40,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   fileSearchEnabled: true,
   calcEnabled: true,
   systemCommandEnabled: true,
+  shutdownKeyword: "shutdown",
+  restartKeyword: "restart",
+  sleepKeyword: "sleep",
   webSearchEnabled: true,
   copyWithComma: true,
   clipboardEnabled: true,
@@ -62,10 +68,27 @@ export interface UrlConvertResult {
   kind: "decode" | "encode";
 }
 
+export type SystemCommandAction = "shutdown" | "restart" | "sleep";
+
 export interface SystemCommand {
-  action: "shutdown" | "restart" | "sleep";
+  action: SystemCommandAction;
   label: string;
-  keywords: string[];
+}
+
+// システムコマンド3キーワードそれぞれの保存エラー（重複・空文字列等）。
+// フィールドごとに独立して表示するため、単一の文字列ではなくコマンドごとに保持する。
+export type SystemCommandKeywordErrors = Record<SystemCommandAction, string | null>;
+
+export type PrefixCommandKind = "system" | "clipboard";
+
+// 「/」候補一覧（プレフィックスコマンド候補表示）の1件分。
+// keyword は「/」+ キーワード全体（例: "/shutdown"）。選択・実行時の分岐と
+// frecency 永続化のキーの両方に使う。kind が "system" の場合のみ action を持つ。
+export interface PrefixCommand {
+  keyword: string;
+  description: string;
+  kind: PrefixCommandKind;
+  action: SystemCommandAction | null;
 }
 
 export interface ClipboardTextEntry {
