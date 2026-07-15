@@ -59,6 +59,13 @@ Light（ライトテーマ固定。ダークテーマ化しない）
 
 Windows 11 Fluent（角丸ウィンドウ、半透明のアクリル風パネル、淡い配色）
 
+## System Requirements
+
+- Windows 11（x64）
+- 追加のランタイムは不要です
+
+上記2項目以外のスペック（RAM容量・ストレージ容量・詳細バージョン等）を憶測で追加しないこと。
+
 ## Technology
 
 - Tauri v2
