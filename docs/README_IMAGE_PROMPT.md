@@ -12,14 +12,19 @@
 実際に描画する機能名・バージョン番号・ショートカット等の具体的な値は、
 このプロンプトには含めず、必ず `docs/README_IMAGE_SPEC.md` の内容を参照して埋めること。
 
-ChatGPT等へ依頼する際は、以下のプロンプト本文に加えて、下記4枚のスクリーンショットファイルと
-現在の `docs/screenshot-readme.png` を画像として添付して渡す運用とする。
+ChatGPT等へ依頼する際は、以下のプロンプト本文に加えて、参照元の画像を渡す。
 
-- `docs/screenshot-search.png`（ファイル検索）
-- `docs/screenshot-settings.png`（設定画面）
-- `docs/screenshot-clipboard.png`（クリップボード履歴）
-- `docs/screenshot-ocr.png`（OCR）
-- `docs/screenshot-readme.png`（現行のトップ画像。差し替え前の参考として添付）
+- リポジトリURL: <https://github.com/hidecode365/win-launcher>
+- 各画像は以下の raw URL から直接取得できる
+  - アプリアイコン: <https://raw.githubusercontent.com/hidecode365/win-launcher/main/src-tauri/icons/32x32.png>
+  - ファイル検索: <https://raw.githubusercontent.com/hidecode365/win-launcher/main/docs/screenshot-search.png>
+  - 設定画面: <https://raw.githubusercontent.com/hidecode365/win-launcher/main/docs/screenshot-settings.png>
+  - クリップボード履歴: <https://raw.githubusercontent.com/hidecode365/win-launcher/main/docs/screenshot-clipboard.png>
+  - OCR: <https://raw.githubusercontent.com/hidecode365/win-launcher/main/docs/screenshot-ocr.png>
+  - 現行のトップ画像: <https://raw.githubusercontent.com/hidecode365/win-launcher/main/docs/screenshot-readme.png>
+
+生成AI側がURLから画像を直接取得できるブラウジング機能を持つ場合は、上記URLを本文中に記載して
+そのまま生成を依頼できる。取得できない場合は、従来通り該当ファイルを画像として手動添付すること。
 
 ```text
 Windows 11 向けキーボードランチャーアプリ「WinLauncher」の紹介用インフォグラフィック画像を1枚生成してください。
@@ -30,10 +35,12 @@ GitHub の README.md 冒頭に掲載する横長のバナー画像です。
   「Main Features」に列挙された項目は、省略せず必ずすべて描いてください。
 - ライトテーマ・Windows 11 Fluent 風のUI（角丸・淡い配色・半透明のアクリル風パネル）を維持してください。
   ダークテーマ化しないでください。
-- 中央下に配置する4枚のスクリーンショット風モックアップは、以下の実際のスクリーンショットファイルを
+- 中央上部に大きく表示するメインスクリーンショット（ファイル検索画面）は、実際のスクリーンショットファイル
+  docs/screenshot-search.png を忠実に模倣してください（色・配置・UI要素を正確に再現し、勝手にデザインを
+  変えないでください）。他の画面と合成せず、単体でそのまま拡大したような扱いにしてください。
+- 中央下に配置する3枚のスクリーンショット風モックアップは、以下の実際のスクリーンショットファイルを
   忠実に模倣してください（色・配置・UI要素を正確に再現し、勝手にデザインを変えないでください）。
-  架空の見た目にせず、それぞれ添付する実ファイルの見た目をそのまま縮小・簡略化する形で描いてください。
-  - docs/screenshot-search.png（ファイル検索）
+  架空の見た目にせず、それぞれ参照する実ファイルの見た目をそのまま縮小・簡略化する形で描いてください。
   - docs/screenshot-settings.png（設定画面）
   - docs/screenshot-clipboard.png（クリップボード履歴）
   - docs/screenshot-ocr.png（OCR）
@@ -45,9 +52,10 @@ GitHub の README.md 冒頭に掲載する横長のバナー画像です。
 
 ## 全体レイアウト
 - 左上：タイトルロゴ（アプリ名のロゴタイプ）＋ バージョンバッジ（README_IMAGE_SPEC.md の Version を表示）
-- 中央上：検索画面のスクリーンショット風モックアップ＋ 操作方法を紹介する吹き出し（複数可）
+- 中央上：メインスクリーンショット（README_IMAGE_SPEC.md の Screenshots > Main。実際の検索画面を
+  他の画面と合成せずそのまま大きめに表示する）＋ 操作方法を紹介する吹き出し（複数可）
 - 左側：主な機能一覧（アイコン＋タイトル＋説明文を縦に並べる。README_IMAGE_SPEC.md の Main Features を全項目反映）
-- 中央下：機能別スクリーンショット4点（README_IMAGE_SPEC.md の Screenshots に挙げた画面。それぞれキャプション付き）
+- 中央下：機能別スクリーンショット3点（README_IMAGE_SPEC.md の Screenshots > Sub に挙げた画面。それぞれキャプション付き）
 - その下：使い方（ショートカットキー一覧。README_IMAGE_SPEC.md の Shortcuts を全項目、キーキャップ風のボックスで並べる）
 - 右側：インストール手順／システム要件／技術スタック／ライセンス／注意書き
   （それぞれ README_IMAGE_SPEC.md の Notes・System Requirements・Technology・License の内容を反映する）
