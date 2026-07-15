@@ -12,6 +12,7 @@ import { ConvertSettings } from "./ConvertSettings";
 import { SystemCommandSettings } from "./SystemCommandSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { ClipboardSettings } from "./ClipboardSettings";
+import { RecentFilesSettings } from "./RecentFilesSettings";
 import { OcrSettings } from "./OcrSettings";
 import { AboutSettings } from "./AboutSettings";
 
@@ -22,6 +23,7 @@ type SettingsTab =
   | "systemCommand"
   | "webSearch"
   | "clipboard"
+  | "recent"
   | "ocr"
   | "about";
 
@@ -32,6 +34,7 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "systemCommand", label: "システムコマンド" },
   { id: "webSearch", label: "Web検索" },
   { id: "clipboard", label: "クリップボード" },
+  { id: "recent", label: "最近使ったファイル" },
   { id: "ocr", label: "OCR" },
   { id: "about", label: "このアプリについて" },
 ];
@@ -53,6 +56,9 @@ export function SettingsPanel({
   onSetClipboardPrefix,
   onSetClipboardMaxItems,
   clipboardSettingsError,
+  onSetRecentFilesEnabled,
+  onSetRecentKeyword,
+  recentSettingsError,
   onSetOcrEnabled,
   onSetCheckUpdateOnStartup,
   folders,
@@ -81,6 +87,9 @@ export function SettingsPanel({
   onSetClipboardPrefix: (prefix: string) => void;
   onSetClipboardMaxItems: (maxItems: number) => void;
   clipboardSettingsError: string | null;
+  onSetRecentFilesEnabled: (checked: boolean) => void;
+  onSetRecentKeyword: (keyword: string) => void;
+  recentSettingsError: string | null;
   onSetOcrEnabled: (checked: boolean) => void;
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
   folders: FolderEntry[];
@@ -203,6 +212,15 @@ export function SettingsPanel({
               maxItems={appSettings.clipboardMaxItems}
               onChangeMaxItems={onSetClipboardMaxItems}
               error={clipboardSettingsError}
+            />
+          )}
+          {tab === "recent" && (
+            <RecentFilesSettings
+              enabled={appSettings.recentFilesEnabled}
+              onToggle={onSetRecentFilesEnabled}
+              keyword={appSettings.recentKeyword}
+              onChangeKeyword={onSetRecentKeyword}
+              error={recentSettingsError}
             />
           )}
           {tab === "ocr" && (

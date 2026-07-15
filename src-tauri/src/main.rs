@@ -20,6 +20,8 @@ use tauri_plugin_store::StoreExt;
 use tauri_plugin_updater::UpdaterExt;
 use walkdir::WalkDir;
 
+mod recent_files;
+
 const SETTINGS_STORE: &str = "settings.json";
 const DEFAULT_HOTKEY: &str = "Alt+Space";
 const DEFAULT_SHUTDOWN_KEYWORD: &str = "shutdown";
@@ -27,7 +29,10 @@ const DEFAULT_RESTART_KEYWORD: &str = "restart";
 const DEFAULT_SLEEP_KEYWORD: &str = "sleep";
 const DEFAULT_CLIPBOARD_PREFIX: &str = "cb";
 const DEFAULT_CLIPBOARD_MAX_ITEMS: u32 = 50;
+const DEFAULT_RECENT_KEYWORD: &str = "recent";
 const CLIPBOARD_THUMBNAIL_MAX_WIDTH: u32 = 320;
+// ファイル検索結果・最近使ったファイル一覧の共通の表示件数上限。
+const MAX_SEARCH_RESULTS: usize = 50;
 
 /// クリップボード変更通知用のウィンドウサブクラスプロシージャ（`extern "system"`）は
 /// クロージャで `AppHandle` を捕捉できないため、`setup()` で一度だけ設定したハンドルを
@@ -330,6 +335,10 @@ fn default_sleep_keyword() -> String {
     DEFAULT_SLEEP_KEYWORD.to_string()
 }
 
+fn default_recent_keyword() -> String {
+    DEFAULT_RECENT_KEYWORD.to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -354,6 +363,10 @@ struct AppSettings {
     url_convert_enabled: bool,
     #[serde(default)]
     url_convert_keep_space_encoded: bool,
+    #[serde(default = "default_true")]
+    recent_files_enabled: bool,
+    #[serde(default = "default_recent_keyword")]
+    recent_keyword: String,
 }
 
 impl Default for AppSettings {
@@ -375,6 +388,8 @@ impl Default for AppSettings {
             check_update_on_startup: true,
             url_convert_enabled: true,
             url_convert_keep_space_encoded: false,
+            recent_files_enabled: true,
+            recent_keyword: DEFAULT_RECENT_KEYWORD.to_string(),
         }
     }
 }
@@ -389,11 +404,12 @@ fn validate_unique_keyword(
     changing: &str,
     new_value: &str,
 ) -> Result<(), String> {
-    let entries: [(&str, &str); 4] = [
+    let entries: [(&str, &str); 5] = [
         ("shutdown", settings.shutdown_keyword.as_str()),
         ("restart", settings.restart_keyword.as_str()),
         ("sleep", settings.sleep_keyword.as_str()),
         ("clipboard", settings.clipboard_prefix.as_str()),
+        ("recent", settings.recent_keyword.as_str()),
     ];
     let conflict = entries
         .iter()
@@ -536,6 +552,32 @@ fn set_clipboard_max_items(app: AppHandle, max_items: u32) -> Result<AppSettings
     settings.clipboard_max_items = max_items;
     save_app_settings(&app, &settings)?;
     Ok(settings)
+}
+
+#[tauri::command]
+fn set_recent_files_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.recent_files_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_recent_keyword(app: AppHandle, keyword: String) -> Result<AppSettings, String> {
+    let trimmed = keyword.trim();
+    if trimmed.is_empty() {
+        return Err("キーワードを入力してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    validate_unique_keyword(&settings, "recent", trimmed)?;
+    settings.recent_keyword = trimmed.to_string();
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn get_recent_files() -> Vec<recent_files::RecentFile> {
+    recent_files::get_recent_files(MAX_SEARCH_RESULTS)
 }
 
 #[tauri::command]
@@ -980,7 +1022,7 @@ fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
                 let path = entry.path().to_string_lossy().to_string();
                 let icon = shell_icon::get_icon_data_url(&path);
                 results.push(FileEntry { name, path, icon });
-                if results.len() >= 50 {
+                if results.len() >= MAX_SEARCH_RESULTS {
                     break 'outer;
                 }
             }
@@ -1468,6 +1510,9 @@ fn main() {
             set_clipboard_max_items,
             paste_clipboard_image,
             set_hotkey,
+            set_recent_files_enabled,
+            set_recent_keyword,
+            get_recent_files,
             set_ocr_enabled,
             ocr_from_clipboard,
             set_check_update_on_startup,

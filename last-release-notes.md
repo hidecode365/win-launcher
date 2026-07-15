@@ -1,6 +1,10 @@
-## v0.4.0
+## 新機能
 
-- Calculator now supports parentheses `( )` for explicit operator precedence (e.g. `(1+3)/3`, `2*(3+4)`).
-- Calculation results and URL encode/decode results are now shown alongside file search results instead of replacing them, so you can see both at once.
-- System commands (shutdown / restart / sleep) and clipboard history are now invoked with an explicit prefix (`/shutdown`, `/restart`, `/sleep`, `/cb`). Each command's keyword can be customized individually in Settings.
-- Typing `/` now shows a list of available prefix commands, ranked by how often you use them.
+- 「最近使ったファイル一覧」機能を追加しました(`/recent`で呼び出し)
+  - Windowsの「最近使ったファイル」に加え、Office(Excel/Word/PowerPoint)独自の履歴、OneDrive上のファイルにも対応
+  - 呼び出しキーワードは設定画面から変更可能です
+
+## 不具合修正
+
+- ウィンドウを再表示した際に、検索結果エリアが一瞬白く表示されることがある不具合を修正しました
+- 検索結果の一覧をマウスカーソルが乗っている状態でキーボード操作すると、選択位置が意図せず入れ替わってしまうことがある不具合を修正しました

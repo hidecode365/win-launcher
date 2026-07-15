@@ -158,10 +158,12 @@ export default function App() {
     setSettingsVersion((v) => v + 1);
     hotkey.resetHotkeyError();
     settings.resetClipboardSettingsError();
+    settings.resetRecentSettingsError();
     settings.resetSystemCommandKeywordErrors();
   }, [
     hotkey.resetHotkeyError,
     settings.resetClipboardSettingsError,
+    settings.resetRecentSettingsError,
     settings.resetSystemCommandKeywordErrors,
   ]);
 
@@ -357,6 +359,9 @@ export default function App() {
         onSetClipboardPrefix={settings.setClipboardPrefix}
         onSetClipboardMaxItems={settings.setClipboardMaxItems}
         clipboardSettingsError={settings.clipboardSettingsError}
+        onSetRecentFilesEnabled={settings.setRecentFilesEnabled}
+        onSetRecentKeyword={settings.setRecentKeyword}
+        recentSettingsError={settings.recentSettingsError}
         onSetOcrEnabled={settings.setOcrEnabled}
         onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
         folders={settings.folders}
@@ -377,6 +382,7 @@ export default function App() {
       className={`relative flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl transition-opacity duration-[180ms] ${
         ocrClosing ? "opacity-0" : "opacity-100"
       }`}
+      onMouseMove={(e) => search.recordMouseMove(e.clientX, e.clientY)}
     >
       {/* システムコマンド確認モーダル */}
       {search.pendingCommand && (
@@ -430,7 +436,7 @@ export default function App() {
           <ClipboardPanel
             entries={clipboard.clipboardEntries}
             selected={search.selected}
-            onSelect={search.setSelected}
+            onSelect={search.selectFromHover}
             onSelectEntry={clipboard.selectClipboardEntry}
             initialLeftWidth={clipboardPaneWidth}
             onWidthChange={handlePaneWidthChange}
@@ -446,7 +452,7 @@ export default function App() {
             selected={search.selected}
             baseLength={baseLength}
             webSearchVisible={webSearchVisible}
-            onSelect={search.setSelected}
+            onSelect={search.selectFromHover}
             onCopyResult={search.copyResult}
             onSelectPrefixCommand={search.selectPrefixCommand}
             onLaunchFile={search.launchFile}

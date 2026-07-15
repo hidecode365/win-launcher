@@ -20,7 +20,7 @@ export function ClipboardPanel({
 }: {
   entries: ClipboardEntry[];
   selected: number;
-  onSelect: (index: number) => void;
+  onSelect: (index: number, clientX: number, clientY: number) => void;
   onSelectEntry: (entry: ClipboardEntry) => void;
   initialLeftWidth?: number;
   onWidthChange?: (width: number) => void;
@@ -89,7 +89,7 @@ export function ClipboardPanel({
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onSelectEntry(entry)}
-              onMouseEnter={() => onSelect(i)}
+              onMouseEnter={(e) => onSelect(i, e.clientX, e.clientY)}
             >
               {entry.type === "image" ? (
                 <img

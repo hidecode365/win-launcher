@@ -16,6 +16,7 @@ import {
   FileEntry,
   FrecencyMap,
   PrefixCommand,
+  RecentFile,
   SystemCommand,
   UrlConvertResult,
 } from "../types";
@@ -24,6 +25,11 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const WEEK_MS = 7 * DAY_MS;
 const MONTH_MS = 30 * DAY_MS;
+
+// キーボード（↑↓）で選択操作をした直後、この時間内に発生した onMouseEnter による
+// 選択変更は無視する。オートスクロールでカーソル直下の行が入れ替わっただけの
+// 非ユーザー起因の mouseenter が、キーボード操作の結果を横から上書きするのを防ぐため。
+const HOVER_SUPPRESS_AFTER_KEYBOARD_MS = 200;
 
 function decayFactor(lastUsed: number, now: number): number {
   const elapsed = now - lastUsed;
@@ -175,6 +181,14 @@ function clipboardModeFilter(
   return query.slice(full.length).trim();
 }
 
+// クエリが "/" + 呼び出しキーワードに前方一致する場合、続く文字列（最近使ったファイル
+// 一覧のファイル名フィルタ）を返す。判定方式は clipboardModeFilter と同じ。
+function recentModeFilter(query: string, recentKeyword: string): string | null {
+  const full = PREFIX_CHAR + recentKeyword;
+  if (!query.toLowerCase().startsWith(full.toLowerCase())) return null;
+  return query.slice(full.length).trim();
+}
+
 const PREFIX_COMMAND_FRECENCY_KEY = "prefixCommandFrecency";
 
 // クエリが "/" から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋
@@ -214,6 +228,18 @@ function buildPrefixCommandCandidates(
     }
   }
 
+  if (appSettings.recentFilesEnabled) {
+    const full = PREFIX_CHAR + appSettings.recentKeyword;
+    if (full.toLowerCase().startsWith(q)) {
+      candidates.push({
+        keyword: full,
+        description: "最近使ったファイル",
+        kind: "recent",
+        action: null,
+      });
+    }
+  }
+
   return candidates;
 }
 
@@ -240,7 +266,7 @@ export function useSearch(
 ) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FileEntry[]>([]);
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelectedRaw] = useState(0);
   const [calcResult, setCalcResult] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<SystemCommand | null>(
     null
@@ -250,42 +276,137 @@ export function useSearch(
   const [prefixCommandFrecency, setPrefixCommandFrecency] =
     useState<FrecencyMap>({});
   const prefixCommandFrecencyRef = useRef<FrecencyMap>({});
+  const [rawRecentFiles, setRawRecentFiles] = useState<RecentFile[]>([]);
+
+  // search_files・get_recent_files の非同期呼び出しに世代 ID を振り、.then() 発火時点で
+  // 自分が最新の呼び出しかどうかを確認してから setResults 等を反映する。呼び出し後に
+  // クエリやモードが変わっていた場合（古い呼び出しが後から発火した場合）は結果を破棄し、
+  // 現在アクティブなモードの状態を横から上書きしないようにする。
+  const asyncCallIdRef = useRef(0);
+
+  // launchFile 等、アクション完了後に setQuery("") でウィンドウを閉じる直前だけ、
+  // その空クエリへの変化が引き起こす search_files の再実行（ウィンドウを閉じるだけなら
+  // 不要な処理）を1回だけ抑止するためのフラグ。
+  const suppressNextSearchRef = useRef(false);
+
+  // 直近にキーボード（↑↓）で選択操作を行った時刻。
+  const lastKeyboardNavAtRef = useRef(0);
+
+  // 直近に実際のマウス移動（mousemove）で観測されたクライアント座標。
+  // onMouseEnter はカーソルが静止したまま一覧の再描画・スクロールで行が入れ替わっただけ
+  // でも発火し得るため、「本当にマウスが動いた結果の hover か」を判定する基準にする。
+  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // キーボードによる選択操作。ホバー抑止の基準時刻を更新してから反映する。
+  const setSelected = useCallback(
+    (value: number | ((prev: number) => number)) => {
+      lastKeyboardNavAtRef.current = Date.now();
+      setSelectedRaw(value);
+    },
+    []
+  );
+
+  // ルートコンテナの onMouseMove から呼ぶ。実際にカーソルが動いた座標だけを記録する
+  // （onMouseEnter 自体からは更新しない。mouseenter は、同じ物理的な移動に対して発火する
+  // mousemove より先に発火するため、比較時点ではまだ「移動前」の座標が残っている）。
+  const recordMouseMove = useCallback((clientX: number, clientY: number) => {
+    lastMousePosRef.current = { x: clientX, y: clientY };
+  }, []);
+
+  // マウスホバー（onMouseEnter）による選択操作。以下のいずれかに該当する場合は、
+  // ユーザーの意図的な操作ではないとみなして無視する。
+  // 1. 直近のキーボード操作から HOVER_SUPPRESS_AFTER_KEYBOARD_MS 以内（従来からの判定）
+  // 2. mouseenter 発火時点の座標が、直近に実際のマウス移動で観測された座標と
+  //    実質的に同じ（＝カーソル自体は静止しており、一覧の再描画・スクロールで
+  //    たまたまその行がカーソル直下に来ただけ）
+  const selectFromHover = useCallback(
+    (index: number, clientX: number, clientY: number) => {
+      if (Date.now() - lastKeyboardNavAtRef.current < HOVER_SUPPRESS_AFTER_KEYBOARD_MS) {
+        return;
+      }
+      const last = lastMousePosRef.current;
+      const cursorStationary =
+        last !== null &&
+        Math.abs(last.x - clientX) < 1 &&
+        Math.abs(last.y - clientY) < 1;
+      if (cursorStationary) {
+        return;
+      }
+      setSelectedRaw(index);
+    },
+    []
+  );
 
   const calcMode = appSettings.calcEnabled && isCalcExpression(query);
   const clipboardFilterText = appSettings.clipboardEnabled
     ? clipboardModeFilter(query, appSettings.clipboardPrefix)
     : null;
   const clipboardMode = clipboardFilterText !== null;
+  const recentFilterText = appSettings.recentFilesEnabled
+    ? recentModeFilter(query, appSettings.recentKeyword)
+    : null;
+  const recentMode = recentFilterText !== null;
 
-  // クリップボード履歴モード（完全な呼び出しキーワードが入力済み）が有効な間は、
-  // 候補一覧ではなく既存の clipboardMode（2カラムパネル）を優先する。
+  // 最近使ったファイル一覧モードに入ったタイミング（false → true の遷移）でのみ
+  // get_recent_files を呼び直す。フィルタ文字列の変更ごとには再取得しない
+  // （既に取得済みの一覧をフロントエンド側でフィルタするだけにする）。
+  useEffect(() => {
+    if (!recentMode) return;
+    const callId = ++asyncCallIdRef.current;
+    invoke<RecentFile[]>("get_recent_files")
+      .then((files) => {
+        if (asyncCallIdRef.current !== callId) return; // 古い呼び出しの結果は破棄する
+        setRawRecentFiles(files);
+      })
+      .catch(console.error);
+  }, [recentMode]);
+
+  // 取得済みの一覧を表示名（.lnk はファイル名、.url は拡張子除去後の名称。
+  // いずれも RecentFile.name に統一済み）への部分一致でフィルタする。
+  // 既に最終アクセス日時降順で取得済みのため、フィルタ後も順序はそのまま維持される。
+  //
+  // RecentFile.path は .lnk 由来・.url 由来のいずれも実在確認済みのローカルパスに
+  // 統一されているため（.url は OneDrive のローカル同期先パスへの変換に成功した
+  // ものだけが一覧に含まれる）、既存の launchFile をそのまま使い回せる。
+  const recentResults = useMemo<FileEntry[]>(() => {
+    if (!recentMode) return [];
+    const filterLower = (recentFilterText ?? "").toLowerCase();
+    const filtered = filterLower
+      ? rawRecentFiles.filter((f) => f.name.toLowerCase().includes(filterLower))
+      : rawRecentFiles;
+    return filtered.map((f) => ({ name: f.name, path: f.path, icon: null }));
+  }, [recentMode, recentFilterText, rawRecentFiles]);
+
+  // クリップボード履歴モード・最近使ったファイル一覧モード（完全な呼び出しキーワードが
+  // 入力済み）が有効な間は、候補一覧ではなくそれぞれの専用モードを優先する。
   const prefixCommandCandidates = useMemo(
     () =>
-      calcMode || clipboardMode
+      calcMode || clipboardMode || recentMode
         ? []
         : sortPrefixCommandsByFrecency(
             buildPrefixCommandCandidates(query, appSettings),
             prefixCommandFrecency
           ),
-    [calcMode, clipboardMode, query, appSettings, prefixCommandFrecency]
+    [calcMode, clipboardMode, recentMode, query, appSettings, prefixCommandFrecency]
   );
   const prefixCommandMode = prefixCommandCandidates.length > 0;
 
   // URLエンコード/デコード結果はファイル検索結果を置き換えず、その先頭付近に共存表示する
-  // （prefixCommandMode/clipboardMode のような排他モードにはしない）。
+  // （prefixCommandMode/clipboardMode/recentMode のような排他モードにはしない）。
   // calcMode（数式らしい入力）は isCalcExpression の許容文字クラスが数字・演算子・括弧・
   // 空白・小数点のみでレターを含まないため、`http(s)://` から始まる URL 的な入力とは
   // 構造上同時に true にならない。よってここで calcMode を明示的に除外しなくても
   // urlConvertResult と calcResult が同時に発生することはない。
   const urlConvertResult = useMemo(() => {
     if (!appSettings.urlConvertEnabled) return null;
-    if (prefixCommandMode || clipboardMode) return null;
+    if (prefixCommandMode || clipboardMode || recentMode) return null;
     return detectUrlConvertResult(query, appSettings.urlConvertKeepSpaceEncoded);
   }, [
     appSettings.urlConvertEnabled,
     appSettings.urlConvertKeepSpaceEncoded,
     prefixCommandMode,
     clipboardMode,
+    recentMode,
     query,
   ]);
 
@@ -294,17 +415,33 @@ export function useSearch(
   // 共存表示するため（詳細は ResultList を参照）、ここでは setResults([]) による
   // ファイル検索結果のクリアは行わない。
   useEffect(() => {
-    setSelected(0);
     if (clipboardMode) {
+      setSelectedRaw(0);
       setResults([]);
       setCalcResult(null);
       return;
     }
     if (prefixCommandMode) {
+      setSelectedRaw(0);
       setResults([]);
       setCalcResult(null);
       return;
     }
+    if (recentMode) {
+      setSelectedRaw(0);
+      setResults(recentResults);
+      setCalcResult(null);
+      return;
+    }
+
+    setSelectedRaw(0);
+
+    // アクション完了後にウィンドウを閉じる直前の setQuery("") による変化であれば、
+    // fileSearchEnabled の値に関わらずこの1回分だけ消費しておく（ここで消費し忘れると
+    // 「ファイル検索 OFF の間に閉じた」次に ON に戻した際、無関係な検索まで
+    // 抑止してしまうフラグの残留バグになる）。
+    const shouldSuppressSearch = suppressNextSearchRef.current;
+    suppressNextSearchRef.current = false;
 
     if (appSettings.calcEnabled && isCalcExpression(query)) {
       invoke<string | null>("calculate", { expr: query })
@@ -315,12 +452,18 @@ export function useSearch(
     }
 
     if (appSettings.fileSearchEnabled) {
-      invoke<FileEntry[]>("search_files", { query })
-        .then((files) => {
-          setResults(sortByFrecency(files, frecency));
-          setSelected(0);
-        })
-        .catch(console.error);
+      if (!shouldSuppressSearch) {
+        // results は呼び出し元（launchFile 等）が既に setResults([]) 済みのため、
+        // 抑止する場合はここで改めて何もする必要はない。
+        const callId = ++asyncCallIdRef.current;
+        invoke<FileEntry[]>("search_files", { query })
+          .then((files) => {
+            if (asyncCallIdRef.current !== callId) return; // 古い呼び出しの結果は破棄する
+            setResults(sortByFrecency(files, frecency));
+            setSelectedRaw(0);
+          })
+          .catch(console.error);
+      }
     } else {
       setResults([]);
     }
@@ -331,6 +474,8 @@ export function useSearch(
     frecency,
     clipboardMode,
     prefixCommandMode,
+    recentMode,
+    recentResults,
   ]);
 
   // 起動回数・最終起動時刻を更新し、settings.json の "frecency" キーへ即時永続化する。
@@ -375,6 +520,9 @@ export function useSearch(
     async (path: string) => {
       await invoke("launch_file", { path }).catch(console.error);
       await recordFrecency(path);
+      // ウィンドウを閉じるだけの空クエリ変化で search_files を再実行しないよう抑止する
+      // （詳細はメインエフェクトの suppressNextSearchRef 参照）。
+      suppressNextSearchRef.current = true;
       setQuery("");
       setResults([]);
       await hideWindow();
@@ -386,6 +534,7 @@ export function useSearch(
     async (text: string) => {
       const formatted = appSettings.copyWithComma ? formatWithCommas(text) : text;
       await invoke("copy_to_clipboard", { text: formatted }).catch(console.error);
+      suppressNextSearchRef.current = true;
       setQuery("");
       setCalcResult(null);
       await hideWindow();
@@ -395,6 +544,7 @@ export function useSearch(
 
   const copyUrlConvertResult = useCallback(async (text: string) => {
     await invoke("copy_to_clipboard", { text }).catch(console.error);
+    suppressNextSearchRef.current = true;
     setQuery("");
     await hideWindow();
   }, []);
@@ -403,6 +553,7 @@ export function useSearch(
     await open(
       `https://www.google.com/search?q=${encodeURIComponent(q)}`
     ).catch(console.error);
+    suppressNextSearchRef.current = true;
     setQuery("");
     await hideWindow();
   }, []);
@@ -423,7 +574,7 @@ export function useSearch(
           action: candidate.action,
           label: candidate.description,
         });
-      } else if (candidate.kind === "clipboard") {
+      } else if (candidate.kind === "clipboard" || candidate.kind === "recent") {
         setQuery(candidate.keyword);
       }
     },
@@ -440,6 +591,7 @@ export function useSearch(
       action: pendingCommand.action,
     }).catch(console.error);
     setPendingCommand(null);
+    suppressNextSearchRef.current = true;
     setQuery("");
     await hideWindow();
   }, [pendingCommand]);
@@ -460,6 +612,8 @@ export function useSearch(
     results,
     selected,
     setSelected,
+    selectFromHover,
+    recordMouseMove,
     calcResult,
     prefixCommandCandidates,
     prefixCommandMode,

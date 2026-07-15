@@ -64,11 +64,14 @@ win-launcher/
 │   │   ├── SystemCommandSettings.tsx # システムコマンドタブ
 │   │   ├── WebSearchSettings.tsx   # Web検索タブ
 │   │   ├── ClipboardSettings.tsx   # クリップボードタブ
+│   │   ├── RecentFilesSettings.tsx # 最近使ったファイルタブ
 │   │   ├── OcrSettings.tsx         # OCRタブ
 │   │   └── UpdateDialog.tsx        # アップデート確認/ダウンロード中ダイアログ
 │   └── styles.css
 ├── src-tauri/
-│   ├── src/main.rs         # Rust バックエンド（全ロジック）
+│   ├── src/
+│   │   ├── main.rs         # Rust バックエンド（全ロジック）
+│   │   └── recent_files.rs # 最近使ったファイル一覧の取得ロジック（Windows/Office Recent フォルダ・OneDrive パス解決）
 │   ├── capabilities/
 │   │   └── default.json    # Tauri v2 権限設定
 │   ├── icons/               # トレイ/アプリアイコン
@@ -178,7 +181,7 @@ win-launcher/
 
 ### 設定画面（Rust / フロントエンド）
 
-- 設定パネルは左にカテゴリナビ（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）
+- 設定パネルは左にカテゴリナビ（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）
 - 設定パネルは検索ボックス右の歯車アイコンのクリック、または `Ctrl+S` でトグル開閉する（検索 UI 表示中なら開く、設定パネル表示中なら閉じる）
 - 設定パネル表示中は `Ctrl+S` または `Esc` のどちらでも検索 UI に戻る
 - `Ctrl+S` の開閉トグルは input 要素のローカル `onKeyDown` ではなく、`window` への `keydown` イベントリスナー（`useEffect`）で一括処理する
@@ -186,7 +189,7 @@ win-launcher/
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
   - `folders: { path, enabled }[]`（ファイル検索カテゴリの検索フォルダ一覧）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled, checkUpdateOnStartup }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。4つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照））
+  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, ocrEnabled, checkUpdateOnStartup }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照））
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（プレフィックスコマンド候補の使用履歴。`frecency` と同形式・同方式で、キーがファイルパスではなく呼び出し文字列（`/shutdown` 等）になる。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「プレフィックスコマンド候補表示」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
@@ -199,8 +202,9 @@ win-launcher/
   - **システムコマンド**：機能 ON/OFF トグル＋シャットダウン・再起動・スリープそれぞれの呼び出しキーワードの独立したテキスト入力（3つの入力欄。1つの共通プレフィックス設定ではない。「システムコマンド機能」節を参照）
   - **Web検索**：機能 ON/OFF トグルのみ（「Web検索機能」節を参照）
   - **クリップボード**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力＋最大保持件数の数値入力（「クリップボード履歴」節を参照）
+  - **最近使ったファイル**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力（「最近使ったファイル一覧」節を参照）
   - **OCR**：機能 ON/OFF トグルのみ（「OCR機能」節を参照）
-- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_system_command_keyword` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_ocr_enabled` / `set_check_update_on_startup`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
+- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_system_command_keyword` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_recent_files_enabled` / `set_recent_keyword` / `set_ocr_enabled` / `set_check_update_on_startup`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
 - フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定（計算モード／プレフィックスコマンド候補表示モード／ファイル検索／Web検索行の表示／クリップボード履歴モード）に反映する。OFF の機能は対応する Tauri コマンド（`calculate` / `search_files`、プレフィックスコマンド候補表示、Web検索行の表示、クリップボード履歴モードへの切替）自体を呼び出さない・表示しない
 
 ### 計算機能（Rust / フロントエンド）
@@ -300,22 +304,48 @@ win-launcher/
 - 右パネル：クリップボード履歴モードのときのみ、左リストの右側に詳細パネルを表示する2カラムレイアウトに切り替える（他のモードは従来通り単一カラム）。選択中のエントリがテキストなら本文（折り返し表示）とコピー日時・文字数、画像ならサムネイル（`<img src={thumbnailDataUrl}>`）とコピー日時・画像サイズ（元画像の `width`×`height`）を表示する
 - 必要な権限（`capabilities/default.json`）：`clipboard-manager:allow-read-text`（テキスト取得用。画像の読み書きは Rust 内部で直接 `app.clipboard()` / Win32 API を呼ぶため JS 側のコマンド許可は不要で `allow-read-image` / `allow-write-image` は付与しない）
 
+### 最近使ったファイル一覧（Rust / フロントエンド）
+
+- 明示プレフィックスは「`/`（固定） + `appSettings.recentKeyword`（呼び出しキーワード。デフォルト `"recent"`）」の2部構成。判定方式（前方一致・残り文字列をフィルタとして使う）はクリップボード履歴と同じ（`useSearch.ts` の `recentModeFilter`）
+  - `appSettings.recentFilesEnabled` が `false` の場合はこのモード判定自体を行わない
+  - 他のプレフィックスキーワード（システムコマンド3つ・クリップボード）と重複できない。`validate_unique_keyword` の対象に含まれる（「システムコマンド機能」節を参照）
+  - キーワードは設定画面の「最近使ったファイル」カテゴリで変更可能。`set_recent_keyword(keyword)`（Rust コマンド）は他の `set_*` と同一パターン（空文字列はエラー、重複チェック後にフィールド更新・保存）で実装する
+- 取得（Rust、`recent_files.rs`）：`get_recent_files()`（Rust コマンド）が以下2フォルダの直下（非再帰）を走査し、`.lnk`（ショートカット）・`.url`（インターネットショートカット）を最終アクセス日時（由来ファイル自体の mtime）降順で最大 `MAX_SEARCH_RESULTS`（50）件返す
+  1. Windows の Recent フォルダ：Known Folder API（`SHGetKnownFolderPath(&FOLDERID_Recent, ...)`）で取得する。環境によって実パスが異なり得るためハードコードしない
+  2. Office の Recent フォルダ（`%APPDATA%\Microsoft\Office\Recent`）：対応する Known Folder API が存在しないため `%APPDATA%` 環境変数からパスを組み立てる
+  - `.lnk`：`lnk` クレートの `ShellLink::open` でパースし `link_target()` でリンク先ローカルパスを取得する。リンク先がフォルダ、または実在しない場合は除外する。`link_target()` は `lnk` クレート側の制約で `panic` しうるため `catch_unwind` で保護し、1件の異常な `.lnk` がプロセス全体を巻き込まないようにする（release ビルドは `panic = "abort"` のため素通しは致命的）
+    - 文字コード：`ShellLink::open` はエンコーディング引数を要求する。固定で `WINDOWS_1252` を渡すと、`LinkInfo` の ANSI フォールバック文字列（Unicode フィールドとは別に必ず読み込まれる）が日本語（Shift-JIS）パスでデコード不能となり `Err` を返す＝一覧から静かに欠落するバグになる。`GetACP()`（Win32 API）でシステム既定 ANSI コードページを取得し、`encoding_rs` の対応エンコーディング（932 → `SHIFT_JIS` 等）を都度渡すことで解消している（`system_default_encoding`）
+  - `.url`：テキスト（INI形式）としてパースし `URL=` 行の値を取得する。`https://d.docs.live.net/` で始まる URL のみ OneDrive 上のファイルとみなし、ローカル同期先パスへの変換を試みる（`resolve_onedrive_local_path`）
+    1. レジストリ `HKEY_CURRENT_USER\Software\Microsoft\OneDrive\Accounts` 配下の全サブキー（`Personal`・`Business1` 等、個数は環境依存）を動的に列挙し、各々の `UserFolder` 値をローカル同期先パスの候補とする
+    2. URL からアカウント識別子セグメントを読み飛ばした残りをパーセントデコードし、OneDrive ルートからの相対パスとして扱う
+    3. 候補ルートそれぞれで「候補ルート＋相対パス」の実在確認を行い、最初に見つかったものを採用する。どの候補でも見つからなければ削除済みファイルと同様に除外する
+    - 表示名はファイル名から末尾の `.url` を除いたもの。除去後に「もっともらしい拡張子」（ASCII 英数字のみの拡張子）で終わらないもの（OneDrive 上のフォルダ的参照）は、フォルダを除外する既存ルールに従い一覧から除外する（`has_plausible_extension`）
+    - ソートキーは変換の成否に関わらず `.url` 自体の mtime
+  - Windows の Recent フォルダと Office の Recent フォルダの両方に同一のローカルパスを指すエントリが存在する場合は1件に統合する（mtime が新しい方を採用）。`.lnk` 由来・`.url` 由来（ローカルパス変換成功済み）を問わず同じ統合ロジックを適用する
+- モード切替・フィルタ・表示（フロントエンド、`useSearch.ts`）
+  - モードに入ったタイミング（`recentMode` が `false → true` になった瞬間）でのみ `get_recent_files` を呼び直す。フィルタ文字列が変わるたびには再取得せず、取得済みの一覧をフロントエンド側で表示名（`RecentFile.name`。`.lnk`/`.url` いずれもここに統一済み）への部分一致でフィルタする（`recentResults`）。既に最終アクセス日時降順で取得済みのため、フィルタ後も順序は維持される
+  - `RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する（`RecentFile.path` は `.lnk`/`.url` いずれも実在確認済みのローカルパスに統一されているため、起動処理を由来で分岐する必要がない）
+  - ファイル検索結果・計算結果・URLエンコード/デコード結果との関係は他のプレフィックスモードと同様に排他（`recentMode` の間は `search_files` を呼ばず、それらを表示しない）
+  - frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）
+- 設定画面の「最近使ったファイル」カテゴリ：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力（`RecentFilesSettings.tsx`）
+
 ### プレフィックスコマンド候補表示（フロントエンド）
 
-- 検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`useSearch.ts` の `buildPrefixCommandCandidates`）
+- 検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`useSearch.ts` の `buildPrefixCommandCandidates`）
   - システムコマンド3つは既存の `matchSystemCommands`（「システムコマンド機能」節を参照）をそのまま呼び出し、一致した `SystemCommand` を `PrefixCommand`（`{ keyword, description, kind: "system", action }`）に変換して候補に加える。個別のキーワード判定ロジック自体（`/` + キーワード全体への前方一致）は変更しない
   - クリップボード履歴は `/` + `appSettings.clipboardPrefix` がクエリに前方一致するかを同じ方向（候補文字列がクエリで始まるか）で判定し、一致すれば `{ keyword, description: "クリップボード履歴", kind: "clipboard", action: null }` を候補に加える
-  - `appSettings.systemCommandEnabled` / `clipboardEnabled` が `false` の機能はそれぞれ候補生成の対象から除外する
-  - `calcMode`（数式らしい入力）、または `clipboardMode`（呼び出しキーワードが完全に入力済みで既に2カラムのクリップボード履歴パネルに切り替わっている状態）の間は候補を生成しない（`clipboardMode` は個別の発火ロジック＝`clipboardModeFilter` を変更せず、そのまま優先させる。つまり `/cb` を最後まで入力した時点で候補一覧ではなく既存の履歴パネルへ直接切り替わる、という既存の挙動を維持する）
-- `PrefixCommand`（`src/types.ts`）は `{ keyword: string, description: string, kind: "system" | "clipboard", action: SystemCommandAction | null }`。`keyword` は呼び出し文字列（`/` + キーワード全体、例: `"/shutdown"`）で、frecency のキーにもそのまま使う
+  - 最近使ったファイル一覧は `/` + `appSettings.recentKeyword` が同様に前方一致するかを判定し、一致すれば `{ keyword, description: "最近使ったファイル", kind: "recent", action: null }` を候補に加える
+  - `appSettings.systemCommandEnabled` / `clipboardEnabled` / `recentFilesEnabled` が `false` の機能はそれぞれ候補生成の対象から除外する
+  - `calcMode`（数式らしい入力）、または `clipboardMode`／`recentMode`（呼び出しキーワードが完全に入力済みで既に専用モードに切り替わっている状態）の間は候補を生成しない（`clipboardMode`／`recentMode` は個別の発火ロジック＝`clipboardModeFilter`／`recentModeFilter` を変更せず、そのまま優先させる。つまり `/cb` や `/recent` を最後まで入力した時点で候補一覧ではなく専用モードへ直接切り替わる、という挙動を維持する）
+- `PrefixCommand`（`src/types.ts`）は `{ keyword: string, description: string, kind: "system" | "clipboard" | "recent", action: SystemCommandAction | null }`。`keyword` は呼び出し文字列（`/` + キーワード全体、例: `"/shutdown"`）で、frecency のキーにもそのまま使う
 - 候補は frecency スコアの降順で並び替える（`sortPrefixCommandsByFrecency`）。ファイル検索結果の frecency（`sortByFrecency`/`frecencyScore`/`decayFactor`。「ファイル検索結果の frecency ランキング」節を参照）と全く同じ関数を再利用し、キーだけを `path` から `keyword` に変えている。使用実績のない候補はスコア0、その場合は `keyword` のアルファベット順が二次キーになる
   - 使用実績（`count`/`lastUsed`）は候補を Enter／クリックで選択（＝実行）した時点（`selectPrefixCommand`）で記録する。システムコマンドは確認モーダルの確定を待たず、候補を選んだ時点で記録する
   - `tauri-plugin-store` の `settings.json` に `"prefixCommandFrecency"` キー（`{ [keyword]: { count, lastUsed } }`）でフロントエンドが直接永続化する（frecency と同じ方式。Rust コマンドは追加しない）。アプリ起動時（マウント時）に App.tsx が読み込み、`useSearch` の `setInitialPrefixCommandFrecency` で初期値を反映する
-- 表示（`ResultList.tsx`）：ファイル検索結果・システムコマンド候補と同じリストUI（アイコン＋太字1行目＋グレー2行目）を流用する。1行目に呼び出し文字列（`cmd.keyword`）、2行目に説明文（`cmd.description`）を表示する。アイコンは `kind` によって切り替える（システムコマンドは既存の電源アイコン、クリップボード履歴は `ClipboardPanel` のテキストエントリと同じドキュメントアイコン）
+- 表示（`ResultList.tsx`）：ファイル検索結果・システムコマンド候補と同じリストUI（アイコン＋太字1行目＋グレー2行目）を流用する。1行目に呼び出し文字列（`cmd.keyword`）、2行目に説明文（`cmd.description`）を表示する。アイコンは `kind` によって切り替える（システムコマンドは既存の電源アイコン、クリップボード履歴は `ClipboardPanel` のテキストエントリと同じドキュメントアイコン、最近使ったファイル一覧は時計アイコン）
 - ファイル検索結果との関係は排他（`prefixCommandMode = prefixCommandCandidates.length > 0` の間はファイル検索・計算結果・URLエンコード/デコード結果を表示せず、`search_files` も呼ばない）。旧 `systemMode`/`systemMatches` はこの機能に統合され、`useSearch.ts` の公開APIからは削除された（`prefixCommandMode`/`prefixCommandCandidates`/`selectPrefixCommand` に置き換え）
 - 選択・実行（`selectPrefixCommand`）：↑↓ で選択、Enter／クリックで直接実行する（ファイル検索結果の選択・実行と同じ挙動）
   - `kind: "system"` の場合：`requestSystemCommand({ action, label: description })` を呼ぶだけで、既存の確認モーダル（`pendingCommand` state、「システムコマンド機能」節を参照）にそのまま合流する
-  - `kind: "clipboard"` の場合：`setQuery(candidate.keyword)` で検索クエリを呼び出しキーワード全体（例: `"/cb"`）に置き換える。これにより次のレンダリングで既存の `clipboardModeFilter` が自然に一致し、クリップボード履歴モード（2カラムパネル）へ切り替わる（専用の遷移コードを新設しない）
+  - `kind: "clipboard"` または `kind: "recent"` の場合：`setQuery(candidate.keyword)` で検索クエリを呼び出しキーワード全体（例: `"/cb"`、`"/recent"`）に置き換える。これにより次のレンダリングで既存の `clipboardModeFilter`／`recentModeFilter` が自然に一致し、それぞれの専用モードへ切り替わる（専用の遷移コードを新設しない）
 - 前方一致する候補が0件の場合（例: `/xyz`）は `prefixCommandMode` が `false` のままとなり、候補欄を表示せず通常のファイル検索結果を表示する
 
 ### ファイル起動（Rust）
@@ -394,6 +424,9 @@ win-launcher/
 | `set_clipboard_prefix(prefix)` | クリップボード履歴の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、またはシステムコマンドの3キーワードのいずれかと重複する場合はエラーを返して保存しない |
 | `set_clipboard_max_items(maxItems)` | クリップボード履歴の最大保持件数を変更して `AppSettings` を返す。`1` 未満はエラーを返して保存しない |
 | `paste_clipboard_image(id)` | `ClipboardImageCache` から `id` に対応する画像バイナリを取得し、Win32 API でクリップボードへ直接書き込む |
+| `set_recent_files_enabled(enabled)` | 最近使ったファイル一覧機能の ON/OFF を切り替えて `AppSettings` を返す |
+| `set_recent_keyword(keyword)` | 最近使ったファイル一覧の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の4キーワードのいずれかと重複する場合はエラーを返して保存しない |
+| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件） |
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
 | `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（`chars().all(|c| c.is_ascii_alphanumeric())`）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
 | `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |
@@ -407,7 +440,11 @@ win-launcher/
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
-  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモードの判定（`clipboardMode`/`clipboardFilterText`）もここで行う（クエリとプレフィックスのみに依存し、履歴データには依存しないため）
+  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード（`clipboardMode`/`clipboardFilterText`）・最近使ったファイル一覧モード（`recentMode`/`recentFilterText`、`get_recent_files` の呼び出しとフィルタ）の判定もここで行う（クエリとプレフィックスのみに依存し、履歴データには依存しないため）
+    - 選択インデックスの操作を「キーボード操作（`setSelected`）」と「マウスホバー（`selectFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する（`selectFromHover`）
+      1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
+      2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
+    - `search_files`/`get_recent_files` の非同期呼び出しに世代 ID（`asyncCallIdRef`）を振り、`.then()` 発火時点で最新の呼び出しでなければ結果を破棄する。加えて、ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化では、`suppressNextSearchRef` で1回分だけ `search_files` の再実行を抑止する。これらは、ウィンドウ再表示時に直前の（本来不要な）検索がまだ解決しておらず「検索結果エリアが一瞬白く見える」不具合の対策
   - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, setQuery)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し
   - `useUpdater()`：アップデートダイアログの状態（`checking`/`upToDate`/`error`/`available`/`installing`）管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は「自動アップデート機能」節を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ（frecency・clipboardHistory の初期値も `App.tsx` の読み込み完了時に各フックの `setInitial*` で反映する）
@@ -420,7 +457,7 @@ win-launcher/
   - 「コピーして閉じる」（`onCopyAndClose` = `handleOcrCopyAndClose`）：`copy_to_clipboard` invoke → ルートコンテナに `ocrClosing` state で opacity 0 へのフェードアウト（Tailwind `transition-opacity duration-[180ms]`、180ms はホットキー等による他の非表示処理とは別に、この操作専用の視覚効果として追加するもの）を適用 → 180ms 待機後に `hideWindow()` → `ocrClosing` を戻しつつ `ocr.clearOcr()` で state をリセットする。ホットキー再表示やフォーカスアウトによる非表示にはこのフェードは適用しない（既存の即時 `hide()` のまま）
   - いずれの経路でも `ocr.clearOcr()` を通るため、次回ウィンドウ表示時は `ocrActive` が `false`（通常の検索画面）に戻っている
 - `OcrPreview` は `flex-1` でウィンドウ残高を占有する（検索ボックスの直下からウィンドウ下端まで全高を使う）。テキスト表示時はテキストエリアを `flex-1 min-h-0 overflow-y-auto` にして内部スクロール可能にし、ボタン行は `flex-shrink-0` で下端に固定する。ローディング・エラー時はコンテンツ高さのみ使用し残高は空白になる
-- 設定パネル：タブ構成（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード）、`Ctrl+S` または Esc で検索 UI に戻る
+- 設定パネル：タブ構成（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR）、`Ctrl+S` または Esc で検索 UI に戻る
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
 - `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` / `check-for-update-requested` イベントを受信する
 - `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス

@@ -17,6 +17,9 @@ export function useSettings(showSettings: boolean) {
   const [clipboardSettingsError, setClipboardSettingsError] = useState<
     string | null
   >(null);
+  const [recentSettingsError, setRecentSettingsError] = useState<
+    string | null
+  >(null);
   const [systemCommandKeywordErrors, setSystemCommandKeywordErrors] =
     useState<SystemCommandKeywordErrors>({
       shutdown: null,
@@ -140,6 +143,23 @@ export function useSettings(showSettings: boolean) {
     }
   }, []);
 
+  const setRecentFilesEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_recent_files_enabled", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
+  const setRecentKeyword = useCallback(async (keyword: string) => {
+    setRecentSettingsError(null);
+    try {
+      const updated = await invoke<AppSettings>("set_recent_keyword", { keyword });
+      setAppSettings(updated);
+    } catch (e) {
+      setRecentSettingsError(String(e));
+    }
+  }, []);
+
   const setOcrEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_ocr_enabled", {
       enabled,
@@ -185,6 +205,10 @@ export function useSettings(showSettings: boolean) {
     setClipboardSettingsError(null);
   }, []);
 
+  const resetRecentSettingsError = useCallback(() => {
+    setRecentSettingsError(null);
+  }, []);
+
   const resetSystemCommandKeywordErrors = useCallback(() => {
     setSystemCommandKeywordErrors({ shutdown: null, restart: null, sleep: null });
   }, []);
@@ -197,6 +221,8 @@ export function useSettings(showSettings: boolean) {
     folders,
     clipboardSettingsError,
     resetClipboardSettingsError,
+    recentSettingsError,
+    resetRecentSettingsError,
     systemCommandKeywordErrors,
     resetSystemCommandKeywordErrors,
     setFileSearchEnabled,
@@ -210,6 +236,8 @@ export function useSettings(showSettings: boolean) {
     setClipboardEnabled,
     setClipboardPrefix,
     setClipboardMaxItems,
+    setRecentFilesEnabled,
+    setRecentKeyword,
     setOcrEnabled,
     setCheckUpdateOnStartup,
     addFolder,

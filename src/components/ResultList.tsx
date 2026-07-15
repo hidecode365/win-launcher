@@ -13,6 +13,7 @@ const PREFIX_COMMAND_ICON_PATH: Record<PrefixCommand["kind"], string> = {
   system: "M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9",
   clipboard:
     "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+  recent: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
 };
 
 export function ResultList({
@@ -41,7 +42,7 @@ export function ResultList({
   selected: number;
   baseLength: number;
   webSearchVisible: boolean;
-  onSelect: (index: number) => void;
+  onSelect: (index: number, clientX: number, clientY: number) => void;
   onCopyResult: (text: string) => void;
   onSelectPrefixCommand: (cmd: PrefixCommand) => void;
   onLaunchFile: (path: string) => void;
@@ -67,7 +68,7 @@ export function ResultList({
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onSelectPrefixCommand(cmd)}
-              onMouseEnter={() => onSelect(i)}
+              onMouseEnter={(e) => onSelect(i, e.clientX, e.clientY)}
             >
               <svg
                 className="w-4 h-4 mr-3 flex-shrink-0 opacity-60"
@@ -100,7 +101,7 @@ export function ResultList({
               active={selected === baseLength}
               index={baseLength}
               onClick={() => onOpenWebSearch(query)}
-              onMouseEnter={() => onSelect(baseLength)}
+              onMouseEnter={(e) => onSelect(baseLength, e.clientX, e.clientY)}
             />
           )}
         </>
@@ -115,7 +116,7 @@ export function ResultList({
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onCopyResult(calcResult)}
-              onMouseEnter={() => onSelect(0)}
+              onMouseEnter={(e) => onSelect(0, e.clientX, e.clientY)}
             >
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate">
@@ -140,7 +141,7 @@ export function ResultList({
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onCopyUrlConvertResult(urlConvertResult.text)}
-              onMouseEnter={() => onSelect(calcOffset)}
+              onMouseEnter={(e) => onSelect(calcOffset, e.clientX, e.clientY)}
             >
               <svg
                 className={`w-4 h-4 mr-3 flex-shrink-0 ${
@@ -195,7 +196,7 @@ export function ResultList({
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onLaunchFile(item.path)}
-              onMouseEnter={() => onSelect(index)}
+              onMouseEnter={(e) => onSelect(index, e.clientX, e.clientY)}
             >
               {item.icon ? (
                 <img
@@ -237,7 +238,7 @@ export function ResultList({
               active={selected === baseLength}
               index={baseLength}
               onClick={() => onOpenWebSearch(query)}
-              onMouseEnter={() => onSelect(baseLength)}
+              onMouseEnter={(e) => onSelect(baseLength, e.clientX, e.clientY)}
             />
           )}
         </>

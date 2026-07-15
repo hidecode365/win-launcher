@@ -1,3 +1,5 @@
+import type { MouseEvent } from "react";
+
 export function WebSearchRow({
   query,
   active,
@@ -9,7 +11,7 @@ export function WebSearchRow({
   active: boolean;
   index: number;
   onClick: () => void;
-  onMouseEnter: () => void;
+  onMouseEnter: (e: MouseEvent) => void;
 }) {
   return (
     <button

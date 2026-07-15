@@ -4,6 +4,17 @@ export interface FileEntry {
   icon: string | null;
 }
 
+// Rust の `get_recent_files` コマンドの戻り値。path は .lnk 由来ならリンク先の
+// ローカルパス、.url 由来なら OneDrive のローカル同期先パスへの変換に成功した
+// ローカルパス（変換に失敗したものは一覧に含まれないため、常に実在確認済みの
+// ローカルパスになる）。lastAccessed は .lnk/.url ショートカット自体の更新日時
+// （UNIX ms）で、リンク先実ファイルのタイムスタンプではない。
+export interface RecentFile {
+  name: string;
+  path: string;
+  lastAccessed: number;
+}
+
 export interface FrecencyEntry {
   count: number;
   lastUsed: number;
@@ -33,6 +44,8 @@ export interface AppSettings {
   checkUpdateOnStartup: boolean;
   urlConvertEnabled: boolean;
   urlConvertKeepSpaceEncoded: boolean;
+  recentFilesEnabled: boolean;
+  recentKeyword: string;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -52,6 +65,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   checkUpdateOnStartup: true,
   urlConvertEnabled: true,
   urlConvertKeepSpaceEncoded: false,
+  recentFilesEnabled: true,
+  recentKeyword: "recent",
 };
 
 // Rust の `check_for_update` コマンドの戻り値。
@@ -79,7 +94,7 @@ export interface SystemCommand {
 // フィールドごとに独立して表示するため、単一の文字列ではなくコマンドごとに保持する。
 export type SystemCommandKeywordErrors = Record<SystemCommandAction, string | null>;
 
-export type PrefixCommandKind = "system" | "clipboard";
+export type PrefixCommandKind = "system" | "clipboard" | "recent";
 
 // 「/」候補一覧（プレフィックスコマンド候補表示）の1件分。
 // keyword は「/」+ キーワード全体（例: "/shutdown"）。選択・実行時の分岐と
