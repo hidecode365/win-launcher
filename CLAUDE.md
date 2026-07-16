@@ -24,6 +24,14 @@
   - 実装プロンプトに明示的な起動指示がない限り、`npm run tauri dev` を実行しないこと
   - ビルドエラーが発生した場合は、その都度ユーザーと相談する
 
+## ログ出力方針
+
+- `console.error` / `console.warn`：常に残す。実害（起動失敗・保存失敗等）の把握のため、本番ビルドでも出力され続ける必要がある
+- `console.debug` / `console.log`：開発時の一時調査用。`vite.config.ts` の本番ビルド設定（Terser の `compress.pure_funcs`。「ビルド」節を参照）により `npm run tauri build` 実行時に呼び出しごと自動的に削除されるため、**調査用ログは削除し忘れを気にせず積極的に仕込んでよい**（ファイルパス等の情報を含むログも、本番バイナリには含まれない）
+  - `npm run tauri dev` では Terser を通さないため、これらのログはそのまま出力される（devtools コンソールで調査可能）
+  - 削除されるのは静的な `console.debug(...)` / `console.log(...)` の呼び出し式そのものであり、変数へ代入した参照（例: `const log = console.debug; log(...)`）等の間接呼び出しは対象外になる点に注意する（通常の直接呼び出しの書き方をしていれば問題ない）
+- `ErrorBoundary`（`src/components/ErrorBoundary.tsx`）：上記の調査用ログとは異なり、**開発・本番を問わず常時有効な恒久的な安全装置**。描画中の例外を捕捉し、画面が白紙のまま固まって見える状態を避けてエラーメッセージを表示する。Terser の除去対象ではなく、削除・無効化を前提としない
+
 ## 概要
 
 Windows 11 向けキーボードランチャー。Alt+Space でウィンドウをトグルし、
@@ -480,6 +488,8 @@ npm run tauri dev
 # プロダクションビルド
 npm run tauri build
 ```
+
+- `npm run tauri build`（内部で `beforeBuildCommand` として `npm run build`＝`tsc && vite build` が実行される）では、`vite.config.ts` が Vite の `command === "build"` を検知して Terser minify に切り替わり、`console.debug` / `console.log` の呼び出しを自動削除する（詳細は「ログ出力方針」節を参照）。`npm run tauri dev`（Vite の `command` は `"serve"`）ではこの設定が適用されず、通常の esbuild minify のままログもそのまま残る
 
 ## テスト方針
 
