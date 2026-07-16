@@ -338,6 +338,26 @@ win-launcher/
   - frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）
 - 設定画面の「最近使ったファイル」カテゴリ：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力（`RecentFilesSettings.tsx`）
 
+### 格納フォルダを開く（Shift+Enter）（Rust / フロントエンド）
+
+- 対象：通常のファイル検索結果、`/recent`（最近使ったファイル一覧）の結果一覧の両方（いずれも `useSearch.ts` の `results` state を共有しているため、キーボード操作側は由来を区別しない。計算結果・URLエンコード/デコード結果・システムコマンド候補・クリップボード履歴・プレフィックスコマンド候補はファイルパスを持たないため対象外）
+- 選択中に Shift+Enter を押すと、対象ファイルの親フォルダをエクスプローラーで開く。通常の Enter によるファイル起動と同様にウィンドウを閉じる（非表示にする。詳細は後述の「ウィンドウを閉じる」小節を参照）
+- Rust：`open_containing_folder(path)` コマンド（`main.rs`）
+  - `path` の拡張子が `.lnk`（大小文字区別なし）の場合、`recent_files::resolve_lnk_target_path(path)` でリンク先ローカルパスを解決し、解決できればそちらの親フォルダを、できなければ `.lnk` 自身の親フォルダを開く（`Option::unwrap_or` でフォールバック）
+  - `.lnk` 以外はそのまま `path` の親フォルダ（`Path::parent()`）を開く
+  - フォルダを開く処理自体は既存の `open_file`（`ShellExecuteW` にディレクトリパスを渡すとエクスプローラーが開く。設定画面の検索フォルダパスクリックと同じ仕組み）をそのまま流用する。新規の Win32 API 呼び出しは追加していない
+- Rust：`.lnk` のリンク先解決ロジックの共有（`recent_files.rs`）
+  - 「最近使ったファイル一覧」節の `.lnk` 処理（`process_lnk`）から、リンク先ローカルパスの解決部分だけを `pub fn resolve_lnk_target_path(lnk_path: &Path) -> Option<String>` として切り出した（`ShellLink::open` によるパース、`system_default_encoding()` による文字コード解決、`link_target()` の `catch_unwind` による panic 対策を含む、`process_lnk` が使っていたロジックそのもの）。`process_lnk` はこの関数を呼んだうえで実在チェック・フォルダ除外を追加で行う一覧生成用のラッパーになっている
+  - `open_containing_folder` はこの `resolve_lnk_target_path` を実在チェックなしでそのまま呼ぶ（`.lnk` 自体が通常のファイル検索結果に出現している時点で実在は保証されているため、`process_lnk` の実在チェック・フォルダ除外ロジックは不要）
+- フロントエンド：`useSearch.ts` の `openContainingFolder(path)`
+  - `launchFile` と同じ「ウィンドウを閉じる」経路（`setQuery("")` → `setResults([])` → `bumpCloseRefreshTick()` → `hideWindow()`）を通る。frecency は記録しない（ファイルを起動したわけではないため）
+  - `App.tsx` の `handleKeyDown` で `e.shiftKey` を判定し、計算結果・URLエンコード/デコード結果・Web検索行のインデックスオフセットを踏まえた同一の計算式（`search.results[search.selected - calcLength - urlConvertLength]`）で対象ファイルを求める。この計算式は通常の Enter 起動と共通の `selectedFile` 変数として1箇所にまとめている（計算結果・Web検索行等が選択中の場合は範囲外アクセスとなり `undefined` になるため、Shift+Enter は自然に無効化される。個別の除外条件を書く必要がない）
+  - フッターのキー操作ヒント（`StatusFooter.tsx`）：`isFileSelected` が真（＝選択中の項目が実ファイル）のときのみ「Shift+Enter フォルダを開く」を表示する
+- **ウィンドウを閉じる際の注意点（`launchFile`/`openContainingFolder` 共通の実装パターン。過去に2件の不具合の原因になった箇所）**
+  1. `launch_file`/`open_containing_folder` の `invoke` は、開いた対象（起動したアプリ・エクスプローラー）がほぼ即座に前面に出て WinLauncher からフォーカスを奪う。この `invoke` を `await` してから `setQuery("")` を呼ぶ実装だと、フォーカス喪失をきっかけとする自動非表示（`App.tsx` の 150ms デバウンス）が `setQuery("")` より先に走ってしまう余地が生まれる。そのため `launchFile`/`openContainingFolder` はいずれも `invoke(...).catch(console.error)` を `await` せず発火させるだけに留め、直後に `setQuery("")`／`setResults([])` を呼んでから `await hideWindow()` する、という順序にしている
+  2. **`setQuery("")` は「クエリが既に空文字だった場合」に効かない**。React の `useState` は新しい値が現在値と `Object.is` で等しければ再レンダリングをスキップするため、無入力のまま（`query === ""`）frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを開くと、検索結果を再取得するエフェクトが再実行されず、結果一覧が空のまま固まる不具合になっていた（詳細・具体的な発生条件は「フロントエンド」節の `closeRefreshTick` のコメントを参照）。この不具合は `/recent` モードでは再現しない（`/recent` から `""` への変化は必ず実質的な値の変化になるため）ため、当初 `recentAsyncCallIdRef` の分離だけで解決したと誤認していた
+  - **今後、ウィンドウを閉じる新機能（ファイルパスを扱わない機能を含む）を追加する際は、`launchFile`/`openContainingFolder`/`copyResult`/`copyUrlConvertResult`/`openWebSearch`/`confirmSystemCommand` と同じパターン——(1) 対象を開く外部呼び出し（フォーカスを奪いうる操作）を `await` する前に状態クリアを済ませる、(2) `setQuery("")` と必ずセットで `bumpCloseRefreshTick()` を呼ぶ——の両方に揃えること**
+
 ### プレフィックスコマンド候補表示（フロントエンド）
 
 - 検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`useSearch.ts` の `buildPrefixCommandCandidates`）
@@ -414,6 +434,7 @@ win-launcher/
 | --- | --- |
 | `search_files(query)` | 有効な検索フォルダ内でファイル検索結果（Windows シェルアイコンの Base64 付き）を返す |
 | `launch_file(path)` | ファイルを起動する |
+| `open_containing_folder(path)` | 指定パスの格納フォルダ（親フォルダ）をエクスプローラーで開く（Shift+Enter）。`path` が `.lnk` の場合はリンク先実ファイルの親フォルダを開く（解決失敗時は `.lnk` 自身の親フォルダにフォールバック） |
 | `calculate(expr)` | 数式を評価し結果の文字列を返す（評価不能なら `null`） |
 | `copy_to_clipboard(text)` | テキストをクリップボードへコピーする |
 | `get_folders()` | 登録済み検索フォルダ一覧を返す |
@@ -453,13 +474,16 @@ win-launcher/
     - 選択インデックスの操作を「キーボード操作（`setSelected`）」と「マウスホバー（`selectFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する（`selectFromHover`）
       1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
       2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
-    - `search_files`/`get_recent_files` の非同期呼び出しに世代 ID（`asyncCallIdRef`）を振り、`.then()` 発火時点で最新の呼び出しでなければ結果を破棄する。これにより、クエリやモードが短時間に連続して変わっても、画面に反映されるのは常に最後の呼び出しの結果になる
+    - `search_files` の非同期呼び出しに世代 ID（`asyncCallIdRef`）を振り、`.then()` 発火時点で最新の呼び出しでなければ結果を破棄する。これにより、クエリやモードが短時間に連続して変わっても、画面に反映されるのは常に最後の呼び出しの結果になる
+    - `get_recent_files`（`fetchRecentFiles`）の世代 ID は `search_files` とは別カウンタ（`recentAsyncCallIdRef`）にしている。かつては両者で1本のカウンタ（`asyncCallIdRef`）を共有していたが、これが「Shift+Enter でファイルの格納フォルダを開く（`openContainingFolder`）と、開いたエクスプローラーが前面に出て WinLauncher が一時的にフォーカスを失う。`/recent` モードのままこの操作をした場合、フォーカス喪失→回復のタイミングによっては `recentMode` のフォーカス回復リスナー（`getCurrentWindow().onFocusChanged`）が `fetchRecentFiles` を呼び、共有カウンタを1つ進めてしまうことがあった。その直後に `openContainingFolder` 側の `setQuery("")` で発火した『`search_files("")` による通常表示への再取得』が解決した時点で『もう自分は最新の呼び出しではない』と誤判定され、結果が握りつぶされて `results` が空のまま固まって見える」という不具合の原因になっていた（ウィンドウを再表示しても結果一覧が空白のまま、何か1文字入力すると新しい呼び出しが勝って正常表示に戻る、という症状）。`get_recent_files` 側の世代 ID を分離し、`search_files` の再取得が `get_recent_files` 側の呼び出しに巻き込まれて破棄されないようにすることで解消した。**同一のカウンタを複数の非同期呼び出し系統（別コマンド）で共有しないこと**が横断的な教訓
     - ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化でも、`fileSearchEnabled` が `true` なら通常通り `search_files("")` を呼ぶ（抑止しない）。この呼び出しは `hideWindow()` でウィンドウが非表示になった後（ユーザーからは見えない状態）に解決するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、常に最新の frecency 順一覧（通常表示）が即座に見える状態になる。かつてはこの空クエリへの変化を「ウィンドウを閉じるだけなら不要な処理」として `suppressNextSearchRef` で1回分だけ抑止していたが、抑止した分を再取得するタイミングがどこにも存在せず、次にウィンドウを再表示した時に検索結果エリアが空のまま固まって見える不具合（クエリを何か入力するまで復旧しない）を引き起こしていたため、このフラグ自体を廃止した
+    - `launchFile`/`openContainingFolder` は、ファイル起動・フォルダオープンの `invoke` 自体を `await` せず発火させるだけに留め、直後に `setQuery("")` を呼ぶ（`invoke` を `await` する実装だと、開いたアプリ/エクスプローラーへのフォーカス喪失をきっかけとする自動非表示が `setQuery("")` より先に走る余地が生まれるため。詳細は「格納フォルダを開く（Shift+Enter）」節を参照）
+    - **`closeRefreshTick`**（`useState<number>`。ウィンドウを閉じる系のアクション全て——`launchFile`/`openContainingFolder`/`copyResult`/`copyUrlConvertResult`/`openWebSearch`/`confirmSystemCommand`——が `setQuery("")` と同時に `bumpCloseRefreshTick()` で加算し、メインの検索 `useEffect` の依存配列に含める）。React の `useState` は新しい値が `Object.is` で現在値と等しい場合、再レンダリングそのものをスキップする（ベイルアウト）。無入力のまま（`query` が既に `""`）frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを開いた場合、`setQuery("")` は `"" → ""` で値が変化しないためこのベイルアウトが働き、`query` を依存配列に持つ検索エフェクトが再実行されない。この場合でも直前の `setResults([])` 自体は（`[]` が毎回新しい配列参照のため）反映されるので、結果一覧が空のまま、次にユーザーが実際に文字を入力してクエリが変化するまで固まって見える不具合になっていた（「通常のファイル検索結果で Shift+Enter 後、フォーカス復帰しても一覧が空白のまま」の実際の原因。`/recent` モードでは呼び出しキーワードを含む非空文字列からの遷移のため `setQuery("")` は必ず実質的な変化になり、このベイルアウトは起きない。そのため上記の `recentAsyncCallIdRef` 分離だけでは通常検索側のこの不具合は直らなかった）。`query` 自身の値変化に依存せず確実にエフェクトを再実行させるため、`closeRefreshTick` を導入した。**教訓：ウィンドウを閉じる新機能を追加する際は、`setQuery("")` だけに頼らず必ず `bumpCloseRefreshTick()` も併せて呼ぶこと**（`setQuery("")` は「値が変われば」効くだけで、変わらないケースを保証しないため）
   - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, setQuery)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し
   - `useUpdater()`：アップデートダイアログの状態（`checking`/`upToDate`/`error`/`available`/`installing`）管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は「自動アップデート機能」節を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ（frecency・clipboardHistory の初期値も `App.tsx` の読み込み完了時に各フックの `setInitial*` で反映する）
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
-- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Esc で非表示、`Ctrl+S` で設定パネルを開く
+- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+S` で設定パネルを開く
 - クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（他のモードは単一カラムのまま。詳細は「クリップボード履歴」節を参照）
 - OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。`App.tsx` で `ocrActive` を導出し、条件付きレンダリングで制御する
 - `OcrPreview` の「閉じる」「コピーして閉じる」ボタンはそれぞれ独立したコールバック（`onClose` / `onCopyAndClose`）を `App.tsx` から受け取り、ボタン内部では invoke やウィンドウ制御を行わない（表示専用コンポーネントの原則を維持するため）

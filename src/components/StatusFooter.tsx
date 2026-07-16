@@ -6,6 +6,7 @@ export function StatusFooter({
   isCalcSelected,
   prefixCommandMode,
   isUrlConvertSelected,
+  isFileSelected,
 }: {
   pendingCommand: boolean;
   webSearchVisible: boolean;
@@ -14,6 +15,7 @@ export function StatusFooter({
   isCalcSelected: boolean;
   prefixCommandMode: boolean;
   isUrlConvertSelected: boolean;
+  isFileSelected: boolean;
 }) {
   return (
     <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400">
@@ -36,6 +38,7 @@ export function StatusFooter({
                     ? "Enter コピー"
                     : "Enter 起動"}
           </span>
+          {isFileSelected && <span>Shift+Enter フォルダを開く</span>}
           <span>Esc 閉じる</span>
         </>
       )}

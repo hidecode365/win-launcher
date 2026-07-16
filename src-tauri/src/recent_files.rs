@@ -424,22 +424,20 @@ fn file_mtime_ms(metadata: &std::fs::Metadata) -> u64 {
         .unwrap_or(0)
 }
 
-/// `.lnk` を1件処理する。`last_accessed` は列挙段階（`get_recent_files` の手順1）で
-/// 既に取得済みの `.lnk` 自体の更新日時をそのまま使う（ここで再取得しない）。
-/// リンク先がローカルパスの場合のみ実在チェック・フォルダ除外を行う。UNC 形式
-/// （ネットワークパス）の場合は実在チェックそのものをスキップし、無条件で一覧に含める
-/// （「実在チェックとネットワークパス（UNC）の扱い」を参照）。
-/// `ShellLink::open`/`link_target` のエラー・panic は握りつぶさず、原因調査用に
-/// `crate::log_debug` でログ出力したうえで `None`（一覧から除外）を返す。
+/// `.lnk` のリンク先ローカルパスのみを解決する（実在チェック・フォルダ除外は行わない）。
+/// `process_lnk`（一覧生成用。実在チェック・フォルダ除外込み）と、通常のファイル検索
+/// 結果に対する「格納フォルダを開く（Shift+Enter）」機能（`main.rs` の
+/// `open_containing_folder`。`.lnk` 自身のフォルダではなくリンク先実ファイルの
+/// フォルダを開くために、`.lnk` 自体は実在確認済みである前提でリンク先のみを知りたい）
+/// の両方から使う共通ロジック。`ShellLink::open`/`link_target` のエラー・panic は
+/// 握りつぶさず、原因調査用に `crate::log_debug` でログ出力したうえで `None` を返す
+/// （文字コード処理・`catch_unwind` による panic 対策の詳細は `system_default_encoding`
+/// のドキュメントコメントを参照）。
 #[cfg(windows)]
-fn process_lnk(
-    lnk_path: &std::path::Path,
-    encoding: &'static encoding_rs::Encoding,
-    last_accessed: u64,
-) -> Option<RecentFile> {
+pub fn resolve_lnk_target_path(lnk_path: &std::path::Path) -> Option<String> {
     use lnk::ShellLink;
-    use std::path::PathBuf;
 
+    let encoding = system_default_encoding();
     let shortcut = match ShellLink::open(lnk_path, encoding) {
         Ok(s) => s,
         Err(e) => {
@@ -455,23 +453,37 @@ fn process_lnk(
     // （lnk クレート側の既知の制約）。1件の異常な .lnk がアプリ全体を巻き込まないよう
     // catch_unwind で保護する（release ビルドは panic = "abort" のため、素通しだと
     // プロセスごと終了してしまう）。
-    let target = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        shortcut.link_target()
-    })) {
-        Ok(Some(t)) => t,
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| shortcut.link_target())) {
+        Ok(Some(t)) => Some(t),
         Ok(None) => {
             crate::log_debug(&format!("[recent_files] no link target in {}", lnk_path.display()));
-            return None;
+            None
         }
         Err(_) => {
             crate::log_debug(&format!(
                 "[recent_files] panicked while resolving link target of {}",
                 lnk_path.display()
             ));
-            return None;
+            None
         }
-    };
+    }
+}
 
+#[cfg(not(windows))]
+pub fn resolve_lnk_target_path(_lnk_path: &std::path::Path) -> Option<String> {
+    None
+}
+
+/// `.lnk` を1件処理する。`last_accessed` は列挙段階（`get_recent_files` の手順1）で
+/// 既に取得済みの `.lnk` 自体の更新日時をそのまま使う（ここで再取得しない）。
+/// リンク先がローカルパスの場合のみ実在チェック・フォルダ除外を行う。UNC 形式
+/// （ネットワークパス）の場合は実在チェックそのものをスキップし、無条件で一覧に含める
+/// （「実在チェックとネットワークパス（UNC）の扱い」を参照）。
+#[cfg(windows)]
+fn process_lnk(lnk_path: &std::path::Path, last_accessed: u64) -> Option<RecentFile> {
+    use std::path::PathBuf;
+
+    let target = resolve_lnk_target_path(lnk_path)?;
     let target_path = PathBuf::from(&target);
 
     if !is_unc_path(&target) {
@@ -686,7 +698,7 @@ pub fn get_recent_files(max_results: usize, max_age_days: i64) -> Vec<RecentFile
     let mut entries_by_path: HashMap<String, RecentFile> = HashMap::new();
     for candidate in &candidates {
         let file = match candidate.kind {
-            ShortcutKind::Lnk => process_lnk(&candidate.path, encoding, candidate.last_accessed),
+            ShortcutKind::Lnk => process_lnk(&candidate.path, candidate.last_accessed),
             ShortcutKind::Url => {
                 process_url(&candidate.path, encoding, &mounts, candidate.last_accessed)
             }

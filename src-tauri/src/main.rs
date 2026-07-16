@@ -1244,6 +1244,36 @@ fn launch_file(path: String) -> Result<(), String> {
     open_file(&path)
 }
 
+/// 選択中のファイルの格納フォルダをエクスプローラーで開く（Shift+Enter）。
+/// 対象が `.lnk` の場合は、`.lnk` 自身のフォルダではなくリンク先の実ファイルの
+/// フォルダを開く（`recent_files::resolve_lnk_target_path` でリンク先解決を再利用し、
+/// `/recent` 側のリンク解決ロジックと挙動を揃える）。リンク解決に失敗した場合は
+/// `.lnk` 自身のフォルダを開くフォールバックとする。フォルダを開く処理自体は
+/// `open_file`（`ShellExecuteW` にディレクトリパスを渡すとエクスプローラーが開く）を
+/// そのまま流用する。
+#[tauri::command]
+fn open_containing_folder(path: String) -> Result<(), String> {
+    let file_path = Path::new(&path);
+
+    let is_lnk = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("lnk"))
+        .unwrap_or(false);
+
+    let resolved_path = if is_lnk {
+        recent_files::resolve_lnk_target_path(file_path).unwrap_or(path)
+    } else {
+        path
+    };
+
+    let parent = Path::new(&resolved_path)
+        .parent()
+        .ok_or_else(|| "格納フォルダを取得できませんでした".to_string())?;
+
+    open_file(&parent.to_string_lossy())
+}
+
 #[tauri::command]
 fn execute_system_command(action: String) -> Result<(), String> {
     let result = match action.as_str() {
@@ -1656,6 +1686,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             search_files,
             launch_file,
+            open_containing_folder,
             calculate,
             copy_to_clipboard,
             get_folders,

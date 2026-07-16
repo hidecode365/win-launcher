@@ -223,7 +223,23 @@ export default function App() {
           e.preventDefault();
           search.setSelected((s) => Math.max(s - 1, 0));
           break;
-        case "Enter":
+        case "Enter": {
+          // 選択中の項目がファイル検索結果／最近使ったファイル一覧のいずれかの
+          // 実ファイル（計算結果・URLエンコード/デコード結果・Web検索行を除く）を
+          // 指している場合のみ有効なインデックス。負の値・範囲外の場合は
+          // search.results[...] が undefined になり、以下の分岐が自然に無効化される。
+          const selectedFile =
+            search.results[search.selected - calcLength - urlConvertLength];
+          if (e.shiftKey) {
+            // Shift+Enter は格納フォルダを開く操作専用。ファイル検索結果・最近使った
+            // ファイル一覧以外（計算結果・URLエンコード/デコード結果・システムコマンド
+            // 候補・クリップボード履歴・プレフィックスコマンド候補・Web検索行）は
+            // ファイルパスを持たないため、selectedFile が存在する場合のみ実行する。
+            if (selectedFile) {
+              search.openContainingFolder(selectedFile.path);
+            }
+            break;
+          }
           if (webSearchVisible && search.selected === baseLength) {
             search.openWebSearch(search.query);
           } else if (search.clipboardMode) {
@@ -245,15 +261,11 @@ export default function App() {
             search.selected === calcLength
           ) {
             search.copyUrlConvertResult(search.urlConvertResult.text);
-          } else if (
-            search.results[search.selected - calcLength - urlConvertLength]
-          ) {
-            search.launchFile(
-              search.results[search.selected - calcLength - urlConvertLength]
-                .path
-            );
+          } else if (selectedFile) {
+            search.launchFile(selectedFile.path);
           }
           break;
+        }
         case "Escape":
           hideWindow();
           break;
@@ -284,6 +296,7 @@ export default function App() {
       urlConvertLength,
       search.results,
       search.launchFile,
+      search.openContainingFolder,
     ]
   );
 
@@ -476,6 +489,11 @@ export default function App() {
           prefixCommandMode={search.prefixCommandMode}
           isUrlConvertSelected={
             search.urlConvertResult !== null && search.selected === calcLength
+          }
+          isFileSelected={
+            search.results[
+              search.selected - calcLength - urlConvertLength
+            ] !== undefined
           }
         />
       )}
