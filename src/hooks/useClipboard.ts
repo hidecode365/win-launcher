@@ -10,7 +10,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import type { Store } from "@tauri-apps/plugin-store";
-import { hideWindow } from "../lib/window";
 import { makeId } from "../lib/format";
 import {
   AppSettings,
@@ -24,7 +23,7 @@ export function useClipboard(
   clipboardMode: boolean,
   clipboardFilterText: string | null,
   storeRef: MutableRefObject<Store | null>,
-  setQuery: (query: string) => void
+  closeWindow: (options?: { clearQuery?: boolean }) => Promise<void>
 ) {
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>(
     []
@@ -114,10 +113,9 @@ export function useClipboard(
       } else {
         await invoke("paste_clipboard_image", { id: entry.id }).catch(console.error);
       }
-      setQuery("");
-      await hideWindow();
+      await closeWindow();
     },
-    [setQuery]
+    [closeWindow]
   );
 
   const setInitialHistory = useCallback((data: ClipboardTextEntry[]) => {

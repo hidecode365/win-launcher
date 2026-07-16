@@ -291,34 +291,60 @@ export function useSearch(
   const bumpCloseRefreshTick = useCallback(() => {
     setCloseRefreshTick((t) => t + 1);
   }, []);
+
+  // ウィンドウを閉じる系のアクション（launchFile/openContainingFolder/copyResult/
+  // copyUrlConvertResult/openWebSearch/confirmSystemCommand/selectClipboardEntry）が
+  // 共通して行う後処理（クエリのクリア・closeRefreshTick の加算・hideWindow）をここに
+  // 集約する。かつては各アクションが個別にこの3つを呼んでおり、selectClipboardEntry
+  // （useClipboard.ts）だけ bumpCloseRefreshTick() の呼び出しが漏れているという不整合が
+  // あった。呼び出し側をこの関数一本に統一することで、この種の実装漏れが構造的に
+  // 起きないようにしている。
+  // clearQuery を false にすると、クエリのクリアだけを呼び出し側の都合でスキップできる
+  // （現時点でこれを使う呼び出し元はないが、将来の挙動差異を吸収するために用意している）。
+  const closeWindow = useCallback(
+    async (options?: { clearQuery?: boolean }) => {
+      if (options?.clearQuery ?? true) {
+        setQuery("");
+      }
+      bumpCloseRefreshTick();
+      await hideWindow();
+    },
+    [bumpCloseRefreshTick]
+  );
+
   const [rawRecentFiles, setRawRecentFiles] = useState<RecentFile[]>([]);
 
-  // search_files の非同期呼び出しに世代 ID を振り、.then() 発火時点で自分が最新の
-  // 呼び出しかどうかを確認してから setResults を反映する。呼び出し後にクエリやモードが
-  // 変わっていた場合（古い呼び出しが後から発火した場合）は結果を破棄し、現在アクティブな
-  // モードの状態を横から上書きしないようにする。
+  // 非同期呼び出し（search_files・get_recent_files 等）に世代 ID を振り、.then() 発火
+  // 時点で自分が最新の呼び出しかどうかを確認してから結果を反映するための仕組み。
+  // モード名をキーにした単一の ref にまとめることで、新しい "/" プレフィックスモードが
+  // 増えるたびに専用の ref を追加しなくても済むようにしている
+  // （beginAsyncCall(key) で世代を進めて呼び出し直前の ID を取得し、
+  // isLatestAsyncCall(key, id) で .then() 側から「自分がまだ最新か」を確認する）。
   //
-  // get_recent_files（fetchRecentFiles）の世代 ID は意図的に別カウンタ
-  // （recentAsyncCallIdRef）に分けている。過去はこの2つを1本のカウンタで共有していたが、
-  // それが「Shift+Enter でフォルダを開いた後、再表示すると検索結果が空白のまま」という
-  // 不具合の原因になっていた（詳細は recentAsyncCallIdRef のコメントを参照）。
-  const asyncCallIdRef = useRef(0);
+  // 【過去に発生した不具合】search_files 用と get_recent_files 用の世代 ID をかつて
+  // 1本のカウンタで共有していた頃、Shift+Enter でファイルの格納フォルダを開く
+  // （openContainingFolder）と、開いた Explorer が前面に出て WinLauncher のウィンドウが
+  // 一時的にフォーカスを失う。`/recent` モードのままこの操作をした場合、フォーカス喪失→
+  // 回復のタイミングによっては recentMode の focus-regain リスナー（下記）が
+  // fetchRecentFiles を呼び、共有カウンタを1つ進めてしまうことがあった。その直後に
+  // openContainingFolder 側の setQuery("") で発火した「search_files("") の再取得」
+  // （通常表示に戻すための呼び出し）が解決した時点で「もう自分は最新の呼び出しではない」
+  // と誤判定され、結果が握りつぶされて results が空のまま固まって見えていた。
+  // "search" と "recent" を別キーに分離し、get_recent_files 側の呼び出しが
+  // search_files 側の呼び出しに巻き込まれて破棄されないようにすることで解消した。
+  // 今後モードを追加する場合も、既存キーを使い回さず新しいキー名を割り当てること
+  // （同一キーの共有＝過去の不具合の再発につながる）。
+  const asyncCallIdRef = useRef<Record<string, number>>({});
 
-  // get_recent_files（fetchRecentFiles）専用の世代 ID。search_files 用の
-  // asyncCallIdRef とは別カウンタにする。
-  //
-  // 【過去に発生した不具合】共有カウンタだった頃、Shift+Enter でファイルの格納フォルダを
-  // 開く（openContainingFolder）と、開いた Explorer が前面に出て WinLauncher の
-  // ウィンドウが一時的にフォーカスを失う。/recent モードのままこの操作をした場合、
-  // フォーカス喪失→回復のタイミングによっては recentMode の focus-regain リスナー
-  // （下記 useEffect）が fetchRecentFiles を呼び、共有カウンタを1つ進めてしまうことが
-  // あった。その直後に openContainingFolder 側の setQuery("") で発火した
-  // 「search_files("") の再取得」（通常表示に戻すための呼び出し）が解決した時点で
-  // 「もう自分は最新の呼び出しではない」と誤判定され、結果が握りつぶされて
-  // results が空のまま固まって見えていた。get_recent_files 側の世代 ID を分離し、
-  // search_files の再取得が get_recent_files 側の呼び出しに巻き込まれて破棄されない
-  // ようにすることで解消した。
-  const recentAsyncCallIdRef = useRef(0);
+  const beginAsyncCall = useCallback((key: string): number => {
+    const id = (asyncCallIdRef.current[key] ?? 0) + 1;
+    asyncCallIdRef.current[key] = id;
+    return id;
+  }, []);
+
+  const isLatestAsyncCall = useCallback((key: string, id: number): boolean => {
+    return asyncCallIdRef.current[key] === id;
+  }, []);
 
   // 直近にキーボード（↑↓）で選択操作を行った時刻。
   const lastKeyboardNavAtRef = useRef(0);
@@ -383,13 +409,13 @@ export function useSearch(
   // 明示的に取得し直さない限りウィンドウ非表示中に開いた/削除したファイルが
   // 反映されないため）。
   const fetchRecentFiles = useCallback((source: string) => {
-    const callId = ++recentAsyncCallIdRef.current;
+    const callId = beginAsyncCall("recent");
     console.debug(`[recent] fetch start (source=${source}, callId=${callId})`);
     invoke<RecentFile[]>("get_recent_files")
       .then((files) => {
-        if (recentAsyncCallIdRef.current !== callId) {
+        if (!isLatestAsyncCall("recent", callId)) {
           console.debug(
-            `[recent] fetch discarded (source=${source}, callId=${callId}, current=${recentAsyncCallIdRef.current})`
+            `[recent] fetch discarded (source=${source}, callId=${callId}, current=${asyncCallIdRef.current["recent"]})`
           );
           return; // 古い呼び出しの結果は破棄する
         }
@@ -399,7 +425,7 @@ export function useSearch(
       .catch((err) => {
         console.error(`[recent] fetch failed (source=${source}):`, err);
       });
-  }, []);
+  }, [beginAsyncCall, isLatestAsyncCall]);
 
   // 最近使ったファイル一覧モードに入ったタイミング（false → true の遷移）で取得する。
   // フィルタ文字列の変更ごとには再取得せず、既に取得済みの一覧をフロントエンド側で
@@ -409,18 +435,29 @@ export function useSearch(
     fetchRecentFiles("mode-enter");
   }, [recentMode, fetchRecentFiles]);
 
-  // recentMode を維持したままウィンドウを非表示にして再度フォーカスを取り戻した場合
-  // （ファイルを起動せずに Esc やフォーカスアウトで閉じた場合）も取得し直す。
-  // クリップボード履歴は OS のクリップボード変更通知を常時受信しているため
-  // 表示中の内容が非表示中も自動で最新化されるが、最近使ったファイル一覧には
-  // そのようなプッシュ通知がなく、モード遷移時の1回きりの取得のままだと
-  // 非表示中に発生した変化（ファイルを開く／削除する等）は次にモードへ入り直すまで
-  // 反映されない。同じ「再表示時には常に最新の状態を見せる」という体験をクリップボード
-  // 履歴と揃えるため、フォーカス回復のたびに recentMode が有効なら取得し直す。
-  const recentModeRef = useRef(recentMode);
-  useEffect(() => {
-    recentModeRef.current = recentMode;
-  }, [recentMode]);
+  // pull型モード（get_recent_files 等、プッシュ通知を持たない取得）のうち、フォーカス
+  // 回復時に再取得が必要なものをキーで宣言するテーブル。クリップボード履歴は OS の
+  // クリップボード変更通知を常時受信しているため表示中の内容が非表示中も自動で
+  // 最新化されるが（push型）、最近使ったファイル一覧のような pull型モードには
+  // そのようなプッシュ通知がなく、モード遷移時の1回きりの取得のままだと非表示中に
+  // 発生した変化（ファイルを開く／削除する等）が次にモードへ入り直すまで反映されない。
+  // 同じ「再表示時には常に最新の状態を見せる」という体験を push型モードと揃えるため、
+  // フォーカス回復のたびにこのテーブルを見て active なモードだけ再取得する。
+  //
+  // 新しい pull型モードを追加する場合は、ここにエントリを1つ追加するだけでよい
+  // （下記の onFocusChanged リスナー自体は特定モードを知らない汎用ロジックのみを持つ）。
+  // レンダーのたびに最新の active 状態で上書きする「最新値を保持する ref」パターン
+  // （かつての recentModeRef と同じ考え方を、モード横断で汎用化したもの）。
+  const focusRegainTableRef = useRef<
+    Record<string, { active: boolean; refetch: () => void }>
+  >({});
+  focusRegainTableRef.current = {
+    recent: {
+      active: recentMode,
+      refetch: () => fetchRecentFiles("focus-regain"),
+    },
+  };
+
   useEffect(() => {
     // onFocusChanged の登録は非同期（Promise）のため、登録が完了するより先に
     // このエフェクトの cleanup が走ると（React 18 StrictMode の開発時
@@ -433,11 +470,11 @@ export function useSearch(
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
       .onFocusChanged(({ payload: focused }) => {
-        console.debug(
-          `[recent] focus-changed (focused=${focused}, recentMode=${recentModeRef.current})`
-        );
-        if (focused && recentModeRef.current) {
-          fetchRecentFiles("focus-regain");
+        if (!focused) return;
+        for (const [key, entry] of Object.entries(focusRegainTableRef.current)) {
+          if (!entry.active) continue;
+          console.debug(`[focus-regain] refetch (mode=${key})`);
+          entry.refetch();
         }
       })
       .then((fn) => {
@@ -451,7 +488,7 @@ export function useSearch(
       cancelled = true;
       unlisten?.();
     };
-  }, [fetchRecentFiles]);
+  }, []);
 
   // 取得済みの一覧を表示名（.lnk はファイル名、.url は拡張子除去後の名称。
   // いずれも RecentFile.name に統一済み）への部分一致でフィルタする。
@@ -545,17 +582,17 @@ export function useSearch(
       // （かつて「ウィンドウを閉じるだけなら不要な処理」として1回だけ抑止していたが、
       // 抑止した分の再取得を行うタイミングがどこにもなく、次に再表示した時に結果一覧が
       // 空のまま固まって見える不具合になっていたため廃止した。世代 ID
-      // （asyncCallIdRef）による使い捨てチェックは維持しているため、連続してクエリが
-      // 変わった場合に古い呼び出しの結果が後から上書きしてしまうことはない）。
-      const callId = ++asyncCallIdRef.current;
+      // （asyncCallIdRef の "search" キー）による使い捨てチェックは維持しているため、
+      // 連続してクエリが変わった場合に古い呼び出しの結果が後から上書きしてしまうことはない）。
+      const callId = beginAsyncCall("search");
       console.debug(
         `[search] search_files start (query="${query}", callId=${callId}, closeRefreshTick=${closeRefreshTick})`
       );
       invoke<FileEntry[]>("search_files", { query })
         .then((files) => {
-          if (asyncCallIdRef.current !== callId) {
+          if (!isLatestAsyncCall("search", callId)) {
             console.debug(
-              `[search] search_files discarded (callId=${callId}, current=${asyncCallIdRef.current})`
+              `[search] search_files discarded (callId=${callId}, current=${asyncCallIdRef.current["search"]})`
             );
             return; // 古い呼び出しの結果は破棄する
           }
@@ -579,6 +616,8 @@ export function useSearch(
     recentMode,
     recentResults,
     closeRefreshTick,
+    beginAsyncCall,
+    isLatestAsyncCall,
   ]);
 
   // 起動回数・最終起動時刻を更新し、settings.json の "frecency" キーへ即時永続化する。
@@ -621,29 +660,26 @@ export function useSearch(
 
   // launch_file / open_containing_folder はいずれもファイルやフォルダを OS の既定
   // アプリ（Explorer 含む）で開く。起動されたアプリはほぼ即座に前面に出て
-  // WinLauncher からフォーカスを奪うため、invoke の完了を待ってから setQuery("") を
+  // WinLauncher からフォーカスを奪うため、invoke の完了を待ってから closeWindow() を
   // 呼ぶと、フォーカス喪失をきっかけとする自動非表示（App.tsx の 150ms デバウンス）が
-  // 先に走ってしまい、setQuery("") による「空クエリでの再検索」が発火するタイミングと
-  // 競合しうる（詳細は recentAsyncCallIdRef のコメントを参照）。invoke を await せず
-  // 発火させてすぐ setQuery("") に進むことで、ファイル起動・フォルダオープンの完了を
-  // 待たずに再検索を可能な限り早く開始させ、この競合の余地を減らす。
+  // 先に走ってしまい、closeWindow() 内の setQuery("") による「空クエリでの再検索」が
+  // 発火するタイミングと競合しうる（詳細は asyncCallIdRef のコメントを参照）。invoke を
+  // await せず発火させてすぐ closeWindow() に進むことで、ファイル起動・フォルダオープンの
+  // 完了を待たずに再検索を可能な限り早く開始させ、この競合の余地を減らす。
   //
-  // いずれも setQuery("") と同時に bumpCloseRefreshTick() を呼ぶ。無入力のまま
-  // （query が既に ""）frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを
-  // 開いた場合、setQuery("") は "" → "" で値が変化せず React がベイルアウトするため、
-  // これだけでは検索エフェクトが再実行されない（詳細は closeRefreshTick のコメントを
-  // 参照）。
+  // setQuery("") と bumpCloseRefreshTick() のセット呼び出し（無入力のまま
+  // frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを開いた場合の
+  // React ベイルアウト対策）は closeWindow() 内に集約済み（詳細は closeWindow の
+  // コメントを参照）。
 
   const launchFile = useCallback(
     async (path: string) => {
       invoke("launch_file", { path }).catch(console.error);
       await recordFrecency(path);
-      setQuery("");
       setResults([]);
-      bumpCloseRefreshTick();
-      await hideWindow();
+      await closeWindow();
     },
-    [recordFrecency, bumpCloseRefreshTick]
+    [recordFrecency, closeWindow]
   );
 
   // 選択中の項目の格納フォルダをエクスプローラーで開く（Shift+Enter）。通常の
@@ -652,34 +688,28 @@ export function useSearch(
   const openContainingFolder = useCallback(
     async (path: string) => {
       invoke("open_containing_folder", { path }).catch(console.error);
-      setQuery("");
       setResults([]);
-      bumpCloseRefreshTick();
-      await hideWindow();
+      await closeWindow();
     },
-    [bumpCloseRefreshTick]
+    [closeWindow]
   );
 
   const copyResult = useCallback(
     async (text: string) => {
       const formatted = appSettings.copyWithComma ? formatWithCommas(text) : text;
       await invoke("copy_to_clipboard", { text: formatted }).catch(console.error);
-      setQuery("");
       setCalcResult(null);
-      bumpCloseRefreshTick();
-      await hideWindow();
+      await closeWindow();
     },
-    [appSettings.copyWithComma, bumpCloseRefreshTick]
+    [appSettings.copyWithComma, closeWindow]
   );
 
   const copyUrlConvertResult = useCallback(
     async (text: string) => {
       await invoke("copy_to_clipboard", { text }).catch(console.error);
-      setQuery("");
-      bumpCloseRefreshTick();
-      await hideWindow();
+      await closeWindow();
     },
-    [bumpCloseRefreshTick]
+    [closeWindow]
   );
 
   const openWebSearch = useCallback(
@@ -687,11 +717,9 @@ export function useSearch(
       await open(
         `https://www.google.com/search?q=${encodeURIComponent(q)}`
       ).catch(console.error);
-      setQuery("");
-      bumpCloseRefreshTick();
-      await hideWindow();
+      await closeWindow();
     },
-    [bumpCloseRefreshTick]
+    [closeWindow]
   );
 
   const requestSystemCommand = useCallback((cmd: SystemCommand) => {
@@ -727,10 +755,8 @@ export function useSearch(
       action: pendingCommand.action,
     }).catch(console.error);
     setPendingCommand(null);
-    setQuery("");
-    bumpCloseRefreshTick();
-    await hideWindow();
-  }, [pendingCommand, bumpCloseRefreshTick]);
+    await closeWindow();
+  }, [pendingCommand, closeWindow]);
 
   const setInitialFrecency = useCallback((data: FrecencyMap) => {
     frecencyRef.current = data;
@@ -766,6 +792,7 @@ export function useSearch(
     copyResult,
     copyUrlConvertResult,
     openWebSearch,
+    closeWindow,
     setInitialFrecency,
     setInitialPrefixCommandFrecency,
   };

@@ -42,7 +42,7 @@ export default function App() {
     search.clipboardMode,
     search.clipboardFilterText,
     storeRef,
-    search.setQuery
+    search.closeWindow
   );
 
   useEffect(() => {
