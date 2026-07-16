@@ -60,6 +60,7 @@ export function ClipboardSettings({
           <input
             type="number"
             min={1}
+            max={200}
             value={maxItemsInput}
             onChange={(e) => setMaxItemsInput(e.target.value)}
             className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
@@ -72,6 +73,7 @@ export function ClipboardSettings({
             保存
           </button>
         </div>
+        <div className="text-xs text-gray-400 mt-1">1〜200件</div>
       </div>
       {error && <div className="text-xs text-red-500">{error}</div>}
     </div>

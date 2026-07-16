@@ -46,6 +46,8 @@ export interface AppSettings {
   urlConvertKeepSpaceEncoded: boolean;
   recentFilesEnabled: boolean;
   recentKeyword: string;
+  recentMaxAgeDays: number;
+  recentMaxResults: number;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -67,6 +69,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   urlConvertKeepSpaceEncoded: false,
   recentFilesEnabled: true,
   recentKeyword: "recent",
+  recentMaxAgeDays: 180,
+  recentMaxResults: 50,
 };
 
 // Rust の `check_for_update` コマンドの戻り値。

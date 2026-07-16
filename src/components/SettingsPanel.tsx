@@ -58,6 +58,8 @@ export function SettingsPanel({
   clipboardSettingsError,
   onSetRecentFilesEnabled,
   onSetRecentKeyword,
+  onSetRecentMaxAgeDays,
+  onSetRecentMaxResults,
   recentSettingsError,
   onSetOcrEnabled,
   onSetCheckUpdateOnStartup,
@@ -89,6 +91,8 @@ export function SettingsPanel({
   clipboardSettingsError: string | null;
   onSetRecentFilesEnabled: (checked: boolean) => void;
   onSetRecentKeyword: (keyword: string) => void;
+  onSetRecentMaxAgeDays: (days: number) => void;
+  onSetRecentMaxResults: (maxResults: number) => void;
   recentSettingsError: string | null;
   onSetOcrEnabled: (checked: boolean) => void;
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
@@ -136,13 +140,13 @@ export function SettingsPanel({
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <nav className="w-32 flex-shrink-0 border-r border-gray-200/60 py-2 overflow-y-auto">
+        <nav className="w-36 flex-shrink-0 border-r border-gray-200/60 py-2 overflow-y-auto">
           {SETTINGS_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
-              className={`w-full text-left px-3 py-2 text-sm ${
+              className={`w-full text-left px-3 py-2 text-sm whitespace-nowrap ${
                 tab === t.id
                   ? "bg-blue-50 text-blue-600 font-medium"
                   : "text-gray-600 hover:bg-gray-100"
@@ -220,6 +224,10 @@ export function SettingsPanel({
               onToggle={onSetRecentFilesEnabled}
               keyword={appSettings.recentKeyword}
               onChangeKeyword={onSetRecentKeyword}
+              maxAgeDays={appSettings.recentMaxAgeDays}
+              onChangeMaxAgeDays={onSetRecentMaxAgeDays}
+              maxResults={appSettings.recentMaxResults}
+              onChangeMaxResults={onSetRecentMaxResults}
               error={recentSettingsError}
             />
           )}

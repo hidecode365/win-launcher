@@ -30,20 +30,132 @@ const DEFAULT_SLEEP_KEYWORD: &str = "sleep";
 const DEFAULT_CLIPBOARD_PREFIX: &str = "cb";
 const DEFAULT_CLIPBOARD_MAX_ITEMS: u32 = 50;
 const DEFAULT_RECENT_KEYWORD: &str = "recent";
+// 最近使ったファイル一覧専用の保持期間（日数）・表示件数上限のデフォルト値。
+// いずれも設定画面から変更可能（`AppSettings.recent_max_age_days` /
+// `recent_max_results`）。
+const DEFAULT_RECENT_MAX_AGE_DAYS: u32 = 180;
+const DEFAULT_RECENT_MAX_RESULTS: u32 = 50;
 const CLIPBOARD_THUMBNAIL_MAX_WIDTH: u32 = 320;
-// ファイル検索結果・最近使ったファイル一覧の共通の表示件数上限。
+// ファイル検索結果の表示件数上限。
 const MAX_SEARCH_RESULTS: usize = 50;
+
+// アプリ専用のログ用ディレクトリ（`app_log_dir()`）配下に置くログファイル名。
+const RECENT_DEBUG_LOG_FILENAME: &str = "recent_debug.log";
+const PANIC_LOG_FILENAME: &str = "panic.log";
+// panic.log の肥大化防止用サイズ上限。これを超えていたら書き込み前にクリアする。
+const PANIC_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
 /// クリップボード変更通知用のウィンドウサブクラスプロシージャ（`extern "system"`）は
 /// クロージャで `AppHandle` を捕捉できないため、`setup()` で一度だけ設定したハンドルを
 /// ここから取得する。
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
+/// アプリ専用のログ用ディレクトリ（`tauri::path::PathResolver::app_log_dir()`）を
+/// `setup()` 内（`init_log_dir` 呼び出し時）に一度だけ解決してキャッシュする。
+/// `log_debug`/パニックフックは `AppHandle` を経由せずここから読む。
+static LOG_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// アプリ専用のログ用ディレクトリを解決し（存在しなければ作成し）、`LOG_DIR` に
+/// キャッシュする。あわせて `recent_debug.log` を新規作成（＝前回起動分を上書き）する。
+/// `setup()` 内で一度だけ呼び出すこと。解決・作成に失敗した場合は `LOG_DIR` を未設定の
+/// ままにする（以降 `log_debug`/パニックフックは静かに no-op になる。パニックしない）。
+fn init_log_dir(app: &tauri::App) {
+    let Ok(dir) = app.path().app_log_dir() else {
+        return;
+    };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(dir.join(RECENT_DEBUG_LOG_FILENAME));
+    let _ = LOG_DIR.set(dir);
+}
+
+/// 調査用のデバッグログを安全に書き出す。`eprintln!` は書き込み失敗時に内部で
+/// `.expect()` 相当の処理を行いパニックする仕様があり、トレイからの再起動後など
+/// stderr の書き込み先を失った状態でこれが連鎖し、`catch_unwind` で保護できない
+/// WebView2 のコールバック境界内でプロセス全体を巻き込んで強制終了した実績がある。
+/// そのためファイル書き込みの失敗（`Result`）は握りつぶし、絶対にパニックしない
+/// （`unwrap()`/`expect()` は使わない）。`LOG_DIR` が未解決の場合は何もしない。
+/// `recent_debug.log` は起動のたびに `init_log_dir` が新規作成するため、ここでは
+/// 追記のみを行う。
+fn log_debug(msg: &str) {
+    let Some(dir) = LOG_DIR.get() else {
+        return;
+    };
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(RECENT_DEBUG_LOG_FILENAME))
+    else {
+        return;
+    };
+    use std::io::Write;
+    let _ = writeln!(file, "[{}] {msg}", now_ms());
+}
+
+/// パニック発生時の情報を、アプリ専用ログディレクトリ（`LOG_DIR`）配下の `panic.log` に
+/// 追記するフックを登録する。バックトレースは `RUST_BACKTRACE` 環境変数に関わらず
+/// `force_capture` で無条件に取得する。デフォルトのフック（stderr 出力）は維持した
+/// うえで追加で呼び出す。
+///
+/// `LOG_DIR` は `setup()` 内の `init_log_dir` でしか解決できない（`app_log_dir()` が
+/// `AppHandle`/`App` を要求するため）。そのためこの関数自体も `setup()` 内、
+/// `init_log_dir` の直後に呼び出すこと。これより前（プラグイン登録処理など）で
+/// 発生したパニックは記録できない点に留意する。
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(dir) = LOG_DIR.get() {
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            let log_line = format!("[{}] {info}\n{backtrace}\n\n", now_ms());
+            let log_path = dir.join(PANIC_LOG_FILENAME);
+            // 肥大化防止：上限サイズ以上になっていたら追記ではなくクリアしてから書く。
+            let should_truncate = std::fs::metadata(&log_path)
+                .map(|m| m.len() >= PANIC_LOG_MAX_BYTES)
+                .unwrap_or(false);
+            let opened = if should_truncate {
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&log_path)
+            } else {
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+            };
+            if let Ok(mut file) = opened {
+                use std::io::Write;
+                let _ = file.write_all(log_line.as_bytes());
+            }
+        }
+        default_hook(info);
+    }));
+}
+
+/// `catch_unwind` が返す panic payload（`Box<dyn Any + Send>`）から、可能であれば
+/// メッセージ文字列を取り出す。`panic!("...")` / `panic!("{}", x)` は `&str` または
+/// `String` を積むことがほとんどのため、それ以外の型は固定メッセージにフォールバックする。
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }
 
 static CLIPBOARD_IMAGE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -339,6 +451,14 @@ fn default_recent_keyword() -> String {
     DEFAULT_RECENT_KEYWORD.to_string()
 }
 
+fn default_recent_max_age_days() -> u32 {
+    DEFAULT_RECENT_MAX_AGE_DAYS
+}
+
+fn default_recent_max_results() -> u32 {
+    DEFAULT_RECENT_MAX_RESULTS
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
@@ -367,6 +487,10 @@ struct AppSettings {
     recent_files_enabled: bool,
     #[serde(default = "default_recent_keyword")]
     recent_keyword: String,
+    #[serde(default = "default_recent_max_age_days")]
+    recent_max_age_days: u32,
+    #[serde(default = "default_recent_max_results")]
+    recent_max_results: u32,
 }
 
 impl Default for AppSettings {
@@ -390,6 +514,8 @@ impl Default for AppSettings {
             url_convert_keep_space_encoded: false,
             recent_files_enabled: true,
             recent_keyword: DEFAULT_RECENT_KEYWORD.to_string(),
+            recent_max_age_days: DEFAULT_RECENT_MAX_AGE_DAYS,
+            recent_max_results: DEFAULT_RECENT_MAX_RESULTS,
         }
     }
 }
@@ -545,8 +671,8 @@ fn set_clipboard_prefix(app: AppHandle, prefix: String) -> Result<AppSettings, S
 
 #[tauri::command]
 fn set_clipboard_max_items(app: AppHandle, max_items: u32) -> Result<AppSettings, String> {
-    if max_items < 1 {
-        return Err("1件以上を指定してください".to_string());
+    if !(1..=200).contains(&max_items) {
+        return Err("1件以上200件以下の整数を指定してください".to_string());
     }
     let mut settings = load_app_settings(&app);
     settings.clipboard_max_items = max_items;
@@ -576,8 +702,45 @@ fn set_recent_keyword(app: AppHandle, keyword: String) -> Result<AppSettings, St
 }
 
 #[tauri::command]
-fn get_recent_files() -> Vec<recent_files::RecentFile> {
-    recent_files::get_recent_files(MAX_SEARCH_RESULTS)
+fn set_recent_max_age_days(app: AppHandle, days: u32) -> Result<AppSettings, String> {
+    if !(1..=3650).contains(&days) {
+        return Err("1日以上3650日以下の整数を指定してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    settings.recent_max_age_days = days;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_recent_max_results(app: AppHandle, max_results: u32) -> Result<AppSettings, String> {
+    if !(1..=200).contains(&max_results) {
+        return Err("1件以上200件以下の整数を指定してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    settings.recent_max_results = max_results;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn get_recent_files(app: AppHandle) -> Result<Vec<recent_files::RecentFile>, String> {
+    let settings = load_app_settings(&app);
+    let max_results = settings.recent_max_results as usize;
+    let max_age_days = settings.recent_max_age_days as i64;
+    // レジストリ・.lnk/.url パース等、原因調査中の異常終了の疑いがある処理を
+    // catch_unwind で保護する。1件の異常なエントリでアプリ全体を巻き込まないため
+    // （dev ビルドは panic = "unwind" のため有効。release ビルドは
+    // `[profile.release] panic = "abort"` のため catch_unwind は効かず、
+    // このガードはあくまで開発時の安全対策であることに注意）。
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        recent_files::get_recent_files(max_results, max_age_days)
+    }))
+    .map_err(|payload| {
+        let message = panic_payload_message(payload.as_ref());
+        log_debug(&format!("[main] get_recent_files panicked: {message}"));
+        format!("最近使ったファイル一覧の取得に失敗しました: {message}")
+    })
 }
 
 #[tauri::command]
@@ -1384,6 +1547,11 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
+            // ログ用ディレクトリの解決・パニックフックの登録は、他の初期化処理より前に
+            // 最優先で行う（以降の処理でパニックが起きても記録できるようにするため）。
+            init_log_dir(app);
+            install_panic_hook();
+
             // グローバルホットキー登録（保存済み設定 → パース失敗時はデフォルトにフォールバック）
             let mut settings = load_app_settings(app.handle());
             let shortcut = match Shortcut::from_str(&settings.hotkey) {
@@ -1512,6 +1680,8 @@ fn main() {
             set_hotkey,
             set_recent_files_enabled,
             set_recent_keyword,
+            set_recent_max_age_days,
+            set_recent_max_results,
             get_recent_files,
             set_ocr_enabled,
             ocr_from_clipboard,

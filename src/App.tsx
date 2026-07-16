@@ -361,6 +361,8 @@ export default function App() {
         clipboardSettingsError={settings.clipboardSettingsError}
         onSetRecentFilesEnabled={settings.setRecentFilesEnabled}
         onSetRecentKeyword={settings.setRecentKeyword}
+        onSetRecentMaxAgeDays={settings.setRecentMaxAgeDays}
+        onSetRecentMaxResults={settings.setRecentMaxResults}
         recentSettingsError={settings.recentSettingsError}
         onSetOcrEnabled={settings.setOcrEnabled}
         onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}

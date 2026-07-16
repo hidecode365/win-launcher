@@ -160,6 +160,30 @@ export function useSettings(showSettings: boolean) {
     }
   }, []);
 
+  const setRecentMaxAgeDays = useCallback(async (days: number) => {
+    setRecentSettingsError(null);
+    try {
+      const updated = await invoke<AppSettings>("set_recent_max_age_days", {
+        days,
+      });
+      setAppSettings(updated);
+    } catch (e) {
+      setRecentSettingsError(String(e));
+    }
+  }, []);
+
+  const setRecentMaxResults = useCallback(async (maxResults: number) => {
+    setRecentSettingsError(null);
+    try {
+      const updated = await invoke<AppSettings>("set_recent_max_results", {
+        maxResults,
+      });
+      setAppSettings(updated);
+    } catch (e) {
+      setRecentSettingsError(String(e));
+    }
+  }, []);
+
   const setOcrEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_ocr_enabled", {
       enabled,
@@ -238,6 +262,8 @@ export function useSettings(showSettings: boolean) {
     setClipboardMaxItems,
     setRecentFilesEnabled,
     setRecentKeyword,
+    setRecentMaxAgeDays,
+    setRecentMaxResults,
     setOcrEnabled,
     setCheckUpdateOnStartup,
     addFolder,

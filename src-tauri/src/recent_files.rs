@@ -4,10 +4,12 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct RecentFile {
     pub name: String,
-    /// `.lnk` 由来ならリンク先のローカルパス、`.url` 由来なら OneDrive のローカル同期先
-    /// パスへの変換に成功したローカルパス（`resolve_onedrive_local_path` を参照）。
-    /// 変換に失敗した `.url` は一覧に含めないため、ここに含まれるのは常に実在確認済みの
-    /// ローカルパスであり、起動処理側で由来による分岐は不要。
+    /// `.lnk` 由来ならリンク先のローカルパス、`.url` 由来なら同期ライブラリのローカル
+    /// 同期先パスへの変換に成功したローカルパス（`resolve_sync_engine_local_path` を
+    /// 参照）。変換に失敗した `.url` は一覧に含めないため、ここに含まれるのは常に
+    /// 実在確認済み（UNC パスは実在チェック自体をスキップしたもの。「実在チェックと
+    /// ネットワークパス（UNC）の扱い」を参照）のローカルパスであり、起動処理側で
+    /// 由来による分岐は不要。
     pub path: String,
     /// リンク先ファイルではなく `.lnk`/`.url` ショートカット自体の更新日時（UNIX ms）。
     /// Recent フォルダのショートカットは同じファイルを開くたびに上書きされる仕様のため、
@@ -49,43 +51,48 @@ mod known_folder {
     }
 }
 
-/// レジストリ `HKEY_CURRENT_USER\Software\Microsoft\OneDrive\Accounts` 配下の
-/// すべてのサブキー（`Personal`・`Business1`・`Business2` 等。個数は環境依存）を列挙し、
-/// 各サブキーの `UserFolder` 値（ローカル同期先パス）を読み取る。サブキー名を決め打ちに
-/// せず動的に列挙することで、個人・会社・複数アカウントいずれの構成にも対応する。
-/// 失敗箇所は `eprintln!` でログ出力したうえでスキップする（黙って握りつぶさない）。
+/// UTF-16（null 終端）文字列に変換する。
 #[cfg(windows)]
-fn onedrive_local_roots() -> Vec<String> {
+fn wide(s: &str) -> Vec<u16> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+}
+
+/// レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` 配下の
+/// すべてのサブキーを列挙し、各サブキーの `UrlNamespace`（そのライブラリのクラウド上
+/// URLのルート）と `MountPoint`（対応するローカル同期先フォルダのパス）の組を取得する。
+/// 個人のOneDrive本体・OneDrive for Businessの個人領域・SharePointチームサイトの
+/// 共有ライブラリ・OneDriveに追加したショートカットのいずれも、この同じレジストリ配下に
+/// 登録されることが実地検証で確認されている。サブキー名を決め打ちにせず動的に列挙する
+/// ことで、個人・会社・複数ライブラリいずれの構成にも対応する。失敗箇所は
+/// `crate::log_debug` でログ出力したうえでスキップする（黙って握りつぶさない）。
+#[cfg(windows)]
+fn sync_engine_mount_points() -> Vec<(String, String)> {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
     use windows::Win32::System::Registry::{
         RegCloseKey, RegEnumKeyExW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
     };
 
-    fn wide(s: &str) -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
-    }
+    let mut mounts = Vec::new();
 
-    let mut roots = Vec::new();
-
-    let accounts_path = wide("Software\\Microsoft\\OneDrive\\Accounts");
-    let mut accounts_key = HKEY::default();
+    let providers_path = wide("Software\\SyncEngines\\Providers\\OneDrive");
+    let mut providers_key = HKEY::default();
     let open_result = unsafe {
         RegOpenKeyExW(
             HKEY_CURRENT_USER,
-            PCWSTR(accounts_path.as_ptr()),
+            PCWSTR(providers_path.as_ptr()),
             None,
             KEY_READ,
-            &mut accounts_key as *mut HKEY,
+            &mut providers_key as *mut HKEY,
         )
     };
     if open_result != ERROR_SUCCESS {
-        eprintln!(
-            "[recent_files] failed to open OneDrive Accounts registry key: {open_result:?}"
-        );
-        return roots;
+        crate::log_debug(&format!(
+            "[recent_files] failed to open SyncEngines\\Providers\\OneDrive registry key: {open_result:?}"
+        ));
+        return mounts;
     }
 
     let mut index = 0u32;
@@ -94,7 +101,7 @@ fn onedrive_local_roots() -> Vec<String> {
         let mut name_len = name_buf.len() as u32;
         let enum_result = unsafe {
             RegEnumKeyExW(
-                accounts_key,
+                providers_key,
                 index,
                 Some(windows::core::PWSTR(name_buf.as_mut_ptr())),
                 &mut name_len as *mut u32,
@@ -106,9 +113,9 @@ fn onedrive_local_roots() -> Vec<String> {
         };
         if enum_result != ERROR_SUCCESS {
             if enum_result != ERROR_NO_MORE_ITEMS {
-                eprintln!(
-                    "[recent_files] failed to enumerate OneDrive account key at index {index}: {enum_result:?}"
-                );
+                crate::log_debug(&format!(
+                    "[recent_files] failed to enumerate SyncEngines provider key at index {index}: {enum_result:?}"
+                ));
             }
             break;
         }
@@ -118,7 +125,7 @@ fn onedrive_local_roots() -> Vec<String> {
         let mut subkey = HKEY::default();
         let open_sub = unsafe {
             RegOpenKeyExW(
-                accounts_key,
+                providers_key,
                 PCWSTR(subkey_path.as_ptr()),
                 None,
                 KEY_READ,
@@ -126,46 +133,46 @@ fn onedrive_local_roots() -> Vec<String> {
             )
         };
         if open_sub == ERROR_SUCCESS {
-            match read_registry_string(subkey, "UserFolder") {
-                Some(user_folder) => roots.push(user_folder),
-                None => eprintln!(
-                    "[recent_files] OneDrive account key '{subkey_name}' has no readable UserFolder value"
-                ),
+            let namespace = read_registry_string_expand(subkey, "UrlNamespace");
+            let mount_point = read_registry_string_expand(subkey, "MountPoint");
+            match (namespace, mount_point) {
+                (Some(ns), Some(mp)) => mounts.push((ns, mp)),
+                _ => crate::log_debug(&format!(
+                    "[recent_files] SyncEngines provider key '{subkey_name}' is missing UrlNamespace or MountPoint"
+                )),
             }
             unsafe {
                 let _ = RegCloseKey(subkey);
             }
         } else {
-            eprintln!(
-                "[recent_files] failed to open OneDrive account subkey '{subkey_name}': {open_sub:?}"
-            );
+            crate::log_debug(&format!(
+                "[recent_files] failed to open SyncEngines provider subkey '{subkey_name}': {open_sub:?}"
+            ));
         }
 
         index += 1;
     }
 
     unsafe {
-        let _ = RegCloseKey(accounts_key);
+        let _ = RegCloseKey(providers_key);
     }
-    roots
+    mounts
 }
 
-/// レジストリの文字列値（`REG_SZ`）を読み取る。
+/// レジストリの文字列値（`REG_SZ` または `REG_EXPAND_SZ`）を読み取る。`REG_EXPAND_SZ`
+/// の場合は `%UserProfile%` 等の環境変数プレースホルダーを `ExpandEnvironmentStringsW`
+/// で展開してから返す（会社環境の実地検証で、`MountPoint` の値がこの型で登録され、
+/// 展開されないまま返ってくるケースが確認されているため）。
 #[cfg(windows)]
-fn read_registry_string(
+fn read_registry_string_expand(
     key: windows::Win32::System::Registry::HKEY,
     value_name: &str,
 ) -> Option<String> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::ERROR_SUCCESS;
-    use windows::Win32::System::Registry::{RegQueryValueExW, REG_SZ, REG_VALUE_TYPE};
+    use windows::Win32::System::Registry::{RegQueryValueExW, REG_EXPAND_SZ, REG_SZ, REG_VALUE_TYPE};
 
-    let name_wide: Vec<u16> = OsStr::new(value_name)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+    let name_wide = wide(value_name);
 
     let mut data_len: u32 = 0;
     let size_result = unsafe {
@@ -194,18 +201,58 @@ fn read_registry_string(
             Some(&mut data_len as *mut u32),
         )
     };
-    if read_result != ERROR_SUCCESS || value_type != REG_SZ {
+    if read_result != ERROR_SUCCESS || (value_type != REG_SZ && value_type != REG_EXPAND_SZ) {
         return None;
     }
 
-    let wide: Vec<u16> = buffer
+    let wide_value: Vec<u16> = buffer
         .chunks_exact(2)
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
-    Some(String::from_utf16_lossy(&wide).trim_end_matches('\0').to_string())
+    let raw = String::from_utf16_lossy(&wide_value)
+        .trim_end_matches('\0')
+        .to_string();
+
+    if value_type == REG_EXPAND_SZ {
+        match expand_environment_string(&raw) {
+            Some(expanded) => Some(expanded),
+            None => Some(raw),
+        }
+    } else {
+        Some(raw)
+    }
 }
 
-const ONEDRIVE_URL_PREFIX: &str = "https://d.docs.live.net/";
+/// `%UserProfile%` 等の環境変数プレースホルダーを含む文字列を Win32 API
+/// `ExpandEnvironmentStringsW` で展開する。プレースホルダーを含まない文字列を渡しても
+/// 害はない（そのまま返る）。
+#[cfg(windows)]
+fn expand_environment_string(s: &str) -> Option<String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
+
+    let wide_in = wide(s);
+    let needed = unsafe { ExpandEnvironmentStringsW(PCWSTR(wide_in.as_ptr()), None) };
+    if needed == 0 {
+        crate::log_debug(&format!(
+            "[recent_files] ExpandEnvironmentStringsW failed to size: {s}"
+        ));
+        return None;
+    }
+
+    let mut buffer = vec![0u16; needed as usize];
+    let written =
+        unsafe { ExpandEnvironmentStringsW(PCWSTR(wide_in.as_ptr()), Some(&mut buffer)) };
+    if written == 0 {
+        crate::log_debug(&format!(
+            "[recent_files] ExpandEnvironmentStringsW failed to expand: {s}"
+        ));
+        return None;
+    }
+
+    let len = (written as usize).saturating_sub(1).min(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..len]))
+}
 
 /// `%XX` 形式のパーセントエンコーディングをデコードする自前実装（`percent-encoding` 等の
 /// 追加クレートは使わない）。バイト単位でデコードしたうえで UTF-8 として組み立て直す。
@@ -228,46 +275,102 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// `.url` の `URL=` 値を OneDrive のローカル同期先パスへ変換する。
-/// `https://d.docs.live.net/` で始まらない URL は変換対象外として `None` を返す。
-/// プレフィックスの直後のアカウント識別子セグメント（次の `/` まで）を読み飛ばし、
-/// 残りをパーセントデコードしたうえで OneDrive ルートからの相対パスとして扱う。
-/// `roots` の候補それぞれについて実在チェックを行い、最初に見つかったローカルパスを返す。
+/// パスが `\\` で始まる UNC 形式（ネットワークパス）かどうかを判定する。UNC パスは
+/// 実在チェック自体をスキップする対象になる（「実在チェックとネットワークパス（UNC）の
+/// 扱い」を参照）。
 #[cfg(windows)]
-fn resolve_onedrive_local_path(url: &str, roots: &[String]) -> Option<String> {
-    let Some(after_prefix) = url.strip_prefix(ONEDRIVE_URL_PREFIX) else {
-        eprintln!("[recent_files] unsupported .url target (not a OneDrive URL): {url}");
-        return None;
-    };
-    let Some(slash_pos) = after_prefix.find('/') else {
-        eprintln!("[recent_files] OneDrive URL is missing the relative path segment: {url}");
-        return None;
-    };
-    let relative_encoded = &after_prefix[slash_pos + 1..];
-    if relative_encoded.is_empty() {
-        return None;
-    }
-    let Some(relative_decoded) = percent_decode(relative_encoded) else {
-        eprintln!("[recent_files] failed to percent-decode OneDrive relative path: {url}");
-        return None;
-    };
-    let relative = relative_decoded.replace('/', "\\");
+fn is_unc_path(path: &str) -> bool {
+    path.starts_with("\\\\")
+}
 
-    for root in roots {
-        let candidate = if root.ends_with('\\') {
-            format!("{root}{relative}")
-        } else {
-            format!("{root}\\{relative}")
+/// `UrlNamespace` がホスト名のみ（それ以上のパス階層を含まない）かどうかを判定する。
+/// 個人 OneDrive（`https://d.docs.live.net`）はこの形式でレジストリに登録される一方、
+/// 実際の `.url` の URL 側にはホスト名の直後にアカウント識別子セグメントが1つ挟まる
+/// （例: `https://d.docs.live.net/{account_id}/{relative_path}`）。OneDrive for
+/// Business の個人領域や SharePoint チームサイトの `UrlNamespace`（例:
+/// `https://contoso-my.sharepoint.com/personal/user_contoso_com/Documents`）は
+/// 既により深い階層を含んでおり、この識別子セグメントを持たないため対象外とする。
+#[cfg(windows)]
+fn namespace_is_host_only(namespace: &str) -> bool {
+    let after_scheme = namespace
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(namespace);
+    !after_scheme.trim_end_matches('/').contains('/')
+}
+
+/// `.url` の `URL=` 値を、同期ライブラリのローカル同期先パスへ変換する。
+/// `mounts`（`UrlNamespace` → `MountPoint` の対応表）の中から `UrlNamespace` が URL に
+/// 前方一致するエントリを探し、複数該当する場合は最も長く一致するものを採用する
+/// （最長一致優先）。一致したら URL から `UrlNamespace` 部分を除いた残りを相対パスとする。
+/// ただし `UrlNamespace` がホスト名のみの場合（`namespace_is_host_only`）は、個人
+/// OneDrive のアカウント識別子セグメントを追加で1つ読み飛ばしてから相対パスとして扱う
+/// （詳細は `namespace_is_host_only` のドキュメントコメントを参照）。相対パスの末尾が
+/// `/` の場合はファイルではなくフォルダへの参照とみなし、ローカルパスを組み立てずに
+/// `None` を返す（「ファイルのみを対象とし、フォルダは除外する」既存ルールに従う）。
+/// それ以外はパーセントデコードしたうえで `MountPoint` と結合してローカルパスを
+/// 組み立てる。実在チェックは呼び出し元（`process_url`）が行う。
+#[cfg(windows)]
+fn resolve_sync_engine_local_path(url: &str, mounts: &[(String, String)]) -> Option<String> {
+    let mut best: Option<&(String, String)> = None;
+    for pair in mounts {
+        let (namespace, _) = pair;
+        if !url.starts_with(namespace.as_str()) {
+            continue;
+        }
+        let is_longer_match = match best {
+            Some((current_ns, _)) => namespace.len() > current_ns.len(),
+            None => true,
         };
-        if std::path::Path::new(&candidate).is_file() {
-            return Some(candidate);
+        if is_longer_match {
+            best = Some(pair);
         }
     }
 
-    eprintln!(
-        "[recent_files] no local OneDrive sync root contains the file for: {url}"
-    );
-    None
+    let Some((namespace, mount_point)) = best else {
+        crate::log_debug(&format!(
+            "[recent_files] no matching sync engine UrlNamespace for: {url}"
+        ));
+        return None;
+    };
+
+    let mut remainder = url[namespace.len()..].trim_start_matches('/');
+
+    if namespace_is_host_only(namespace) {
+        // 個人 OneDrive 等、UrlNamespace がホスト名のみの場合は、その直後に挟まる
+        // アカウント識別子セグメント（次の "/" まで）を追加で読み飛ばす。
+        let Some(slash_pos) = remainder.find('/') else {
+            crate::log_debug(&format!(
+                "[recent_files] OneDrive URL is missing the relative path segment after the account id: {url}"
+            ));
+            return None;
+        };
+        remainder = &remainder[slash_pos + 1..];
+    }
+
+    if remainder.is_empty() {
+        return None;
+    }
+
+    if remainder.ends_with('/') {
+        // 相対パスの末尾が "/" の場合、ファイルではなくフォルダ（場所）への参照。
+        // 実在チェック自体が不要かつ不適切なため、ここで確定的に除外する
+        // （「ファイルのみを対象とし、フォルダは除外する」既存ルールに従う）。
+        crate::log_debug(&format!(
+            "[recent_files] url points to a folder, not a file, excluding: {url}"
+        ));
+        return None;
+    }
+
+    let Some(decoded) = percent_decode(remainder) else {
+        crate::log_debug(&format!(
+            "[recent_files] failed to percent-decode url path: {url}"
+        ));
+        return None;
+    };
+    let relative = decoded.replace('/', "\\");
+    let mount_trimmed = mount_point.trim_end_matches('\\');
+    Some(format!("{mount_trimmed}\\{relative}"))
 }
 
 /// システムの既定 ANSI コードページ（`GetACP()`）に対応する `encoding_rs` の静的値を返す。
@@ -321,19 +424,29 @@ fn file_mtime_ms(metadata: &std::fs::Metadata) -> u64 {
         .unwrap_or(0)
 }
 
-/// `.lnk` を1件処理する。リンク先の実在チェック・フォルダ除外はここで行う。
+/// `.lnk` を1件処理する。`last_accessed` は列挙段階（`get_recent_files` の手順1）で
+/// 既に取得済みの `.lnk` 自体の更新日時をそのまま使う（ここで再取得しない）。
+/// リンク先がローカルパスの場合のみ実在チェック・フォルダ除外を行う。UNC 形式
+/// （ネットワークパス）の場合は実在チェックそのものをスキップし、無条件で一覧に含める
+/// （「実在チェックとネットワークパス（UNC）の扱い」を参照）。
 /// `ShellLink::open`/`link_target` のエラー・panic は握りつぶさず、原因調査用に
-/// `eprintln!` でログ出力したうえで `None`（一覧から除外）を返す。
+/// `crate::log_debug` でログ出力したうえで `None`（一覧から除外）を返す。
 #[cfg(windows)]
-fn process_lnk(lnk_path: &std::path::Path, encoding: &'static encoding_rs::Encoding) -> Option<RecentFile> {
+fn process_lnk(
+    lnk_path: &std::path::Path,
+    encoding: &'static encoding_rs::Encoding,
+    last_accessed: u64,
+) -> Option<RecentFile> {
     use lnk::ShellLink;
-    use std::fs;
     use std::path::PathBuf;
 
     let shortcut = match ShellLink::open(lnk_path, encoding) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[recent_files] failed to parse {}: {e}", lnk_path.display());
+            crate::log_debug(&format!(
+                "[recent_files] failed to parse {}: {e}",
+                lnk_path.display()
+            ));
             return None;
         }
     };
@@ -347,27 +460,29 @@ fn process_lnk(lnk_path: &std::path::Path, encoding: &'static encoding_rs::Encod
     })) {
         Ok(Some(t)) => t,
         Ok(None) => {
-            eprintln!("[recent_files] no link target in {}", lnk_path.display());
+            crate::log_debug(&format!("[recent_files] no link target in {}", lnk_path.display()));
             return None;
         }
         Err(_) => {
-            eprintln!(
+            crate::log_debug(&format!(
                 "[recent_files] panicked while resolving link target of {}",
                 lnk_path.display()
-            );
+            ));
             return None;
         }
     };
 
     let target_path = PathBuf::from(&target);
-    let Ok(metadata) = fs::metadata(&target_path) else {
-        return None;
-    };
-    if metadata.is_dir() {
-        return None;
+
+    if !is_unc_path(&target) {
+        let Ok(metadata) = std::fs::metadata(&target_path) else {
+            return None;
+        };
+        if metadata.is_dir() {
+            return None;
+        }
     }
 
-    let lnk_metadata = fs::metadata(lnk_path).ok()?;
     let name = target_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -376,7 +491,7 @@ fn process_lnk(lnk_path: &std::path::Path, encoding: &'static encoding_rs::Encod
     Some(RecentFile {
         name,
         path: target,
-        last_accessed: file_mtime_ms(&lnk_metadata),
+        last_accessed,
     })
 }
 
@@ -393,10 +508,10 @@ fn read_text_file_lossy(
     }
     let (cow, _, had_errors) = fallback_encoding.decode(&bytes);
     if had_errors {
-        eprintln!(
+        crate::log_debug(&format!(
             "[recent_files] failed to decode {} as UTF-8 or system codepage",
             path.display()
-        );
+        ));
         return None;
     }
     Some(cow.to_string())
@@ -413,16 +528,22 @@ fn has_plausible_extension(name: &str) -> bool {
     }
 }
 
-/// `.url`（インターネットショートカット）を1件処理する。テキスト（INI形式）として
-/// パースし `URL=` 行の値を取得したうえで、OneDrive のローカル同期先パスへの変換を
-/// 試みる（`resolve_onedrive_local_path` を参照）。変換に成功したものだけを一覧に含め、
-/// 以降は `.lnk` 由来のエントリと全く同じ扱い（実在確認済みのローカルファイル）にする。
-/// 変換できなかったものは削除済みファイルと同じ扱いとして一覧から除外する。
+/// `.url`（インターネットショートカット）を1件処理する。`last_accessed` は列挙段階
+/// （`get_recent_files` の手順1）で既に取得済みの `.url` 自体の更新日時をそのまま使う
+/// （変換の成否に関わらず変わらない、既存仕様）。テキスト（INI形式）としてパースし
+/// `URL=` 行の値を取得したうえで、同期ライブラリのローカルパスへの変換を試みる
+/// （`resolve_sync_engine_local_path` を参照）。ローカルパスがドライブレター形式の
+/// 場合のみ実在チェックを行い、UNC 形式（ネットワークパス）の場合はスキップして
+/// 無条件で採用する（「実在チェックとネットワークパス（UNC）の扱い」を参照）。
+/// 変換に成功し実在確認も済んだものだけを一覧に含め、以降は `.lnk` 由来のエントリと
+/// 全く同じ扱い（実在確認済みのローカルファイル）にする。それ以外は削除済みファイルと
+/// 同じ扱いとして一覧から除外する。
 #[cfg(windows)]
 fn process_url(
     url_path: &std::path::Path,
     fallback_encoding: &'static encoding_rs::Encoding,
-    onedrive_roots: &[String],
+    mounts: &[(String, String)],
+    last_accessed: u64,
 ) -> Option<RecentFile> {
     let content = read_text_file_lossy(url_path, fallback_encoding)?;
     let url = content
@@ -432,7 +553,14 @@ fn process_url(
         .map(str::trim)
         .filter(|v| !v.is_empty())?;
 
-    let local_path = resolve_onedrive_local_path(url, onedrive_roots)?;
+    let local_path = resolve_sync_engine_local_path(url, mounts)?;
+
+    if !is_unc_path(&local_path) && !std::path::Path::new(&local_path).is_file() {
+        crate::log_debug(&format!(
+            "[recent_files] resolved local path does not exist: {local_path}"
+        ));
+        return None;
+    }
 
     // ファイル名から末尾の拡張子 ".url" を1つ取り除いたものを表示名とする
     // （Windows のエクスプローラーが .url を隠して表示するのと同じ見た目にするため）。
@@ -444,37 +572,74 @@ fn process_url(
         return None;
     }
 
-    // ソートキーは変換の成否に関わらず .url 自体の更新日時のまま（既存仕様）。
-    let metadata = std::fs::metadata(url_path).ok()?;
-
     Some(RecentFile {
         name: display_name,
         path: local_path,
-        last_accessed: file_mtime_ms(&metadata),
+        last_accessed,
     })
+}
+
+/// 一覧に表示する最終アクセス日時の上限（`max_age_days` 日前）を UNIX ms で返す。
+/// これより前のエントリは件数上限に余裕があっても除外する。`max_age_days` は
+/// `AppSettings.recent_max_age_days`（設定画面から変更可能。デフォルト180日）を
+/// 呼び出し元（`get_recent_files` コマンド）が渡す。
+#[cfg(windows)]
+fn recent_file_cutoff_ms(max_age_days: i64) -> u64 {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let max_age_ms = (max_age_days.max(0) as u64) * 24 * 60 * 60 * 1000;
+    now_ms.saturating_sub(max_age_ms)
+}
+
+/// 列挙段階（`get_recent_files` の手順1）で拾った `.lnk`/`.url` 1件分。この時点では
+/// リンク先解決・ローカルパス変換・実在チェックは一切行わず、ソート・足切りに必要な
+/// 情報（自身の更新日時）のみを保持する。
+#[cfg(windows)]
+enum ShortcutKind {
+    Lnk,
+    Url,
+}
+
+#[cfg(windows)]
+struct ShortcutCandidate {
+    path: std::path::PathBuf,
+    kind: ShortcutKind,
+    last_accessed: u64,
 }
 
 /// Windows の Recent フォルダと Office の Recent フォルダ、双方の直下（各フォルダの
 /// `AutomaticDestinations`/`CustomDestinations` 等のサブフォルダは `read_dir` が非再帰の
-/// ため自然に対象外となる）の `.lnk`/`.url` を列挙する。`.url` はローカルパスへの変換に
-/// 成功したものだけを対象に含め、`.lnk` と同じ扱い（ローカルパスによる重複統合）で
-/// 1つの一覧にマージしたうえで最終アクセス日時（由来ファイル自体の更新日時）降順で返す。
+/// ため自然に対象外となる）の `.lnk`/`.url` から最近使ったファイル一覧を組み立てる。
+///
+/// パフォーマンス上の理由（リンク先解決・ローカルパス変換・実在チェックはファイル I/O や
+/// レジストリアクセスを伴い、対象がネットワークパスの場合は特に高コストになる）から、
+/// 必ず以下の順序で処理する。
+/// 1. `.lnk`/`.url` を列挙する（変換・実在チェックは行わない。ファイル名・自身の更新日時
+///    のみ取得する）
+/// 2. 更新日時で降順ソートする
+/// 3. 更新日時が `max_age_days` より前のものを除外する
+/// 4. `max_results` で足切りする
+/// 5. ここまで絞り込んだ候補のみ、リンク先解決・ローカルパス変換・実在チェック
+///    （UNC 除外ルールを含む）を行う
+/// 6. 5 の結果、実在しない・変換失敗のものはこの時点で除外する（3・4 で切り捨てた候補
+///    まで遡って再チェックしない。最終的な表示件数が `max_results` よりやや少なくなる
+///    ことがあるが、許容する仕様）
+///
+/// `max_results`（表示件数上限）・`max_age_days`（保持期間）はいずれも
+/// `AppSettings` の設定画面から変更可能な値を呼び出し元（`get_recent_files` コマンド）
+/// が渡す。
 #[cfg(windows)]
-pub fn get_recent_files(max_results: usize) -> Vec<RecentFile> {
+pub fn get_recent_files(max_results: usize, max_age_days: i64) -> Vec<RecentFile> {
     use std::collections::HashMap;
 
-    let encoding = system_default_encoding();
-    let onedrive_roots = onedrive_local_roots();
-
-    // .lnk・.url（ローカルパスへの変換に成功したもの）を問わず、同一のローカルパスを
-    // 指すエントリは1件に統合する（mtime が新しい方を採用）。
-    let mut entries_by_path: HashMap<String, RecentFile> = HashMap::new();
-
+    // 1. 列挙する（変換・実在チェックなし）
+    let mut candidates: Vec<ShortcutCandidate> = Vec::new();
     let dirs = [
         known_folder::recent_folder_path(),
         known_folder::office_recent_folder_path(),
     ];
-
     for dir in dirs.into_iter().flatten() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
@@ -484,35 +649,68 @@ pub fn get_recent_files(max_results: usize) -> Vec<RecentFile> {
             let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) else {
                 continue;
             };
-
-            let file = if ext.eq_ignore_ascii_case("lnk") {
-                process_lnk(&entry_path, encoding)
+            let kind = if ext.eq_ignore_ascii_case("lnk") {
+                ShortcutKind::Lnk
             } else if ext.eq_ignore_ascii_case("url") {
-                process_url(&entry_path, encoding, &onedrive_roots)
+                ShortcutKind::Url
             } else {
                 continue;
             };
-            let Some(file) = file else {
+            let Ok(metadata) = entry.metadata() else {
                 continue;
             };
+            candidates.push(ShortcutCandidate {
+                path: entry_path,
+                kind,
+                last_accessed: file_mtime_ms(&metadata),
+            });
+        }
+    }
 
-            let key = file.path.to_lowercase();
-            let should_replace = entries_by_path
-                .get(&key)
-                .is_none_or(|existing| file.last_accessed > existing.last_accessed);
-            if should_replace {
-                entries_by_path.insert(key, file);
+    // 2. 更新日時の降順にソートする
+    candidates.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
+
+    // 3. 保持期間より前のものを除外する
+    let cutoff = recent_file_cutoff_ms(max_age_days);
+    candidates.retain(|c| c.last_accessed >= cutoff);
+
+    // 4. 表示件数上限で足切りする
+    candidates.truncate(max_results);
+
+    // 5. 絞り込んだ候補のみリンク先解決・ローカルパス変換・実在チェックを行う
+    let encoding = system_default_encoding();
+    let mounts = sync_engine_mount_points();
+
+    // .lnk・.url を問わず、同一のローカルパスを指すエントリは1件に統合する
+    // （last_accessed が新しい方を採用）。
+    let mut entries_by_path: HashMap<String, RecentFile> = HashMap::new();
+    for candidate in &candidates {
+        let file = match candidate.kind {
+            ShortcutKind::Lnk => process_lnk(&candidate.path, encoding, candidate.last_accessed),
+            ShortcutKind::Url => {
+                process_url(&candidate.path, encoding, &mounts, candidate.last_accessed)
             }
+        };
+        // 6. 実在しない・変換失敗のものはここで除外する（切り捨てた候補までは遡らない）
+        let Some(file) = file else {
+            continue;
+        };
+
+        let key = file.path.to_lowercase();
+        let should_replace = entries_by_path
+            .get(&key)
+            .is_none_or(|existing| file.last_accessed > existing.last_accessed);
+        if should_replace {
+            entries_by_path.insert(key, file);
         }
     }
 
     let mut files: Vec<RecentFile> = entries_by_path.into_values().collect();
     files.sort_by(|a, b| b.last_accessed.cmp(&a.last_accessed));
-    files.truncate(max_results);
     files
 }
 
 #[cfg(not(windows))]
-pub fn get_recent_files(_max_results: usize) -> Vec<RecentFile> {
+pub fn get_recent_files(_max_results: usize, _max_age_days: i64) -> Vec<RecentFile> {
     Vec::new()
 }
