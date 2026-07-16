@@ -131,7 +131,9 @@ function detectUrlConvertResult(
 
 // 明示プレフィックスの固定区切り文字。ユーザーは変更できない
 // （変更可能なのは "/" に続くキーワード部分のみ）。
-const PREFIX_CHAR = "/";
+// closeWindow の clearQuery: "prefixOnly" でプレフィックス文字列を組み立てる際にも
+// 再利用するため、他フック（useClipboard 等）からも参照できるよう export する。
+export const PREFIX_CHAR = "/";
 
 const SYSTEM_COMMANDS: SystemCommand[] = [
   { action: "shutdown", label: "シャットダウン" },
@@ -299,11 +301,27 @@ export function useSearch(
   // （useClipboard.ts）だけ bumpCloseRefreshTick() の呼び出しが漏れているという不整合が
   // あった。呼び出し側をこの関数一本に統一することで、この種の実装漏れが構造的に
   // 起きないようにしている。
-  // clearQuery を false にすると、クエリのクリアだけを呼び出し側の都合でスキップできる
-  // （現時点でこれを使う呼び出し元はないが、将来の挙動差異を吸収するために用意している）。
+  //
+  // clearQuery は "full"（デフォルト。クエリを完全に空文字へ戻す）と "prefixOnly"
+  // （プレフィックス部分（例: "/recent"）だけを残し、それに続く絞り込みフィルタ文字列
+  // だけをクリアする）の2パターンを持つ。/recent・/cb は一覧から連続して別の項目を
+  // 選び直すユースケースが多く、毎回プレフィックスを入力し直す手間を減らすため
+  // 「プレフィックスのみ残す」を使う（呼び出し元は launchFile の /recent モード分岐、
+  // useClipboard.ts の selectClipboardEntry の2箇所のみ）。それ以外の呼び出し元
+  // （通常のファイル検索の launchFile・openContainingFolder・copyResult・
+  // copyUrlConvertResult・openWebSearch・confirmSystemCommand）は明示的に指定しない限り
+  // "full" のまま従来通り動作する。"prefixOnly" を指定する場合は options.prefix に
+  // 残したい文字列（"/" + 設定画面で変更可能な呼び出しキーワード）を渡す。呼び出しキーワードは
+  // ユーザーが設定画面で変更できる動的な値のため、"/recent"・"/cb" のようなハードコードは
+  // 行わず、呼び出し側で appSettings から都度組み立てる。
   const closeWindow = useCallback(
-    async (options?: { clearQuery?: boolean }) => {
-      if (options?.clearQuery ?? true) {
+    async (options?: {
+      clearQuery?: "full" | "prefixOnly";
+      prefix?: string;
+    }) => {
+      if ((options?.clearQuery ?? "full") === "prefixOnly") {
+        setQuery(options?.prefix ?? "");
+      } else {
         setQuery("");
       }
       bumpCloseRefreshTick();
@@ -672,14 +690,24 @@ export function useSearch(
   // React ベイルアウト対策）は closeWindow() 内に集約済み（詳細は closeWindow の
   // コメントを参照）。
 
+  // recentMode（/recent）から起動された場合のみ、クエリをプレフィックス部分
+  // （"/" + 現在の呼び出しキーワード）まで残す。通常のファイル検索結果からの起動は
+  // 従来通り closeWindow() の既定（"full"）でクエリを完全にクリアする。
   const launchFile = useCallback(
     async (path: string) => {
       invoke("launch_file", { path }).catch(console.error);
       await recordFrecency(path);
       setResults([]);
-      await closeWindow();
+      if (recentMode) {
+        await closeWindow({
+          clearQuery: "prefixOnly",
+          prefix: PREFIX_CHAR + appSettings.recentKeyword,
+        });
+      } else {
+        await closeWindow();
+      }
     },
-    [recordFrecency, closeWindow]
+    [recordFrecency, closeWindow, recentMode, appSettings.recentKeyword]
   );
 
   // 選択中の項目の格納フォルダをエクスプローラーで開く（Shift+Enter）。通常の

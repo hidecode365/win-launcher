@@ -39,6 +39,7 @@ export function StatusFooter({
                     : "Enter 起動"}
           </span>
           {isFileSelected && <span>Shift+Enter フォルダを開く</span>}
+          <span>Ctrl+D クリア</span>
           <span>Esc 閉じる</span>
         </>
       )}

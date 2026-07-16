@@ -11,6 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import type { Store } from "@tauri-apps/plugin-store";
 import { makeId } from "../lib/format";
+import { PREFIX_CHAR } from "./useSearch";
 import {
   AppSettings,
   ClipboardChangedPayload,
@@ -23,7 +24,10 @@ export function useClipboard(
   clipboardMode: boolean,
   clipboardFilterText: string | null,
   storeRef: MutableRefObject<Store | null>,
-  closeWindow: (options?: { clearQuery?: boolean }) => Promise<void>
+  closeWindow: (options?: {
+    clearQuery?: "full" | "prefixOnly";
+    prefix?: string;
+  }) => Promise<void>
 ) {
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>(
     []
@@ -106,6 +110,9 @@ export function useClipboard(
     };
   }, [recordClipboardEntry]);
 
+  // クエリはプレフィックス部分（"/" + 現在の呼び出しキーワード。例: "/cb"）まで残し、
+  // 続く絞り込みフィルタ文字列だけをクリアする（/recent の launchFile と同じ方針。
+  // 詳細は useSearch.ts の closeWindow のコメントを参照）。
   const selectClipboardEntry = useCallback(
     async (entry: ClipboardEntry) => {
       if (entry.type === "text") {
@@ -113,7 +120,10 @@ export function useClipboard(
       } else {
         await invoke("paste_clipboard_image", { id: entry.id }).catch(console.error);
       }
-      await closeWindow();
+      await closeWindow({
+        clearQuery: "prefixOnly",
+        prefix: PREFIX_CHAR + appSettingsRef.current.clipboardPrefix,
+      });
     },
     [closeWindow]
   );

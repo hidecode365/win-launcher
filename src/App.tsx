@@ -56,6 +56,11 @@ export default function App() {
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [ocr.clearOcr]);
 
+  // Ctrl+D（クエリ全クリア）の分岐判定に使う。OCR プレビュー表示中かどうかで挙動が
+  // 変わるため、キー操作のエフェクトより前に算出しておく（JSX 側での利用は後述）。
+  const ocrActive =
+    ocr.ocrLoading || ocr.ocrText !== null || ocr.ocrError !== null;
+
   // 起動時アップデートチェック。設定の初回読み込みが完了した時点で一度だけ行う
   // （appSettings は他の設定変更でも更新されるため、settingsLoaded 遷移時のみに限定する）。
   // 失敗時もコンソールログのみに留め、起動シーケンスは妨げない（useUpdater.runCheck の
@@ -167,10 +172,15 @@ export default function App() {
     settings.resetSystemCommandKeywordErrors,
   ]);
 
-  // 設定パネルの開閉は document レベルの keydown で処理する。
+  // 設定パネルの開閉・クエリ全クリア（Ctrl+D）は document レベルの keydown で処理する。
   // input 要素のローカル onKeyDown に持たせると、フォーカス状態や
-  // WebView2 の Ctrl+S 既定動作（ページ保存）の影響で発火しないことがあるため、
-  // 開く方向・閉じる方向の両方を同じ仕組みに統一している。
+  // WebView2 のブラウザ既定動作（Ctrl+S のページ保存、Ctrl+D のブックマーク追加）の
+  // 影響で発火しないことがあるため、この一箇所に統一している。
+  // Ctrl+D は OCR プレビュー表示中のみ「閉じる」ボタン（handleOcrClose）と同一の処理を
+  // 呼び、それ以外の全モードでは現在のモードに関わらずクエリを問答無用で空文字にする
+  // （ウィンドウは閉じないため closeWindow は経由しない。closeRefreshTick の加算も
+  // 不要：query 自体が変化するので検索用 useEffect は通常通り再トリガーされる）。
+  // 検索 UI そのものが表示されていない設定パネル表示中（showSettings）は対象外とする。
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
@@ -183,11 +193,27 @@ export default function App() {
         }
       } else if (e.key === "Escape" && showSettings) {
         closeSettings();
+      } else if (!showSettings && e.ctrlKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (ocrActive) {
+          handleOcrClose();
+        } else {
+          search.setQuery("");
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [showSettings, search.pendingCommand, openSettings, closeSettings]);
+  }, [
+    showSettings,
+    search.pendingCommand,
+    openSettings,
+    closeSettings,
+    ocrActive,
+    handleOcrClose,
+    search.setQuery,
+  ]);
 
   const calcLength = search.calcResult !== null ? 1 : 0;
   const urlConvertLength = search.urlConvertResult !== null ? 1 : 0;
@@ -388,9 +414,6 @@ export default function App() {
       />
     );
   }
-
-  const ocrActive =
-    ocr.ocrLoading || ocr.ocrText !== null || ocr.ocrError !== null;
 
   return (
     <div
