@@ -323,7 +323,8 @@ win-launcher/
     - ソートキーは変換の成否に関わらず `.url` 自体の mtime
   - Windows の Recent フォルダと Office の Recent フォルダの両方に同一のローカルパスを指すエントリが存在する場合は1件に統合する（mtime が新しい方を採用）。`.lnk` 由来・`.url` 由来（ローカルパス変換成功済み）を問わず同じ統合ロジックを適用する
 - モード切替・フィルタ・表示（フロントエンド、`useSearch.ts`）
-  - モードに入ったタイミング（`recentMode` が `false → true` になった瞬間）でのみ `get_recent_files` を呼び直す。フィルタ文字列が変わるたびには再取得せず、取得済みの一覧をフロントエンド側で表示名（`RecentFile.name`。`.lnk`/`.url` いずれもここに統一済み）への部分一致でフィルタする（`recentResults`）。既に最終アクセス日時降順で取得済みのため、フィルタ後も順序は維持される
+  - モードに入ったタイミング（`recentMode` が `false → true` になった瞬間）で `get_recent_files` を呼び直す。フィルタ文字列が変わるたびには再取得せず、取得済みの一覧をフロントエンド側で表示名（`RecentFile.name`。`.lnk`/`.url` いずれもここに統一済み）への部分一致でフィルタする（`recentResults`）。既に最終アクセス日時降順で取得済みのため、フィルタ後も順序は維持される
+  - 加えて、`recentMode` を維持したままウィンドウが非表示→再表示された場合（`getCurrentWindow().onFocusChanged` でフォーカス回復を検知）も取得し直す。クリップボード履歴は OS のクリップボード変更通知を常時受信しているため非表示中の変化も自動で最新化されるが、最近使ったファイル一覧にはプッシュ通知の仕組みがなく、モード遷移時の1回きりの取得のままだと非表示中にファイルを開く／削除する等の変化が反映されないままになる（フォーカスアウト→インを挟んでも一覧が更新されず、見た目上フリーズしたように見える不具合の原因になっていた）。フォーカス回復のたびに再取得することで、クリップボード履歴と同様「再表示時には常に最新の状態を見せる」挙動に揃えている
   - `RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する（`RecentFile.path` は `.lnk`/`.url` いずれも実在確認済みのローカルパスに統一されているため、起動処理を由来で分岐する必要がない）
   - ファイル検索結果・計算結果・URLエンコード/デコード結果との関係は他のプレフィックスモードと同様に排他（`recentMode` の間は `search_files` を呼ばず、それらを表示しない）
   - frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）
@@ -444,7 +445,8 @@ win-launcher/
     - 選択インデックスの操作を「キーボード操作（`setSelected`）」と「マウスホバー（`selectFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する（`selectFromHover`）
       1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
       2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
-    - `search_files`/`get_recent_files` の非同期呼び出しに世代 ID（`asyncCallIdRef`）を振り、`.then()` 発火時点で最新の呼び出しでなければ結果を破棄する。加えて、ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化では、`suppressNextSearchRef` で1回分だけ `search_files` の再実行を抑止する。これらは、ウィンドウ再表示時に直前の（本来不要な）検索がまだ解決しておらず「検索結果エリアが一瞬白く見える」不具合の対策
+    - `search_files`/`get_recent_files` の非同期呼び出しに世代 ID（`asyncCallIdRef`）を振り、`.then()` 発火時点で最新の呼び出しでなければ結果を破棄する。これにより、クエリやモードが短時間に連続して変わっても、画面に反映されるのは常に最後の呼び出しの結果になる
+    - ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化でも、`fileSearchEnabled` が `true` なら通常通り `search_files("")` を呼ぶ（抑止しない）。この呼び出しは `hideWindow()` でウィンドウが非表示になった後（ユーザーからは見えない状態）に解決するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、常に最新の frecency 順一覧（通常表示）が即座に見える状態になる。かつてはこの空クエリへの変化を「ウィンドウを閉じるだけなら不要な処理」として `suppressNextSearchRef` で1回分だけ抑止していたが、抑止した分を再取得するタイミングがどこにも存在せず、次にウィンドウを再表示した時に検索結果エリアが空のまま固まって見える不具合（クエリを何か入力するまで復旧しない）を引き起こしていたため、このフラグ自体を廃止した
   - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, setQuery)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し
   - `useUpdater()`：アップデートダイアログの状態（`checking`/`upToDate`/`error`/`available`/`installing`）管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は「自動アップデート機能」節を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ（frecency・clipboardHistory の初期値も `App.tsx` の読み込み完了時に各フックの `setInitial*` で反映する）

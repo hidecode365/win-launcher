@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-shell";
 import type { Store } from "@tauri-apps/plugin-store";
 import { hideWindow } from "../lib/window";
@@ -284,11 +285,6 @@ export function useSearch(
   // 現在アクティブなモードの状態を横から上書きしないようにする。
   const asyncCallIdRef = useRef(0);
 
-  // launchFile 等、アクション完了後に setQuery("") でウィンドウを閉じる直前だけ、
-  // その空クエリへの変化が引き起こす search_files の再実行（ウィンドウを閉じるだけなら
-  // 不要な処理）を1回だけ抑止するためのフラグ。
-  const suppressNextSearchRef = useRef(false);
-
   // 直近にキーボード（↑↓）で選択操作を行った時刻。
   const lastKeyboardNavAtRef = useRef(0);
 
@@ -347,19 +343,80 @@ export function useSearch(
     : null;
   const recentMode = recentFilterText !== null;
 
-  // 最近使ったファイル一覧モードに入ったタイミング（false → true の遷移）でのみ
-  // get_recent_files を呼び直す。フィルタ文字列の変更ごとには再取得しない
-  // （既に取得済みの一覧をフロントエンド側でフィルタするだけにする）。
-  useEffect(() => {
-    if (!recentMode) return;
+  // recentMode の間、現在アクティブな取得を上書きしないよう世代 ID で保護しつつ
+  // get_recent_files を呼び直す（クリップボード履歴と異なりプッシュ通知がなく、
+  // 明示的に取得し直さない限りウィンドウ非表示中に開いた/削除したファイルが
+  // 反映されないため）。
+  const fetchRecentFiles = useCallback((source: string) => {
     const callId = ++asyncCallIdRef.current;
+    console.debug(`[recent] fetch start (source=${source}, callId=${callId})`);
     invoke<RecentFile[]>("get_recent_files")
       .then((files) => {
-        if (asyncCallIdRef.current !== callId) return; // 古い呼び出しの結果は破棄する
+        if (asyncCallIdRef.current !== callId) {
+          console.debug(
+            `[recent] fetch discarded (source=${source}, callId=${callId}, current=${asyncCallIdRef.current})`
+          );
+          return; // 古い呼び出しの結果は破棄する
+        }
+        console.debug(`[recent] fetch resolved (source=${source}, count=${files.length})`);
         setRawRecentFiles(files);
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error(`[recent] fetch failed (source=${source}):`, err);
+      });
+  }, []);
+
+  // 最近使ったファイル一覧モードに入ったタイミング（false → true の遷移）で取得する。
+  // フィルタ文字列の変更ごとには再取得せず、既に取得済みの一覧をフロントエンド側で
+  // フィルタするだけにする。
+  useEffect(() => {
+    if (!recentMode) return;
+    fetchRecentFiles("mode-enter");
+  }, [recentMode, fetchRecentFiles]);
+
+  // recentMode を維持したままウィンドウを非表示にして再度フォーカスを取り戻した場合
+  // （ファイルを起動せずに Esc やフォーカスアウトで閉じた場合）も取得し直す。
+  // クリップボード履歴は OS のクリップボード変更通知を常時受信しているため
+  // 表示中の内容が非表示中も自動で最新化されるが、最近使ったファイル一覧には
+  // そのようなプッシュ通知がなく、モード遷移時の1回きりの取得のままだと
+  // 非表示中に発生した変化（ファイルを開く／削除する等）は次にモードへ入り直すまで
+  // 反映されない。同じ「再表示時には常に最新の状態を見せる」という体験をクリップボード
+  // 履歴と揃えるため、フォーカス回復のたびに recentMode が有効なら取得し直す。
+  const recentModeRef = useRef(recentMode);
+  useEffect(() => {
+    recentModeRef.current = recentMode;
   }, [recentMode]);
+  useEffect(() => {
+    // onFocusChanged の登録は非同期（Promise）のため、登録が完了するより先に
+    // このエフェクトの cleanup が走ると（React 18 StrictMode の開発時
+    // マウント→アンマウント→再マウントで起こり得る）、cleanup 時点では
+    // unlisten がまだ undefined で何も解除できず、後から解決した Promise が
+    // 誰にも解除されないリスナーを登録したままになる（二重登録）。
+    // cancelled フラグで「登録が確定した時点で既に cleanup 済みなら即座に
+    // 解除する」ようにし、このレースを防ぐ。
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        console.debug(
+          `[recent] focus-changed (focused=${focused}, recentMode=${recentModeRef.current})`
+        );
+        if (focused && recentModeRef.current) {
+          fetchRecentFiles("focus-regain");
+        }
+      })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [fetchRecentFiles]);
 
   // 取得済みの一覧を表示名（.lnk はファイル名、.url は拡張子除去後の名称。
   // いずれも RecentFile.name に統一済み）への部分一致でフィルタする。
@@ -428,6 +485,7 @@ export function useSearch(
       return;
     }
     if (recentMode) {
+      console.debug(`[recent] applying recentResults to results (count=${recentResults.length})`);
       setSelectedRaw(0);
       setResults(recentResults);
       setCalcResult(null);
@@ -435,13 +493,6 @@ export function useSearch(
     }
 
     setSelectedRaw(0);
-
-    // アクション完了後にウィンドウを閉じる直前の setQuery("") による変化であれば、
-    // fileSearchEnabled の値に関わらずこの1回分だけ消費しておく（ここで消費し忘れると
-    // 「ファイル検索 OFF の間に閉じた」次に ON に戻した際、無関係な検索まで
-    // 抑止してしまうフラグの残留バグになる）。
-    const shouldSuppressSearch = suppressNextSearchRef.current;
-    suppressNextSearchRef.current = false;
 
     if (appSettings.calcEnabled && isCalcExpression(query)) {
       invoke<string | null>("calculate", { expr: query })
@@ -452,18 +503,23 @@ export function useSearch(
     }
 
     if (appSettings.fileSearchEnabled) {
-      if (!shouldSuppressSearch) {
-        // results は呼び出し元（launchFile 等）が既に setResults([]) 済みのため、
-        // 抑止する場合はここで改めて何もする必要はない。
-        const callId = ++asyncCallIdRef.current;
-        invoke<FileEntry[]>("search_files", { query })
-          .then((files) => {
-            if (asyncCallIdRef.current !== callId) return; // 古い呼び出しの結果は破棄する
-            setResults(sortByFrecency(files, frecency));
-            setSelectedRaw(0);
-          })
-          .catch(console.error);
-      }
+      // ウィンドウを閉じる直前の setQuery("") による変化でもここで呼ぶ。ウィンドウが
+      // 非表示になった後（invoke の解決を待つ間、既にユーザーからは見えない）に
+      // 完了するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、
+      // 常に最新の frecency 順一覧（通常表示）がすぐ見える状態にできる
+      // （かつて「ウィンドウを閉じるだけなら不要な処理」として1回だけ抑止していたが、
+      // 抑止した分の再取得を行うタイミングがどこにもなく、次に再表示した時に結果一覧が
+      // 空のまま固まって見える不具合になっていたため廃止した。世代 ID
+      // （asyncCallIdRef）による使い捨てチェックは維持しているため、連続してクエリが
+      // 変わった場合に古い呼び出しの結果が後から上書きしてしまうことはない）。
+      const callId = ++asyncCallIdRef.current;
+      invoke<FileEntry[]>("search_files", { query })
+        .then((files) => {
+          if (asyncCallIdRef.current !== callId) return; // 古い呼び出しの結果は破棄する
+          setResults(sortByFrecency(files, frecency));
+          setSelectedRaw(0);
+        })
+        .catch(console.error);
     } else {
       setResults([]);
     }
@@ -520,9 +576,6 @@ export function useSearch(
     async (path: string) => {
       await invoke("launch_file", { path }).catch(console.error);
       await recordFrecency(path);
-      // ウィンドウを閉じるだけの空クエリ変化で search_files を再実行しないよう抑止する
-      // （詳細はメインエフェクトの suppressNextSearchRef 参照）。
-      suppressNextSearchRef.current = true;
       setQuery("");
       setResults([]);
       await hideWindow();
@@ -534,7 +587,6 @@ export function useSearch(
     async (text: string) => {
       const formatted = appSettings.copyWithComma ? formatWithCommas(text) : text;
       await invoke("copy_to_clipboard", { text: formatted }).catch(console.error);
-      suppressNextSearchRef.current = true;
       setQuery("");
       setCalcResult(null);
       await hideWindow();
@@ -544,7 +596,6 @@ export function useSearch(
 
   const copyUrlConvertResult = useCallback(async (text: string) => {
     await invoke("copy_to_clipboard", { text }).catch(console.error);
-    suppressNextSearchRef.current = true;
     setQuery("");
     await hideWindow();
   }, []);
@@ -553,7 +604,6 @@ export function useSearch(
     await open(
       `https://www.google.com/search?q=${encodeURIComponent(q)}`
     ).catch(console.error);
-    suppressNextSearchRef.current = true;
     setQuery("");
     await hideWindow();
   }, []);
@@ -591,7 +641,6 @@ export function useSearch(
       action: pendingCommand.action,
     }).catch(console.error);
     setPendingCommand(null);
-    suppressNextSearchRef.current = true;
     setQuery("");
     await hideWindow();
   }, [pendingCommand]);
