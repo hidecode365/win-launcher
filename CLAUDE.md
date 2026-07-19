@@ -549,3 +549,7 @@ npm run tauri build
 5. `--submit`／`submit` 実行時、GitHub認証（デバイスコード）を求められる場合がある（過去の認証がキャッシュされていれば省略されることもある）。求められた場合は表示されたコードとURLをユーザーに案内し、ブラウザでの認証完了を待つ
 6. 提出後に表示されるPR URL（`https://github.com/microsoft/winget-pkgs/pull/<番号>`）をユーザーに報告する
 7. `wingetcreate` はカレントディレクトリ（このリポジトリのルート）配下に `manifests/h/hidecode365/WinLauncher/<バージョン>/` を生成する。過去の初回申請（v0.1.0）分はこのリポジトリに `git add` 済みでコミット履歴に残っているため、後始末で削除する際は **新しく生成した対象バージョンのフォルダのみ**を指定して削除すること（`manifests/` ディレクトリ全体を `rm -rf` すると、コミット済みの過去バージョン分まで巻き込んで削除してしまう）。削除前に `git status` で意図した範囲だけが untracked になっているか必ず確認する
+
+## リリースダウンロード数の確認
+
+`tools/check-download-stats.ps1` は GitHub Releases の各バージョンについて `.exe`/`.msi` のダウンロード数を集計・表示する PowerShell スクリプト。`.sig` ファイル・`latest.json` は WinGet 審査パイプライン等のアクセスがノイズとして混入するため集計対象から除外している。
