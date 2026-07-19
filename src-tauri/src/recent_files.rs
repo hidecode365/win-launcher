@@ -65,7 +65,7 @@ fn wide(s: &str) -> Vec<u16> {
 /// 個人のOneDrive本体・OneDrive for Businessの個人領域・SharePointチームサイトの
 /// 共有ライブラリ・OneDriveに追加したショートカットのいずれも、この同じレジストリ配下に
 /// 登録されることが実地検証で確認されている。サブキー名を決め打ちにせず動的に列挙する
-/// ことで、個人・会社・複数ライブラリいずれの構成にも対応する。失敗箇所は
+/// ことで、個人・組織・複数ライブラリいずれの構成にも対応する。失敗箇所は
 /// `crate::log_debug` でログ出力したうえでスキップする（黙って握りつぶさない）。
 #[cfg(windows)]
 fn sync_engine_mount_points() -> Vec<(String, String)> {
@@ -161,7 +161,7 @@ fn sync_engine_mount_points() -> Vec<(String, String)> {
 
 /// レジストリの文字列値（`REG_SZ` または `REG_EXPAND_SZ`）を読み取る。`REG_EXPAND_SZ`
 /// の場合は `%UserProfile%` 等の環境変数プレースホルダーを `ExpandEnvironmentStringsW`
-/// で展開してから返す（会社環境の実地検証で、`MountPoint` の値がこの型で登録され、
+/// で展開してから返す（実環境での検証で、`MountPoint` の値がこの型で登録され、
 /// 展開されないまま返ってくるケースが確認されているため）。
 #[cfg(windows)]
 fn read_registry_string_expand(
