@@ -1,0 +1,34 @@
+name: Feature Request / 機能要望
+description: Suggest a new feature or improvement for WinLauncher / WinLauncherへの新機能・改善を提案する
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem-motivation
+    attributes:
+      label: Problem / Motivation（困っていること・動機）
+      description: What problem are you trying to solve? / どのような課題・動機がありますか？
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution / 提案する解決策
+      description: Describe the solution you'd like. / どのような解決策を提案しますか？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives-considered
+    attributes:
+      label: Alternatives Considered / 検討した代替案
+      description: Any alternative solutions or features you've considered. (optional) / 他に検討した代替案があれば記載してください（任意）。
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context / その他
+      description: Anything else? (optional) / その他補足事項があれば記載してください（任意）。
+    validations:
+      required: false
