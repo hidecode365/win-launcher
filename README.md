@@ -58,6 +58,10 @@ Clipboard text history is stored **unencrypted** in plain text on disk. Avoid co
 - Rust
 - Tailwind CSS
 
+## Feedback
+
+ご要望・不具合報告は[GitHub Issues](https://github.com/hidecode365/win-launcher/issues)へお寄せください。
+
 ## License
 
 MIT
