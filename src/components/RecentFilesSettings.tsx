@@ -30,6 +30,10 @@ export function RecentFilesSettings({
   useEffect(() => setMaxAgeDaysInput(String(maxAgeDays)), [maxAgeDays]);
   useEffect(() => setMaxResultsInput(String(maxResults)), [maxResults]);
 
+  const isKeywordDirty = keywordInput !== keyword;
+  const isMaxAgeDaysDirty = maxAgeDaysInput !== String(maxAgeDays);
+  const isMaxResultsDirty = maxResultsInput !== String(maxResults);
+
   return (
     <div className="flex flex-col gap-4">
       <FeatureToggle
@@ -46,7 +50,11 @@ export function RecentFilesSettings({
             type="text"
             value={keywordInput}
             onChange={(e) => setKeywordInput(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+            className={`border rounded px-2 py-1 text-sm w-24 ${
+              isKeywordDirty
+                ? "border-amber-400 ring-1 ring-amber-200"
+                : "border-gray-300"
+            }`}
           />
           <button
             type="button"
@@ -56,6 +64,11 @@ export function RecentFilesSettings({
             保存
           </button>
         </div>
+        {isKeywordDirty && (
+          <div className="text-xs text-amber-600 mt-1">
+            未保存の変更があります
+          </div>
+        )}
         <div className="text-xs text-gray-400 mt-1">
           「/」が自動的に先頭に付与されます
         </div>
@@ -69,7 +82,11 @@ export function RecentFilesSettings({
             max={3650}
             value={maxAgeDaysInput}
             onChange={(e) => setMaxAgeDaysInput(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+            className={`border rounded px-2 py-1 text-sm w-24 ${
+              isMaxAgeDaysDirty
+                ? "border-amber-400 ring-1 ring-amber-200"
+                : "border-gray-300"
+            }`}
           />
           <button
             type="button"
@@ -79,6 +96,11 @@ export function RecentFilesSettings({
             保存
           </button>
         </div>
+        {isMaxAgeDaysDirty && (
+          <div className="text-xs text-amber-600 mt-1">
+            未保存の変更があります
+          </div>
+        )}
         <div className="text-xs text-gray-400 mt-1">
           最終アクセス日時がこの日数より前のファイルは一覧に表示されません（1〜3650日）
         </div>
@@ -92,7 +114,11 @@ export function RecentFilesSettings({
             max={200}
             value={maxResultsInput}
             onChange={(e) => setMaxResultsInput(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+            className={`border rounded px-2 py-1 text-sm w-24 ${
+              isMaxResultsDirty
+                ? "border-amber-400 ring-1 ring-amber-200"
+                : "border-gray-300"
+            }`}
           />
           <button
             type="button"
@@ -102,6 +128,11 @@ export function RecentFilesSettings({
             保存
           </button>
         </div>
+        {isMaxResultsDirty && (
+          <div className="text-xs text-amber-600 mt-1">
+            未保存の変更があります
+          </div>
+        )}
         <div className="text-xs text-gray-400 mt-1">1〜200件</div>
       </div>
       {error && <div className="text-xs text-red-500">{error}</div>}

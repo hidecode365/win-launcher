@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { FolderEntry } from "../types";
 import { FeatureToggle } from "./FeatureToggle";
 
@@ -18,8 +19,12 @@ export function FileSearchSettings({
   onRemoveFolder: (path: string) => void;
   onOpenFolder: (path: string) => void;
 }) {
+  const [pendingRemovePath, setPendingRemovePath] = useState<string | null>(
+    null
+  );
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="relative flex flex-col h-full">
       <FeatureToggle
         label="ファイル検索"
         description="検索ボックスの入力でフォルダ内のファイルを検索します。"
@@ -55,9 +60,9 @@ export function FileSearchSettings({
               </button>
               <button
                 type="button"
-                onClick={() => onRemoveFolder(f.path)}
-                className="flex-shrink-0 p-1 rounded text-gray-400 hover:text-red-500 hover:bg-gray-100"
-                title="削除"
+                onClick={() => setPendingRemovePath(f.path)}
+                className="flex-shrink-0 p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="このフォルダを検索対象から削除"
               >
                 <svg
                   className="w-4 h-4"
@@ -69,7 +74,7 @@ export function FileSearchSettings({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                   />
                 </svg>
               </button>
@@ -84,6 +89,41 @@ export function FileSearchSettings({
           ＋ フォルダを追加
         </button>
       </div>
+
+      {pendingRemovePath && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="w-72 rounded-xl bg-white p-5 shadow-2xl">
+            <div className="text-sm font-medium text-gray-800">
+              このフォルダを検索対象から削除しますか？
+            </div>
+            <div className="mt-1 text-xs text-gray-400 break-all">
+              {pendingRemovePath}
+            </div>
+            <div className="mt-1 text-xs text-gray-400">
+              設定から外れるだけで、フォルダ自体は削除されません
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingRemovePath(null)}
+                className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onRemoveFolder(pendingRemovePath);
+                  setPendingRemovePath(null);
+                }}
+                className="rounded bg-red-500 px-3 py-1.5 text-sm text-white hover:bg-red-600"
+              >
+                削除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

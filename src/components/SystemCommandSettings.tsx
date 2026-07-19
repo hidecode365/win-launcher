@@ -17,6 +17,8 @@ function KeywordField({
 
   useEffect(() => setInput(keyword), [keyword]);
 
+  const isDirty = input !== keyword;
+
   return (
     <div className="pt-3 border-t border-gray-200/60">
       <div className="text-sm font-medium text-gray-800 mb-1">{label}</div>
@@ -26,7 +28,9 @@ function KeywordField({
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+          className={`border rounded px-2 py-1 text-sm w-24 ${
+            isDirty ? "border-amber-400 ring-1 ring-amber-200" : "border-gray-300"
+          }`}
         />
         <button
           type="button"
@@ -36,6 +40,9 @@ function KeywordField({
           保存
         </button>
       </div>
+      {isDirty && (
+        <div className="text-xs text-amber-600 mt-1">未保存の変更があります</div>
+      )}
       {error && <div className="text-xs text-red-500 mt-1">{error}</div>}
     </div>
   );

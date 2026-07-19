@@ -24,6 +24,9 @@ export function ClipboardSettings({
   useEffect(() => setPrefixInput(prefix), [prefix]);
   useEffect(() => setMaxItemsInput(String(maxItems)), [maxItems]);
 
+  const isPrefixDirty = prefixInput !== prefix;
+  const isMaxItemsDirty = maxItemsInput !== String(maxItems);
+
   return (
     <div className="flex flex-col gap-4">
       <FeatureToggle
@@ -40,7 +43,11 @@ export function ClipboardSettings({
             type="text"
             value={prefixInput}
             onChange={(e) => setPrefixInput(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+            className={`border rounded px-2 py-1 text-sm w-24 ${
+              isPrefixDirty
+                ? "border-amber-400 ring-1 ring-amber-200"
+                : "border-gray-300"
+            }`}
           />
           <button
             type="button"
@@ -50,6 +57,11 @@ export function ClipboardSettings({
             保存
           </button>
         </div>
+        {isPrefixDirty && (
+          <div className="text-xs text-amber-600 mt-1">
+            未保存の変更があります
+          </div>
+        )}
         <div className="text-xs text-gray-400 mt-1">
           「/」が自動的に先頭に付与されます
         </div>
@@ -63,7 +75,11 @@ export function ClipboardSettings({
             max={200}
             value={maxItemsInput}
             onChange={(e) => setMaxItemsInput(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm w-24"
+            className={`border rounded px-2 py-1 text-sm w-24 ${
+              isMaxItemsDirty
+                ? "border-amber-400 ring-1 ring-amber-200"
+                : "border-gray-300"
+            }`}
           />
           <button
             type="button"
@@ -73,6 +89,11 @@ export function ClipboardSettings({
             保存
           </button>
         </div>
+        {isMaxItemsDirty && (
+          <div className="text-xs text-amber-600 mt-1">
+            未保存の変更があります
+          </div>
+        )}
         <div className="text-xs text-gray-400 mt-1">1〜200件</div>
       </div>
       {error && <div className="text-xs text-red-500">{error}</div>}

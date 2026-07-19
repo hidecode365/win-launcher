@@ -84,6 +84,7 @@ export function GeneralSettings({
   };
 
   const preview = buildAccelerator(mods, mainKey);
+  const isDirty = preview !== hotkey;
 
   return (
     <div>
@@ -122,18 +123,29 @@ export function GeneralSettings({
             </option>
           ))}
         </select>
-        <span className="px-3 py-1.5 rounded bg-gray-100 text-sm font-mono text-gray-700">
+        <span
+          className={`px-3 py-1.5 rounded border text-sm font-mono text-gray-700 ${
+            isDirty
+              ? "bg-amber-50 border-amber-400 ring-1 ring-amber-200"
+              : "bg-gray-100 border-transparent"
+          }`}
+        >
           {preview}
         </span>
       </div>
 
-      <button
-        type="button"
-        onClick={() => onSave(preview)}
-        className="text-sm text-blue-600 hover:text-blue-700"
-      >
-        保存
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onSave(preview)}
+          className="text-sm text-blue-600 hover:text-blue-700"
+        >
+          保存
+        </button>
+        {isDirty && (
+          <span className="text-xs text-amber-600">未保存の変更があります</span>
+        )}
+      </div>
 
       {error && <div className="mt-2 text-xs text-red-500">{error}</div>}
 
