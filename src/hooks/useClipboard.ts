@@ -27,6 +27,7 @@ export function useClipboard(
   closeWindow: (options?: {
     clearQuery?: "full" | "prefixOnly";
     prefix?: string;
+    cleanup?: () => void | Promise<void>;
   }) => Promise<void>
 ) {
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>(
@@ -111,14 +112,15 @@ export function useClipboard(
   }, [recordClipboardEntry]);
 
   // クエリはプレフィックス部分（"/" + 現在の呼び出しキーワード。例: "/cb"）まで残し、
-  // 続く絞り込みフィルタ文字列だけをクリアする（/recent の launchFile と同じ方針。
-  // 詳細は useSearch.ts の closeWindow のコメントを参照）。
+  // 続く絞り込みフィルタ文字列だけをクリアする（/recent の launchFile と同じ方針）。
+  // クリップボードへの書き込み invoke は closeWindow() の hideWindow() を待たず
+  // fire-and-forget で発火する（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
   const selectClipboardEntry = useCallback(
     async (entry: ClipboardEntry) => {
       if (entry.type === "text") {
-        await invoke("copy_to_clipboard", { text: entry.text }).catch(console.error);
+        invoke("copy_to_clipboard", { text: entry.text }).catch(console.error);
       } else {
-        await invoke("paste_clipboard_image", { id: entry.id }).catch(console.error);
+        invoke("paste_clipboard_image", { id: entry.id }).catch(console.error);
       }
       await closeWindow({
         clearQuery: "prefixOnly",

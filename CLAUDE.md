@@ -202,6 +202,7 @@ win-launcher/
 - スコア計算：`score = count * decay(lastUsed)`。`decay` は経過時間に応じた係数（1時間以内 `1.0`、1日以内 `0.9`、1週間以内 `0.7`、1ヶ月以内 `0.5`、それ以上 `0.3`）
 - 履歴のないファイルはスコア `0` として扱う。並び替えはスコア降順、スコアが同じ場合（未起動のファイル同士を含む）はファイル名のアルファベット順を二次キーとする
 - この機能の ON/OFF トグルは設けない（常時有効）
+- `recordFrecency(path)` はファイル起動時の後処理として `launchFile` の `closeWindow({ cleanup })` の `cleanup` 内で呼ぶ。ウィンドウが実際に隠れた後にのみ実行されるため、この呼び出しが引き起こす再レンダーのタイミングを個別に気にする必要はない（詳細・経緯は「ウィンドウを閉じる系アクションの共通設計」節を参照）
 
 ### 設定画面（Rust / フロントエンド）
 
@@ -366,12 +367,9 @@ win-launcher/
   - 「最近使ったファイル一覧」節の `.lnk` 処理（`process_lnk`）から、リンク先ローカルパスの解決部分だけを `pub fn resolve_lnk_target_path(lnk_path: &Path) -> Option<String>` として切り出した（`ShellLink::open` によるパース、`system_default_encoding()` による文字コード解決、`link_target()` の `catch_unwind` による panic 対策を含む、`process_lnk` が使っていたロジックそのもの）。`process_lnk` はこの関数を呼んだうえで実在チェック・フォルダ除外を追加で行う一覧生成用のラッパーになっている
   - `open_containing_folder` はこの `resolve_lnk_target_path` を実在チェックなしでそのまま呼ぶ（`.lnk` 自体が通常のファイル検索結果に出現している時点で実在は保証されているため、`process_lnk` の実在チェック・フォルダ除外ロジックは不要）
 - フロントエンド：`useSearch.ts` の `openContainingFolder(path)`
-  - `launchFile` と同じ「ウィンドウを閉じる」経路（`setResults([])` → `closeWindow()`）を通る。frecency は記録しない（ファイルを起動したわけではないため）。`closeWindow()` の詳細は「"/" プレフィックスモードの内部アーキテクチャ」節を参照
+  - `launchFile` と同じ「ウィンドウを閉じる」経路（`closeWindow({ cleanup: () => setResults([]) })`）を通る。frecency は記録しない（ファイルを起動したわけではないため）。`closeWindow()` の詳細・`invoke` を `await` せず発火する理由は「ウィンドウを閉じる系アクションの共通設計」節を参照
   - `App.tsx` の `handleKeyDown` で `e.shiftKey` を判定し、計算結果・URLエンコード/デコード結果・Web検索行のインデックスオフセットを踏まえた同一の計算式（`search.results[search.selected - calcLength - urlConvertLength]`）で対象ファイルを求める。この計算式は通常の Enter 起動と共通の `selectedFile` 変数として1箇所にまとめている（計算結果・Web検索行等が選択中の場合は範囲外アクセスとなり `undefined` になるため、Shift+Enter は自然に無効化される。個別の除外条件を書く必要がない）
   - フッターのキー操作ヒント（`StatusFooter.tsx`）：`isFileSelected` が真（＝選択中の項目が実ファイル）のときのみ「Shift+Enter フォルダを開く」を表示する
-- **`invoke` を `await` しない理由（`launchFile`/`openContainingFolder` 共通の実装パターン。過去の不具合の原因になった箇所）**
-  - `launch_file`/`open_containing_folder` の `invoke` は、開いた対象（起動したアプリ・エクスプローラー）がほぼ即座に前面に出て WinLauncher からフォーカスを奪う。この `invoke` を `await` してから `closeWindow()` を呼ぶ実装だと、フォーカス喪失をきっかけとする自動非表示（`App.tsx` の 150ms デバウンス）が `closeWindow()` 内の `setQuery("")` より先に走ってしまう余地が生まれる。そのため `launchFile`/`openContainingFolder` はいずれも `invoke(...).catch(console.error)` を `await` せず発火させるだけに留め、直後に `setResults([])` を呼んでから `await closeWindow()` する、という順序にしている
-  - `setQuery("")` が「クエリが既に空文字だった場合」に効かない問題（React の `useState` の `Object.is` 比較による再レンダースキップ。無入力のまま frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを開くケースで顕在化していた）への対処（`closeRefreshTick` の強制加算）は `closeWindow()` 内に集約済み。この関数を経由する限り、新しくウィンドウを閉じる機能を追加する際に呼び出し側でこの対処を意識する必要はない（詳細は「"/" プレフィックスモードの内部アーキテクチャ」節を参照）
 
 ### プレフィックスコマンド候補表示（フロントエンド）
 
@@ -392,18 +390,59 @@ win-launcher/
   - `kind: "clipboard"` または `kind: "recent"` の場合：`setQuery(candidate.keyword)` で検索クエリを呼び出しキーワード全体（例: `"/cb"`、`"/recent"`）に置き換える。これにより次のレンダリングで既存の `clipboardModeFilter`／`recentModeFilter` が自然に一致し、それぞれの専用モードへ切り替わる（専用の遷移コードを新設しない）
 - 前方一致する候補が0件の場合（例: `/xyz`）は `prefixCommandMode` が `false` のままとなり、候補欄を表示せず通常のファイル検索結果を表示する
 
+### ウィンドウを閉じる系アクションの共通設計（フロントエンド）
+
+ウィンドウを閉じる系のアクション——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）——は、すべて `useSearch.ts` の `closeWindow(options?)` を経由する。**新しくウィンドウを閉じる系アクションを追加する場合も、必ずこの関数を経由すること。** `closeWindow()` を経由しない独自のクローズ処理・個別の `useRef` ガードを新設しない。
+
+**設計原則：`hideWindow()` を最優先で `await` し、React state の変更は解決後に行う**
+
+```ts
+const closeWindow = useCallback(
+  async (options?: {
+    clearQuery?: "full" | "prefixOnly";
+    prefix?: string;
+    cleanup?: () => void | Promise<void>;
+  }) => {
+    await hideWindow();
+    if ((options?.clearQuery ?? "full") === "prefixOnly") {
+      setQuery(options?.prefix ?? "");
+    } else {
+      setQuery("");
+    }
+    bumpCloseRefreshTick();
+    await options?.cleanup?.();
+  },
+  [bumpCloseRefreshTick]
+);
+```
+
+- `results`／`selected`／`calcResult`／`frecency` 等、画面に影響する React state の変更は、必ず `cleanup` オプション（または `closeWindow()` 自身が行うクエリのクリア）としてまとめ、`hideWindow()` の解決後にのみ実行されるようにする。この境界さえ守れば、後処理がどれだけ重かったり（frecency の store 書き込み等）、他の `useEffect` を連鎖的に再実行させたり（`/recent` の `recentResults` 再計算等）しても、ウィンドウが可視状態のまま中間状態が描画されることは構造的に起こり得ない
+- 各アクションが行う「ファイル起動・クリップボードへの書き込み等の Rust 呼び出し（アクション本体）」は、`closeWindow()` を呼ぶ前に `await` せず fire-and-forget で発火する。ウィンドウの表示状態と無関係な副作用のため `hideWindow()` を待たせる理由がなく、開いたアプリの起動が遅い場合（画像ビューアー等）でも `closeWindow()` の `hideWindow()` 呼び出し自体は遅延しない
+- `bumpCloseRefreshTick()` は `closeRefreshTick`（`useState<number>`）を加算し、メインの検索 `useEffect` の依存配列に含めている。React の `useState` は新しい値が `Object.is` で現在値と等しければ再レンダリングをスキップする（ベイルアウト）ため、無入力のまま（`query` が既に `""`）frecency 順のデフォルト一覧から直接ファイルを起動した場合や、`/recent`・`/cb` で連続してプレフィックスのみへ戻す場合、`setQuery` だけでは値が変化せず検索エフェクトが再実行されないことがある。`closeRefreshTick` は query の値に依存せず確実にエフェクトを再実行させるための専用カウンタ
+- **`clearQuery` の使い分け（"full" / "prefixOnly"）**：`"full"`（デフォルト。クエリを完全に空文字へ戻す）と `"prefixOnly"`（プレフィックス部分だけを残し、それに続く絞り込みフィルタ文字列だけをクリアする。残す文字列は呼び出し側が `options.prefix` に渡す）の2パターン。`"prefixOnly"` を使うのは `launchFile` の `/recent` モード分岐と `selectClipboardEntry`（`/cb`）の2箇所のみで、それ以外は明示的に指定しない限り `"full"` のまま動作する
+  - **新規プレフィックスモード追加時の検討観点**：確定（Enter／クリック）のたびにそのモードから連続して別の項目を選び直すユースケースが想定されるモード（`/recent`・`/cb` のような一覧選択系）は `"prefixOnly"` の対象候補にする。逆に、1回の確定でそのモード自体から離脱するのが自然なモード（通常のファイル検索、システムコマンドの実行等）は `"full"` のままでよい。`options.prefix` に渡す文字列は、設定画面で変更可能な呼び出しキーワードを反映した動的な値（`PREFIX_CHAR + appSettings.xxxKeyword` 等）として都度組み立てること。`"/recent"`・`"/cb"` のようなハードコードはしない（ユーザーがキーワードを変更している場合に不整合が生じるため）
+
+**過去の経緯（モグラ叩きの反省）**：以前は各アクションが「アクション本体の副作用 → 結果クリア → `closeWindow()`」という順序を個別に実装しており、`hideWindow()` が解決する前に他の非同期処理（`recordFrecency` の `setFrecency` が引き起こす検索 `useEffect` の再実行、`/recent` の `recentResults` の同期的な再計算等）が先に走ってしまい、選択ハイライトの位置や結果一覧の内容が一瞬だけ意図しない状態で描画される「ちらつき」バグが、症状ごとに個別発生していた（通常のファイル検索での frecency 起因のちらつき、`/recent` で画像ファイルを実行した場合のみ再発したちらつき、等）。それぞれを `closingRef` のような個別ガードで後追いに潰す対症療法を重ねていたが、ファイル種別や処理の重さが変わるたびに新しい中間状態が露出しかねない構造だった。「`hideWindow()` 解決より前に、画面に影響する React state を一切変更しない」という順序を `closeWindow()` 自身に強制させる設計に統一したことで、個別ガード（`closingRef`）や個別の呼び出し順序の工夫（`recordFrecency` を意図的に `await` せず発火する等）はすべて不要になり削除した。
+
+**再表示時（`cleanup` がまだ完了していない場合）の挙動方針**：`closeWindow()` の `cleanup` は `hideWindow()` の解決後に開始される。理論上、ユーザーが極めて素早く再度ウィンドウを表示した場合、`cleanup` の非同期部分（`recordFrecency` の store 書き込み、`search_files`/`get_recent_files` の再取得等）が完了していない状態で画面が見える可能性がある。検討した3方針：
+
+1. 再表示時、`cleanup` の完了を待ってから最新状態を描画する
+2. 再表示時点で未完了なら、その場で `cleanup` を即時実行してから描画する
+3. 再表示時は一旦ニュートラルな状態を先に描画し、`cleanup` の結果は次のクエリ変化まで気にしない
+
+採用したのは **3**。理由：
+- ウィンドウの再表示（グローバルホットキー／トレイ）は Rust 側が `window.center()` → `show()` を行うだけの経路で、JS 側の `cleanup` の完了と同期する仕組みを持たない。1・2 を実現するには新たな IPC 往復や `show()` 自体の待機処理が必要になり、体感速度（Alt+Space の反応速度）を犠牲にしてまで解消する価値のある問題ではない
+- `cleanup` の同期的な部分（`setQuery`／`setResults`／`bumpCloseRefreshTick` 等）は `hideWindow()` の解決直後、単一の JS 実行区間内でほぼ瞬時に完了する。人間の Alt+Space 打鍵と Rust 側の `show()` の IPC 往復がここに割り込む余地は事実上ない
+- 残る非同期部分（`recordFrecency` の store 書き込み、検索結果の再取得等）が再表示後もまだ解決していない場合に見える状態は、「クエリを変更した直後、結果が追いつくまでの一瞬のロード状態」と本質的に同じであり、通常のクエリ入力時から既に許容されている自然な UI 状態である。ここだけを特別扱いして待たせる理由がない
+
+**適用対象外の例外**：OCR プレビューの「コピーして閉じる」（`App.tsx` の `handleOcrCopyAndClose`）は、`closeWindow()` を経由せず独自に 180ms のフェードアウト演出を挟んでから `hideWindow()` を呼ぶ。これはウィンドウが可視のまま意図的に見せる演出であり、「隠れるまで state を変更しない」という本節の原則とは目的が異なる（詳細は「フロントエンド」節の OCR 関連記述を参照）。同様に `Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない
+
 ### "/" プレフィックスモードの内部アーキテクチャ（フロントエンド）
 
-`/recent`・`/cb` 等、"/" プレフィックスを持つモードが増えるたびに個別対応が積み重なり、フォーカス・非表示まわりのロジックが複雑化していた。以下の3パターンに集約することでこれを解消している。**新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの、ウィンドウを閉じるアクションを伴うもの）を追加する際は、必ずこの3パターンに乗せること。** 個別の ref・個別の `useEffect` 分岐を新設しない。
+`/recent`・`/cb` 等、"/" プレフィックスを持つモードが増えるたびに個別対応が積み重なり、フォーカス・非表示まわりのロジックが複雑化していた。以下の2パターンに集約することでこれを解消している（ウィンドウを閉じる処理自体の共通化は「ウィンドウを閉じる系アクションの共通設計」節を参照）。**新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する際は、必ずこの2パターンに乗せること。** 個別の ref・個別の `useEffect` 分岐を新設しない。
 
 - **世代ID管理（`asyncCallIdRef`、`useSearch.ts`）**：`search_files`・`get_recent_files` 等、非同期呼び出しの「自分が最新の呼び出しか」を判定する世代 ID を、モード名をキーにした単一の `Record<string, number>` にまとめている（`const asyncCallIdRef = useRef<Record<string, number>>({})`）。呼び出し直前に `beginAsyncCall(key)` で世代を進めて ID を取得し、`.then()` 側で `isLatestAsyncCall(key, id)` が `false` なら結果を破棄する。現在使用中のキーは `"search"`（`search_files`）と `"recent"`（`get_recent_files`）
   - 【過去の教訓】この2つの世代 ID をかつて1本のカウンタで共有していたところ、「Shift+Enter でフォルダを開く → Explorer にフォーカスを奪われる → `/recent` モードのフォーカス回復リスナーが `get_recent_files` を呼んで共有カウンタを進める → 直後に解決した `search_files("")` の再取得が『もう自分は最新ではない』と誤判定され結果が握りつぶされる」という不具合が起きていた。**同一のカウンタを複数の非同期呼び出し系統（別コマンド）で共有しないこと**が教訓であり、それを構造的に強制するのがこの仕組み。新しいモードで pull型の非同期取得を追加する場合は、既存キーを使い回さず新しいキー名を割り当てて `beginAsyncCall`/`isLatestAsyncCall` を呼ぶこと
-- **`closeWindow(options?: { clearQuery?: "full" | "prefixOnly"; prefix?: string })`（`useSearch.ts`）**：ウィンドウを閉じる系のアクション全て——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）——がこの関数を経由して「クエリのクリア」→ `bumpCloseRefreshTick()` → `hideWindow()` を行う
-  - `bumpCloseRefreshTick()` は `closeRefreshTick`（`useState<number>`）を加算し、メインの検索 `useEffect` の依存配列に含めている。React の `useState` は新しい値が `Object.is` で現在値と等しければ再レンダリングをスキップする（ベイルアウト）ため、無入力のまま（`query` が既に `""`）frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを開いた場合、`setQuery("")` は `"" → ""` で値が変化せず検索エフェクトが再実行されない。これが「ウィンドウを閉じた後、再表示すると結果一覧が空のまま固まる」不具合の原因になっていた。`closeWindow()` に集約したことで、この対処を呼び出し側が意識する必要はない
-  - **過去の不整合**：この関数への統一以前は7箇所が個別に `setQuery("")`＋`bumpCloseRefreshTick()`＋`hideWindow()` を実装しており、`selectClipboardEntry` だけ `bumpCloseRefreshTick()` の呼び出しが漏れているという不整合が実際に発生していた。`closeWindow()` に一本化することでこの種の実装漏れが構造的に起きないようにしている
-  - **`clearQuery` の使い分け（"full" / "prefixOnly"）**：`clearQuery` は `"full"`（デフォルト。クエリを完全に空文字へ戻す）と `"prefixOnly"`（プレフィックス部分だけを残し、それに続く絞り込みフィルタ文字列だけをクリアする。残す文字列は呼び出し側が `options.prefix` に渡す）の2パターンを持つ。`"prefixOnly"` を使うのは `launchFile` の `/recent` モード分岐と `selectClipboardEntry`（`/cb`）の2箇所のみで、それ以外（通常のファイル検索の `launchFile`・`openContainingFolder`・`copyResult`・`copyUrlConvertResult`・`openWebSearch`・`confirmSystemCommand`）は明示的に指定しない限り `"full"` のまま従来通り動作する
-    - **新規プレフィックスモード追加時の検討観点**：確定（Enter／クリック）のたびにそのモードから連続して別の項目を選び直すユースケースが想定されるモード（`/recent`・`/cb` のような一覧選択系）は `"prefixOnly"` の対象候補にする。逆に、1回の確定でそのモード自体から離脱するのが自然なモード（通常のファイル検索、システムコマンドの実行等）は `"full"` のままでよい。`options.prefix` に渡す文字列は、設定画面で変更可能な呼び出しキーワードを反映した動的な値（`PREFIX_CHAR + appSettings.xxxKeyword` 等）として都度組み立てること。`"/recent"`・`"/cb"` のようなハードコードはしない（ユーザーがキーワードを変更している場合に不整合が生じるため）
-  - `launchFile`／`openContainingFolder` は、ファイル起動・フォルダオープンの `invoke` 自体を `await` せず発火させるだけに留め、直後に `closeWindow()` を呼ぶ（`invoke` を `await` する実装だと、開いたアプリ/エクスプローラーへのフォーカス喪失をきっかけとする自動非表示が `closeWindow()` 内のクエリクリアより先に走る余地が生まれるため。詳細は「格納フォルダを開く（Shift+Enter）」節を参照）。なお `openContainingFolder`（Shift+Enter）は `/recent` モードから呼ばれた場合も含め、常に `"full"`（完全クリア）のままとする（プレフィックスのみ残す対象は「確定＝選択・実行」した `launchFile`／`selectClipboardEntry` に限定しており、フォルダを開くだけの操作までは広げていない）
 - **フォーカス回復時再取得テーブル（`focusRegainTableRef`、`useSearch.ts`）**：push型（OS 通知等で非表示中も自動的に最新化される。例：クリップボード履歴）ではない pull型モードは、モード遷移時の1回きりの取得のままだと非表示中の変化（ファイルを開く／削除する等）が反映されない。これに対応するため、`focusRegainTableRef.current`（`Record<string, { active: boolean; refetch: () => void }>`）へレンダーのたびに最新の `active`／`refetch` を書き込み、単一の `onFocusChanged` リスナーがフォーカス回復時にテーブルを走査して `active` なモードだけ `refetch()` を呼ぶ。リスナー自体は特定モードを知らない汎用ロジックのみを持つ
   - 現在のエントリは `recent` の1つ（`/recent` モード、`fetchRecentFiles("focus-regain")`）。新しい pull型モードを追加する場合は、この `focusRegainTableRef.current` の代入にエントリを1つ追加するだけでよく、`onFocusChanged` リスナー自体やモード専用の鏡ref（かつての `recentModeRef` のようなもの）を新設する必要はない
   - この `onFocusChanged` リスナーは `App.tsx` 側のフォーカスアウト自動非表示・フォーカスイン再フォーカス用のリスナー（「ウィンドウ」節を参照）とは別に `useSearch.ts` 内で独立して登録している。責務（ウィンドウ全体のフォーカス管理 vs. モードごとのデータ鮮度管理）が明確に分かれているため、意図的に統合していない
@@ -505,9 +544,9 @@ win-launcher/
     - 選択インデックスの操作を「キーボード操作（`setSelected`）」と「マウスホバー（`selectFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する（`selectFromHover`）
       1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
       2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
-    - 非同期呼び出し（`search_files`／`get_recent_files`）の世代 ID 管理、ウィンドウを閉じる処理（`closeWindow`）、フォーカス回復時の再取得（`focusRegainTableRef`）の3点は、モードを横断する共通の仕組みとして「"/" プレフィックスモードの内部アーキテクチャ」節にまとめて記載している（過去の不具合の経緯を含む）。新しい "/" プレフィックスモードを追加する際は同節の規約に従うこと
+    - 非同期呼び出し（`search_files`／`get_recent_files`）の世代 ID 管理とフォーカス回復時の再取得（`focusRegainTableRef`）はモードを横断する共通の仕組みとして「"/" プレフィックスモードの内部アーキテクチャ」節に、ウィンドウを閉じる処理（`closeWindow`）は「ウィンドウを閉じる系アクションの共通設計」節にまとめて記載している（過去の不具合の経緯を含む）。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれの節の規約に従うこと
     - ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化でも、`fileSearchEnabled` が `true` なら通常通り `search_files("")` を呼ぶ（抑止しない）。この呼び出しは `hideWindow()` でウィンドウが非表示になった後（ユーザーからは見えない状態）に解決するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、常に最新の frecency 順一覧（通常表示）が即座に見える状態になる。かつてはこの空クエリへの変化を「ウィンドウを閉じるだけなら不要な処理」として `suppressNextSearchRef` で1回分だけ抑止していたが、抑止した分を再取得するタイミングがどこにも存在せず、次にウィンドウを再表示した時に検索結果エリアが空のまま固まって見える不具合（クエリを何か入力するまで復旧しない）を引き起こしていたため、このフラグ自体を廃止した
-  - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う（詳細は「"/" プレフィックスモードの内部アーキテクチャ」節を参照）
+  - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う（詳細は「ウィンドウを閉じる系アクションの共通設計」節を参照）
   - `useUpdater()`：アップデートダイアログの状態（`checking`/`upToDate`/`error`/`available`/`installing`）管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は「自動アップデート機能」節を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ（frecency・clipboardHistory の初期値も `App.tsx` の読み込み完了時に各フックの `setInitial*` で反映する）
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）

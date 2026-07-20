@@ -296,36 +296,35 @@ export function useSearch(
 
   // ウィンドウを閉じる系のアクション（launchFile/openContainingFolder/copyResult/
   // copyUrlConvertResult/openWebSearch/confirmSystemCommand/selectClipboardEntry）が
-  // 共通して行う後処理（クエリのクリア・closeRefreshTick の加算・hideWindow）をここに
-  // 集約する。かつては各アクションが個別にこの3つを呼んでおり、selectClipboardEntry
-  // （useClipboard.ts）だけ bumpCloseRefreshTick() の呼び出しが漏れているという不整合が
-  // あった。呼び出し側をこの関数一本に統一することで、この種の実装漏れが構造的に
-  // 起きないようにしている。
+  // 共通して経由する関数。設計原則・過去の経緯の詳細は「ウィンドウを閉じる系アクションの
+  // 共通設計」節を参照。要点のみ記す：
+  //
+  // 1. hideWindow() を何よりも先に await する。呼び出し元がファイル起動等の Rust
+  //    コマンドを呼んでいても、それは closeWindow() を呼ぶ前に fire-and-forget で
+  //    発火済みのものとし、closeWindow() 自体はそれを待たない。
+  // 2. hideWindow() が解決した後（＝ウィンドウが実際に非表示になったことが確定した後）
+  //    にのみ、クエリのクリア・closeRefreshTick の加算・呼び出し元固有の後処理
+  //    （cleanup オプション）を行う。ここより前の時点で results 等の React state を
+  //    変更するコードを追加しないこと（隠れる前の中間状態がユーザーに見えてしまう
+  //    ちらつきバグの温床になる）。
   //
   // clearQuery は "full"（デフォルト。クエリを完全に空文字へ戻す）と "prefixOnly"
-  // （プレフィックス部分（例: "/recent"）だけを残し、それに続く絞り込みフィルタ文字列
-  // だけをクリアする）の2パターンを持つ。/recent・/cb は一覧から連続して別の項目を
-  // 選び直すユースケースが多く、毎回プレフィックスを入力し直す手間を減らすため
-  // 「プレフィックスのみ残す」を使う（呼び出し元は launchFile の /recent モード分岐、
-  // useClipboard.ts の selectClipboardEntry の2箇所のみ）。それ以外の呼び出し元
-  // （通常のファイル検索の launchFile・openContainingFolder・copyResult・
-  // copyUrlConvertResult・openWebSearch・confirmSystemCommand）は明示的に指定しない限り
-  // "full" のまま従来通り動作する。"prefixOnly" を指定する場合は options.prefix に
-  // 残したい文字列（"/" + 設定画面で変更可能な呼び出しキーワード）を渡す。呼び出しキーワードは
-  // ユーザーが設定画面で変更できる動的な値のため、"/recent"・"/cb" のようなハードコードは
-  // 行わず、呼び出し側で appSettings から都度組み立てる。
+  // （プレフィックス部分（例: "/recent"）だけを残す）の2パターン。cleanup は
+  // 呼び出し元ごとに異なる結果クリア・frecency 記録等を渡す（省略可）。
   const closeWindow = useCallback(
     async (options?: {
       clearQuery?: "full" | "prefixOnly";
       prefix?: string;
+      cleanup?: () => void | Promise<void>;
     }) => {
+      await hideWindow();
       if ((options?.clearQuery ?? "full") === "prefixOnly") {
         setQuery(options?.prefix ?? "");
       } else {
         setQuery("");
       }
       bumpCloseRefreshTick();
-      await hideWindow();
+      await options?.cleanup?.();
     },
     [bumpCloseRefreshTick]
   );
@@ -575,6 +574,12 @@ export function useSearch(
       return;
     }
     if (recentMode) {
+      // recentResults は Rust への非同期往復を経ない同期的な値のため、ここで
+      // 無条件に setResults(recentResults) してよい。以前はこの再計算が
+      // hideWindow() 解決前に発生してちらつく問題があったが、closeWindow() が
+      // hideWindow() を最優先で待ってから初めてクエリを変更する設計に統一された
+      // ことで、この useEffect 自体がウィンドウ非表示後にしか再実行されなくなり、
+      // 個別のガードは不要になった（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
       console.debug(`[recent] applying recentResults to results (count=${recentResults.length})`);
       setSelectedRaw(0);
       setResults(recentResults);
@@ -677,18 +682,11 @@ export function useSearch(
   }, []);
 
   // launch_file / open_containing_folder はいずれもファイルやフォルダを OS の既定
-  // アプリ（Explorer 含む）で開く。起動されたアプリはほぼ即座に前面に出て
-  // WinLauncher からフォーカスを奪うため、invoke の完了を待ってから closeWindow() を
-  // 呼ぶと、フォーカス喪失をきっかけとする自動非表示（App.tsx の 150ms デバウンス）が
-  // 先に走ってしまい、closeWindow() 内の setQuery("") による「空クエリでの再検索」が
-  // 発火するタイミングと競合しうる（詳細は asyncCallIdRef のコメントを参照）。invoke を
-  // await せず発火させてすぐ closeWindow() に進むことで、ファイル起動・フォルダオープンの
-  // 完了を待たずに再検索を可能な限り早く開始させ、この競合の余地を減らす。
-  //
-  // setQuery("") と bumpCloseRefreshTick() のセット呼び出し（無入力のまま
-  // frecency 順のデフォルト一覧から直接ファイルを起動/フォルダを開いた場合の
-  // React ベイルアウト対策）は closeWindow() 内に集約済み（詳細は closeWindow の
-  // コメントを参照）。
+  // アプリ（Explorer 含む）で開く。起動されたアプリの前面表示や起動の遅さに
+  // closeWindow() の hideWindow() 呼び出しが引きずられないよう、invoke は
+  // await せず発火させるだけに留める（closeWindow() 自体は無関係に即座に
+  // hideWindow() を最優先で実行する。詳細は「ウィンドウを閉じる系アクションの
+  // 共通設計」節を参照）。
 
   // recentMode（/recent）から起動された場合のみ、クエリをプレフィックス部分
   // （"/" + 現在の呼び出しキーワード）まで残す。通常のファイル検索結果からの起動は
@@ -696,18 +694,21 @@ export function useSearch(
   const launchFile = useCallback(
     async (path: string) => {
       invoke("launch_file", { path }).catch(console.error);
-      await recordFrecency(path);
-      setResults([]);
+      const cleanup = () => {
+        setResults([]);
+        recordFrecency(path).catch(console.error);
+      };
       if (recentMode) {
         await closeWindow({
           clearQuery: "prefixOnly",
           prefix: PREFIX_CHAR + appSettings.recentKeyword,
+          cleanup,
         });
       } else {
-        await closeWindow();
+        await closeWindow({ cleanup });
       }
     },
-    [recordFrecency, closeWindow, recentMode, appSettings.recentKeyword]
+    [closeWindow, recordFrecency, recentMode, appSettings.recentKeyword]
   );
 
   // 選択中の項目の格納フォルダをエクスプローラーで開く（Shift+Enter）。通常の
@@ -716,8 +717,7 @@ export function useSearch(
   const openContainingFolder = useCallback(
     async (path: string) => {
       invoke("open_containing_folder", { path }).catch(console.error);
-      setResults([]);
-      await closeWindow();
+      await closeWindow({ cleanup: () => setResults([]) });
     },
     [closeWindow]
   );
@@ -725,16 +725,15 @@ export function useSearch(
   const copyResult = useCallback(
     async (text: string) => {
       const formatted = appSettings.copyWithComma ? formatWithCommas(text) : text;
-      await invoke("copy_to_clipboard", { text: formatted }).catch(console.error);
-      setCalcResult(null);
-      await closeWindow();
+      invoke("copy_to_clipboard", { text: formatted }).catch(console.error);
+      await closeWindow({ cleanup: () => setCalcResult(null) });
     },
     [appSettings.copyWithComma, closeWindow]
   );
 
   const copyUrlConvertResult = useCallback(
     async (text: string) => {
-      await invoke("copy_to_clipboard", { text }).catch(console.error);
+      invoke("copy_to_clipboard", { text }).catch(console.error);
       await closeWindow();
     },
     [closeWindow]
@@ -742,9 +741,9 @@ export function useSearch(
 
   const openWebSearch = useCallback(
     async (q: string) => {
-      await open(
-        `https://www.google.com/search?q=${encodeURIComponent(q)}`
-      ).catch(console.error);
+      open(`https://www.google.com/search?q=${encodeURIComponent(q)}`).catch(
+        console.error
+      );
       await closeWindow();
     },
     [closeWindow]
@@ -779,11 +778,10 @@ export function useSearch(
 
   const confirmSystemCommand = useCallback(async () => {
     if (!pendingCommand) return;
-    await invoke("execute_system_command", {
+    invoke("execute_system_command", {
       action: pendingCommand.action,
     }).catch(console.error);
-    setPendingCommand(null);
-    await closeWindow();
+    await closeWindow({ cleanup: () => setPendingCommand(null) });
   }, [pendingCommand, closeWindow]);
 
   const setInitialFrecency = useCallback((data: FrecencyMap) => {
