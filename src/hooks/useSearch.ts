@@ -15,12 +15,16 @@ import { formatWithCommas } from "../lib/format";
 import {
   AppSettings,
   FileEntry,
+  FolderEntry,
   FrecencyMap,
+  PastedPathInfo,
   PrefixCommand,
   RecentFile,
   SystemCommand,
   UrlConvertResult,
 } from "../types";
+
+export type PathPasteWizardStep = "idle" | "folderSelect" | "nameEdit";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -280,6 +284,17 @@ export function useSearch(
     useState<FrecencyMap>({});
   const prefixCommandFrecencyRef = useRef<FrecencyMap>({});
 
+  // パス貼り付けによる検索フォルダ管理。判定結果（候補行表示）はファイル検索結果と
+  // 共存するが、機能2のミニウィザード（フォルダ選択→名前編集）進行中は他の暗黙判定・
+  // ファイル検索と排他になる（詳細は REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節）。
+  const [pathPasteCandidate, setPathPasteCandidate] =
+    useState<PastedPathInfo | null>(null);
+  const [wizardStep, setWizardStep] = useState<PathPasteWizardStep>("idle");
+  const [wizardFolders, setWizardFolders] = useState<FolderEntry[]>([]);
+  const [wizardSelectedFolder, setWizardSelectedFolder] =
+    useState<FolderEntry | null>(null);
+  const [wizardName, setWizardName] = useState("");
+
   // ウィンドウを閉じる系のアクション（launchFile 等）は setQuery("") でクエリを空に
   // 戻すが、その時点で既にクエリが空（無入力のまま frecency 順のデフォルト一覧から
   // 直接ファイルを起動した場合など）だと "" → "" は値として変化しないため、React の
@@ -295,9 +310,9 @@ export function useSearch(
   }, []);
 
   // ウィンドウを閉じる系のアクション（launchFile/openContainingFolder/copyResult/
-  // copyUrlConvertResult/openWebSearch/confirmSystemCommand/selectClipboardEntry）が
-  // 共通して経由する関数。設計原則・過去の経緯の詳細は「ウィンドウを閉じる系アクションの
-  // 共通設計」節を参照。要点のみ記す：
+  // copyUrlConvertResult/openWebSearch/confirmSystemCommand/selectClipboardEntry/
+  // addSearchFolderFromPaste/confirmShortcut）が共通して経由する関数。設計原則・
+  // 過去の経緯の詳細は「ウィンドウを閉じる系アクションの共通設計」節を参照。要点のみ記す：
   //
   // 1. hideWindow() を何よりも先に await する。呼び出し元がファイル起動等の Rust
   //    コマンドを呼んでいても、それは closeWindow() を呼ぶ前に fire-and-forget で
@@ -328,6 +343,90 @@ export function useSearch(
     },
     [bumpCloseRefreshTick]
   );
+
+  // 検索ボックスへの貼り付けイベントのたびに呼ぶ。クリップボードに CF_HDROP
+  // （Explorer での通常コピー時に付与される実体パス一覧）が存在し、かつパスが単一の
+  // 場合のみ、そのパスの文字列を検索ボックスにそのまま流し込む（クォート等の加工は
+  // しない）。複数パスの場合・CF_HDROP が存在しない場合は何もしない（後者は OS 標準の
+  // ペースト処理にそのまま委ねる）。流し込んだ文字列に対する実在パス判定（クォート
+  // 有無を問わない）は、通常のテキスト貼り付け・手入力と全く同じ経路（下記メインの
+  // 検索 useEffect が query の変化として検知し、judge_pasted_path を呼ぶ）で行う。
+  // 詳細は REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節の
+  // 「貼り付け内容の判定方法」を参照。
+  const detectPastedPath = useCallback(() => {
+    invoke<string | null>("read_pasted_hdrop_path")
+      .then((path) => {
+        if (path) {
+          setQuery(path);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  const clearPathPaste = useCallback(() => {
+    setPathPasteCandidate(null);
+    setWizardStep("idle");
+    setWizardFolders([]);
+    setWizardSelectedFolder(null);
+    setWizardName("");
+  }, []);
+
+  // 機能1: 検索フォルダとして追加。invoke は closeWindow() の hideWindow() を待たず
+  // fire-and-forget で発火する（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
+  const addSearchFolderFromPaste = useCallback(async () => {
+    if (!pathPasteCandidate) return;
+    invoke("add_search_folder_from_paste", {
+      path: pathPasteCandidate.path,
+    }).catch(console.error);
+    await closeWindow({ cleanup: clearPathPaste });
+  }, [pathPasteCandidate, closeWindow, clearPathPaste]);
+
+  // 機能2 ステップ1→2: 登録済みの検索フォルダ一覧を取得してフォルダ選択ステップへ進む
+  // （PULL。フォーカス回復時の再取得は行わない。ウィザードは短時間の一時操作のため）。
+  const startShortcutWizard = useCallback(() => {
+    invoke<FolderEntry[]>("get_folders")
+      .then((folders) => {
+        setWizardFolders(folders);
+        setWizardStep("folderSelect");
+      })
+      .catch(console.error);
+  }, []);
+
+  // 機能2 ステップ2→3: フォルダを選択し、名前編集欄のデフォルト値を元のファイル/
+  // フォルダ名にする。
+  const selectWizardFolder = useCallback(
+    (folder: FolderEntry) => {
+      setWizardSelectedFolder(folder);
+      setWizardName(pathPasteCandidate?.name ?? "");
+      setWizardStep("nameEdit");
+    },
+    [pathPasteCandidate]
+  );
+
+  // 機能2 ステップ3: 保存を実行する。`.lnk` の作成自体（連番付与含む）は Rust 側が行う。
+  const confirmShortcut = useCallback(async () => {
+    if (!pathPasteCandidate || !wizardSelectedFolder) return;
+    invoke("create_shortcut", {
+      targetPath: pathPasteCandidate.path,
+      folderPath: wizardSelectedFolder.path,
+      name: wizardName,
+    }).catch(console.error);
+    await closeWindow({ cleanup: clearPathPaste });
+  }, [
+    pathPasteCandidate,
+    wizardSelectedFolder,
+    wizardName,
+    closeWindow,
+    clearPathPaste,
+  ]);
+
+  // Escape: ウィザードを1ステップ前に戻す（名前編集→フォルダ選択、
+  // フォルダ選択→候補行表示 or 通常のファイル検索結果表示）。
+  const wizardBack = useCallback(() => {
+    setWizardStep((step) => (step === "nameEdit" ? "folderSelect" : "idle"));
+  }, []);
+
+  const pathPasteWizardMode = wizardStep !== "idle";
 
   const [rawRecentFiles, setRawRecentFiles] = useState<RecentFile[]>([]);
 
@@ -524,28 +623,40 @@ export function useSearch(
   }, [recentMode, recentFilterText, rawRecentFiles]);
 
   // クリップボード履歴モード・最近使ったファイル一覧モード（完全な呼び出しキーワードが
-  // 入力済み）が有効な間は、候補一覧ではなくそれぞれの専用モードを優先する。
+  // 入力済み）・パス貼り付けのショートカット配置ウィザード進行中が有効な間は、
+  // 候補一覧ではなくそれぞれの専用モードを優先する。
   const prefixCommandCandidates = useMemo(
     () =>
-      calcMode || clipboardMode || recentMode
+      calcMode || clipboardMode || recentMode || pathPasteWizardMode
         ? []
         : sortPrefixCommandsByFrecency(
             buildPrefixCommandCandidates(query, appSettings),
             prefixCommandFrecency
           ),
-    [calcMode, clipboardMode, recentMode, query, appSettings, prefixCommandFrecency]
+    [
+      calcMode,
+      clipboardMode,
+      recentMode,
+      pathPasteWizardMode,
+      query,
+      appSettings,
+      prefixCommandFrecency,
+    ]
   );
   const prefixCommandMode = prefixCommandCandidates.length > 0;
 
   // URLエンコード/デコード結果はファイル検索結果を置き換えず、その先頭付近に共存表示する
-  // （prefixCommandMode/clipboardMode/recentMode のような排他モードにはしない）。
-  // calcMode（数式らしい入力）は isCalcExpression の許容文字クラスが数字・演算子・括弧・
-  // 空白・小数点のみでレターを含まないため、`http(s)://` から始まる URL 的な入力とは
-  // 構造上同時に true にならない。よってここで calcMode を明示的に除外しなくても
-  // urlConvertResult と calcResult が同時に発生することはない。
+  // （prefixCommandMode/clipboardMode/recentMode/pathPasteWizardMode のような
+  // 排他モードにはしない）。calcMode（数式らしい入力）は isCalcExpression の許容
+  // 文字クラスが数字・演算子・括弧・空白・小数点のみでレターを含まないため、
+  // `http(s)://` から始まる URL 的な入力とは構造上同時に true にならない。よってここで
+  // calcMode を明示的に除外しなくても urlConvertResult と calcResult が同時に
+  // 発生することはない。
   const urlConvertResult = useMemo(() => {
     if (!appSettings.urlConvertEnabled) return null;
-    if (prefixCommandMode || clipboardMode || recentMode) return null;
+    if (prefixCommandMode || clipboardMode || recentMode || pathPasteWizardMode) {
+      return null;
+    }
     return detectUrlConvertResult(query, appSettings.urlConvertKeepSpaceEncoded);
   }, [
     appSettings.urlConvertEnabled,
@@ -553,6 +664,7 @@ export function useSearch(
     prefixCommandMode,
     clipboardMode,
     recentMode,
+    pathPasteWizardMode,
     query,
   ]);
 
@@ -565,9 +677,19 @@ export function useSearch(
       setSelectedRaw(0);
       setResults([]);
       setCalcResult(null);
+      setPathPasteCandidate(null);
       return;
     }
     if (prefixCommandMode) {
+      setSelectedRaw(0);
+      setResults([]);
+      setCalcResult(null);
+      setPathPasteCandidate(null);
+      return;
+    }
+    if (pathPasteWizardMode) {
+      // ウィザード進行中は pathPasteCandidate（対象パス・名前・isDir）を機能1/機能2の
+      // アクションが引き続き参照するため、ここではクリアしない。
       setSelectedRaw(0);
       setResults([]);
       setCalcResult(null);
@@ -584,6 +706,7 @@ export function useSearch(
       setSelectedRaw(0);
       setResults(recentResults);
       setCalcResult(null);
+      setPathPasteCandidate(null);
       return;
     }
 
@@ -595,6 +718,23 @@ export function useSearch(
         .catch(console.error);
     } else {
       setCalcResult(null);
+    }
+
+    // パス貼り付けによる検索フォルダ管理：検索ボックスの文字列（CF_HDROP からの
+    // 流し込み・通常のテキスト貼り付け・手入力のいずれも区別しない）に対して、
+    // 実在するファイル/フォルダのパスかどうかを判定する。数式計算・URLエンコード/
+    // デコードと同様、ファイル検索結果とは別枠の固定表示領域として共存表示するため、
+    // setResults([]) によるファイル検索結果のクリアは行わない。
+    if (appSettings.pathPasteEnabled) {
+      const callId = beginAsyncCall("pathPaste");
+      invoke<PastedPathInfo | null>("judge_pasted_path", { text: query })
+        .then((candidate) => {
+          if (!isLatestAsyncCall("pathPaste", callId)) return;
+          setPathPasteCandidate(candidate);
+        })
+        .catch(console.error);
+    } else {
+      setPathPasteCandidate(null);
     }
 
     if (appSettings.fileSearchEnabled) {
@@ -636,6 +776,7 @@ export function useSearch(
     frecency,
     clipboardMode,
     prefixCommandMode,
+    pathPasteWizardMode,
     recentMode,
     recentResults,
     closeRefreshTick,
@@ -821,5 +962,17 @@ export function useSearch(
     closeWindow,
     setInitialFrecency,
     setInitialPrefixCommandFrecency,
+    pathPasteCandidate,
+    detectPastedPath,
+    addSearchFolderFromPaste,
+    pathPasteWizardMode,
+    wizardStep,
+    wizardFolders,
+    wizardName,
+    setWizardName,
+    startShortcutWizard,
+    selectWizardFolder,
+    confirmShortcut,
+    wizardBack,
   };
 }

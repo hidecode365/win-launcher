@@ -48,6 +48,7 @@ export interface AppSettings {
   recentKeyword: string;
   recentMaxAgeDays: number;
   recentMaxResults: number;
+  pathPasteEnabled: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -71,6 +72,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   recentKeyword: "recent",
   recentMaxAgeDays: 180,
   recentMaxResults: 50,
+  pathPasteEnabled: true,
 };
 
 // Rust の `check_for_update` コマンドの戻り値。
@@ -108,6 +110,15 @@ export interface PrefixCommand {
   description: string;
   kind: PrefixCommandKind;
   action: SystemCommandAction | null;
+}
+
+// Rust の `detect_pasted_path` コマンドの戻り値。パス貼り付けによる検索フォルダ管理の
+// 貼り付け判定結果。実在確認・フォルダ/ファイル判定済みの単一パスのみを表す
+// （CF_HDROP に複数パスが含まれる場合や実在しないパスは Rust 側で null になる）。
+export interface PastedPathInfo {
+  path: string;
+  name: string;
+  isDir: boolean;
 }
 
 export interface ClipboardTextEntry {

@@ -16,10 +16,12 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
 use tauri_plugin_updater::UpdaterExt;
 use walkdir::WalkDir;
 
+mod path_paste;
 mod recent_files;
 
 const SETTINGS_STORE: &str = "settings.json";
@@ -423,6 +425,87 @@ fn toggle_folder(app: AppHandle, path: String) -> Result<Vec<FolderEntry>, Strin
     Ok(folders)
 }
 
+/// Windows のトースト通知を1件表示する。失敗（通知権限なし等）は無視する
+/// （通知はあくまで補助的なフィードバックであり、失敗してもフォルダ追加・
+/// ショートカット作成自体は成功しているため、エラーとして扱う必要はない）。
+fn show_toast(app: &AppHandle, message: &str) {
+    let _ = app
+        .notification()
+        .builder()
+        .title("WinLauncher")
+        .body(message)
+        .show();
+}
+
+/// パス貼り付けによる検索フォルダ管理：検索ボックスへの貼り付けイベント発生時に呼ぶ。
+/// クリップボードに `CF_HDROP` が存在し、かつパスが単一の場合のみそのパス文字列を
+/// 返す（呼び出し側はこれをそのまま検索ボックスへ流し込む）。`appSettings.pathPasteEnabled`
+/// が無効な場合は判定自体を行わない。
+#[tauri::command]
+fn read_pasted_hdrop_path(app: AppHandle) -> Option<String> {
+    let settings = load_app_settings(&app);
+    if !settings.path_paste_enabled {
+        return None;
+    }
+    path_paste::read_hdrop_single_path()
+}
+
+/// パス貼り付けによる検索フォルダ管理：検索ボックスの文字列（`CF_HDROP` からの
+/// 流し込み・通常のテキスト貼り付け・手入力のいずれも区別しない）に対して、実在する
+/// ファイル/フォルダのパスかどうかを判定する。`calculate`/`search_files` と同様に
+/// クエリ変更のたびフロントエンドから呼ばれる想定のため、他の `set_*` 系コマンドとは
+/// 異なりここでは `path_paste_enabled` を確認しない（呼び出し自体はフロントエンド側の
+/// `appSettings.pathPasteEnabled` で制御する）。
+#[tauri::command]
+fn judge_pasted_path(text: String) -> Option<path_paste::PastedPathInfo> {
+    path_paste::judge_pasted_path(&text)
+}
+
+/// 機能1: 検索フォルダとして追加。既に登録済みの場合は追加処理をスキップし、
+/// その旨をトースト通知で伝える（エラー扱いにはしない）。
+#[tauri::command]
+fn add_search_folder_from_paste(app: AppHandle, path: String) -> Result<(), String> {
+    let mut folders = load_folders(&app);
+    let name = Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.clone());
+
+    if folders.iter().any(|f| f.path == path) {
+        show_toast(&app, "既に登録済みです");
+        return Ok(());
+    }
+
+    folders.push(FolderEntry { path, enabled: true });
+    save_folders(&app, &folders)?;
+    show_toast(&app, &format!("検索フォルダに追加しました: {name}"));
+    Ok(())
+}
+
+/// 機能2: 検索フォルダにショートカットとして追加。同名の `.lnk` が既に存在する場合は
+/// Explorer 標準の挙動に倣い「名前 (2).lnk」のように連番を付与する（上書きしない）。
+#[tauri::command]
+fn create_shortcut(
+    app: AppHandle,
+    target_path: String,
+    folder_path: String,
+    name: String,
+) -> Result<(), String> {
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() {
+        return Err("名前を入力してください".to_string());
+    }
+
+    let dest_dir = Path::new(&folder_path);
+    let final_name = path_paste::unique_lnk_name(dest_dir, trimmed_name);
+    let lnk_path = dest_dir.join(format!("{final_name}.lnk"));
+
+    path_paste::write_shortcut_file(&target_path, &lnk_path)?;
+
+    show_toast(&app, &format!("ショートカットを配置しました: {final_name}"));
+    Ok(())
+}
+
 // 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで
 // 保存された settings.json（このフィールドを持たない）の読み込み時に
 // deserialize が失敗し、AppSettings 全体が Default::default() にフォールバックして
@@ -491,6 +574,8 @@ struct AppSettings {
     recent_max_age_days: u32,
     #[serde(default = "default_recent_max_results")]
     recent_max_results: u32,
+    #[serde(default = "default_true")]
+    path_paste_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -516,6 +601,7 @@ impl Default for AppSettings {
             recent_keyword: DEFAULT_RECENT_KEYWORD.to_string(),
             recent_max_age_days: DEFAULT_RECENT_MAX_AGE_DAYS,
             recent_max_results: DEFAULT_RECENT_MAX_RESULTS,
+            path_paste_enabled: true,
         }
     }
 }
@@ -719,6 +805,14 @@ fn set_recent_max_results(app: AppHandle, max_results: u32) -> Result<AppSetting
     }
     let mut settings = load_app_settings(&app);
     settings.recent_max_results = max_results;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_path_paste_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.path_paste_enabled = enabled;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -1559,6 +1653,7 @@ fn main() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -1718,7 +1813,12 @@ fn main() {
             ocr_from_clipboard,
             set_check_update_on_startup,
             check_for_update,
-            download_and_install_update
+            download_and_install_update,
+            set_path_paste_enabled,
+            read_pasted_hdrop_path,
+            judge_pasted_path,
+            add_search_folder_from_paste,
+            create_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

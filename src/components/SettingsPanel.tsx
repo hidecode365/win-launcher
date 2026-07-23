@@ -8,6 +8,7 @@ import {
 } from "../types";
 import { GeneralSettings } from "./GeneralSettings";
 import { FileSearchSettings } from "./FileSearchSettings";
+import { PathPasteSettings } from "./PathPasteSettings";
 import { ConvertSettings } from "./ConvertSettings";
 import { SystemCommandSettings } from "./SystemCommandSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
@@ -19,6 +20,7 @@ import { AboutSettings } from "./AboutSettings";
 type SettingsTab =
   | "general"
   | "fileSearch"
+  | "pathPaste"
   | "convert"
   | "systemCommand"
   | "webSearch"
@@ -30,6 +32,7 @@ type SettingsTab =
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "全般" },
   { id: "fileSearch", label: "ファイル検索" },
+  { id: "pathPaste", label: "パス貼り付け" },
   { id: "convert", label: "計算・変換" },
   { id: "systemCommand", label: "システムコマンド" },
   { id: "webSearch", label: "Web検索" },
@@ -63,6 +66,7 @@ export function SettingsPanel({
   recentSettingsError,
   onSetOcrEnabled,
   onSetCheckUpdateOnStartup,
+  onSetPathPasteEnabled,
   folders,
   onAddFolder,
   onToggleFolder,
@@ -96,6 +100,7 @@ export function SettingsPanel({
   recentSettingsError: string | null;
   onSetOcrEnabled: (checked: boolean) => void;
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
+  onSetPathPasteEnabled: (checked: boolean) => void;
   folders: FolderEntry[];
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
@@ -176,6 +181,12 @@ export function SettingsPanel({
               onToggleFolder={onToggleFolder}
               onRemoveFolder={onRemoveFolder}
               onOpenFolder={onOpenFolder}
+            />
+          )}
+          {tab === "pathPaste" && (
+            <PathPasteSettings
+              enabled={appSettings.pathPasteEnabled}
+              onToggle={onSetPathPasteEnabled}
             />
           )}
           {tab === "convert" && (

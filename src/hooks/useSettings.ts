@@ -198,6 +198,13 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  const setPathPasteEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_path_paste_enabled", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
   const addFolder = useCallback(async () => {
     const path = await invoke<string | null>("pick_folder").catch(() => null);
     if (!path) return;
@@ -266,6 +273,7 @@ export function useSettings(showSettings: boolean) {
     setRecentMaxResults,
     setOcrEnabled,
     setCheckUpdateOnStartup,
+    setPathPasteEnabled,
     addFolder,
     toggleFolder,
     removeFolder,

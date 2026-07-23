@@ -1,8 +1,12 @@
+import type { PathPasteWizardStep } from "../hooks/useSearch";
+
 export function StatusFooter({
   pendingCommand,
   webSearchVisible,
   isWebSearchSelected,
   clipboardMode,
+  pathPasteWizardStep,
+  isPathPasteCandidateSelected,
   isCalcSelected,
   prefixCommandMode,
   isUrlConvertSelected,
@@ -12,6 +16,8 @@ export function StatusFooter({
   webSearchVisible: boolean;
   isWebSearchSelected: boolean;
   clipboardMode: boolean;
+  pathPasteWizardStep: PathPasteWizardStep | null;
+  isPathPasteCandidateSelected: boolean;
   isCalcSelected: boolean;
   prefixCommandMode: boolean;
   isUrlConvertSelected: boolean;
@@ -24,6 +30,14 @@ export function StatusFooter({
           <span>Enter 実行</span>
           <span>Esc キャンセル</span>
         </>
+      ) : pathPasteWizardStep ? (
+        <>
+          {pathPasteWizardStep === "folderSelect" && <span>↑↓ 選択</span>}
+          <span>
+            {pathPasteWizardStep === "folderSelect" ? "Enter 次へ" : "Enter 保存"}
+          </span>
+          <span>Esc 戻る</span>
+        </>
       ) : (
         <>
           <span>↑↓ 選択</span>
@@ -34,9 +48,11 @@ export function StatusFooter({
                 ? "Enter クリップボードにセット"
                 : prefixCommandMode
                   ? "Enter 実行"
-                  : isCalcSelected || isUrlConvertSelected
-                    ? "Enter コピー"
-                    : "Enter 起動"}
+                  : isPathPasteCandidateSelected
+                    ? "Enter 選択"
+                    : isCalcSelected || isUrlConvertSelected
+                      ? "Enter コピー"
+                      : "Enter 起動"}
           </span>
           {isFileSelected && <span>Shift+Enter フォルダを開く</span>}
           <span>Ctrl+D クリア</span>

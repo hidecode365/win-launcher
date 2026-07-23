@@ -8,6 +8,7 @@ export function SearchBox({
   disabled,
   onOpenSettings,
   onImagePaste,
+  onPathPaste,
 }: {
   inputRef: RefObject<HTMLInputElement>;
   query: string;
@@ -16,19 +17,28 @@ export function SearchBox({
   disabled: boolean;
   onOpenSettings: () => void;
   onImagePaste?: (file: File) => void;
+  onPathPaste?: () => void;
 }) {
+  // 画像は既存通り preventDefault してプレビューへ差し替える。それ以外の貼り付けは
+  // 通常のテキスト貼り付け動作を妨げず、並行して Rust 側に CF_HDROP の有無を確認させる
+  // （CF_HDROP はブラウザの clipboardData に実パスとして現れないため、確認は常に
+  // Rust 側で実クリップボードを直接読み直す方式にしている）。CF_HDROP が単一パスの
+  // 場合はそのパス文字列を検索ボックスへ流し込み、以降は通常のテキスト貼り付け・
+  // 手入力と同じ経路で実在パス判定を行う。詳細は `useSearch.ts` の
+  // `detectPastedPath`/`read_pasted_hdrop_path` コマンドを参照。
   const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
-    if (!onImagePaste) return;
     const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith("image/")) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) onImagePaste(file);
-        return;
+    if (items) {
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/") && onImagePaste) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) onImagePaste(file);
+          return;
+        }
       }
     }
+    onPathPaste?.();
   };
 
   return (

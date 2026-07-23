@@ -11,6 +11,7 @@ import { useUpdater } from "./hooks/useUpdater";
 import { SearchBox } from "./components/SearchBox";
 import { OcrPreview } from "./components/OcrPreview";
 import { ResultList } from "./components/ResultList";
+import { PathPasteWizard } from "./components/PathPasteWizard";
 import { ClipboardPanel } from "./components/ClipboardPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
@@ -172,15 +173,28 @@ export default function App() {
     settings.resetSystemCommandKeywordErrors,
   ]);
 
-  // 設定パネルの開閉・クエリ全クリア（Ctrl+D）は document レベルの keydown で処理する。
-  // input 要素のローカル onKeyDown に持たせると、フォーカス状態や
-  // WebView2 のブラウザ既定動作（Ctrl+S のページ保存、Ctrl+D のブックマーク追加）の
-  // 影響で発火しないことがあるため、この一箇所に統一している。
+  // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
+  // ステップの操作は document レベルの keydown で処理する。input 要素のローカル
+  // onKeyDown に持たせると、フォーカス状態や WebView2 のブラウザ既定動作（Ctrl+S の
+  // ページ保存、Ctrl+D のブックマーク追加）の影響で発火しないことがあるため、この
+  // 一箇所に統一している。
   // Ctrl+D は OCR プレビュー表示中のみ「閉じる」ボタン（handleOcrClose）と同一の処理を
   // 呼び、それ以外の全モードでは現在のモードに関わらずクエリを問答無用で空文字にする
   // （ウィンドウは閉じないため closeWindow は経由しない。closeRefreshTick の加算も
   // 不要：query 自体が変化するので検索用 useEffect は通常通り再トリガーされる）。
   // 検索 UI そのものが表示されていない設定パネル表示中（showSettings）は対象外とする。
+  //
+  // パス貼り付けウィザードの両ステップ（"folderSelect"／"nameEdit"）も、SearchBox の
+  // フォーカス状態に依存しないここで一括処理する。
+  // - "folderSelect"：候補行は SearchBox とは別の `<button>` 要素（一覧の各行）であり、
+  //   Enter 確定直後や行のクリックでフォーカスが SearchBox から外れうる（フォーカス先の
+  //   行がステップ遷移で DOM から消えると、フォーカスは document.body に戻り、SearchBox
+  //   の React onKeyDown（handleKeyDown）には keydown が届かなくなる）。
+  // - "nameEdit"：専用の入力欄（PathPasteWizard 内、マウント時に focus() 済み）は
+  //   常にフォーカスされているため上記の問題は起きないが、そちらにローカルの
+  //   onKeyDown を残すとこの window リスナーとの二重発火（Escape が1ステップではなく
+  //   2ステップ分戻ってしまう等）が起こりうるため、ここに一本化する
+  //   （PathPasteWizard の入力欄からは Enter/Escape の onKeyDown を削除済み）。
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
@@ -201,6 +215,39 @@ export default function App() {
         } else {
           search.setQuery("");
         }
+      } else if (!showSettings && search.pathPasteWizardMode) {
+        if (search.wizardStep === "folderSelect") {
+          switch (e.key) {
+            case "Escape":
+              e.preventDefault();
+              search.wizardBack();
+              break;
+            case "ArrowDown":
+              e.preventDefault();
+              search.setSelected((s) =>
+                Math.min(s + 1, search.wizardFolders.length - 1)
+              );
+              break;
+            case "ArrowUp":
+              e.preventDefault();
+              search.setSelected((s) => Math.max(s - 1, 0));
+              break;
+            case "Enter": {
+              e.preventDefault();
+              const folder = search.wizardFolders[search.selected];
+              if (folder) search.selectWizardFolder(folder);
+              break;
+            }
+          }
+        } else if (search.wizardStep === "nameEdit") {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            search.wizardBack();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            search.confirmShortcut();
+          }
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -213,19 +260,41 @@ export default function App() {
     ocrActive,
     handleOcrClose,
     search.setQuery,
+    search.pathPasteWizardMode,
+    search.wizardStep,
+    search.wizardFolders,
+    search.selected,
+    search.setSelected,
+    search.wizardBack,
+    search.selectWizardFolder,
+    search.confirmShortcut,
   ]);
 
+  // パス貼り付けの候補行（ショートカット配置→(フォルダのみ)検索フォルダに追加）は
+  // 常にファイル検索結果より前、計算結果・URLエンコード/デコード結果よりも前の
+  // 先頭を占有する（ローカルパスは数式計算・URL変換の判定条件と構造上両立しないため、
+  // 実際に同時発生することはない。詳細は ResultList・REQUIREMENTS.md を参照）。
+  const pathPasteLength = search.pathPasteCandidate
+    ? search.pathPasteCandidate.isDir
+      ? 2
+      : 1
+    : 0;
   const calcLength = search.calcResult !== null ? 1 : 0;
   const urlConvertLength = search.urlConvertResult !== null ? 1 : 0;
   const baseLength = search.clipboardMode
     ? clipboard.clipboardEntries.length
     : search.prefixCommandMode
       ? search.prefixCommandCandidates.length
-      : search.results.length + calcLength + urlConvertLength;
+      : search.pathPasteWizardMode
+        ? search.wizardStep === "folderSelect"
+          ? search.wizardFolders.length
+          : 0
+        : search.results.length + pathPasteLength + calcLength + urlConvertLength;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
-    !search.clipboardMode;
+    !search.clipboardMode &&
+    !search.pathPasteWizardMode;
   const listLength = baseLength + (webSearchVisible ? 1 : 0);
 
   const handleKeyDown = useCallback(
@@ -240,6 +309,15 @@ export default function App() {
         }
         return;
       }
+      if (search.pathPasteWizardMode) {
+        // ウィザードの操作（フォルダ選択ステップの ↑↓・Enter・Escape、名前編集
+        // ステップの Escape）は、SearchBox の focus 状態に依存しない window レベルの
+        // keydown リスナー（またはステップ3専用の入力欄自身）で処理する。フォルダ選択
+        // ステップの各行は SearchBox とは別の <button> であり、Enter 確定直後や行の
+        // クリックでフォーカスが SearchBox から外れうるため（詳細は該当 useEffect の
+        // コメントを参照）。
+        return;
+      }
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -251,16 +329,18 @@ export default function App() {
           break;
         case "Enter": {
           // 選択中の項目がファイル検索結果／最近使ったファイル一覧のいずれかの
-          // 実ファイル（計算結果・URLエンコード/デコード結果・Web検索行を除く）を
-          // 指している場合のみ有効なインデックス。負の値・範囲外の場合は
-          // search.results[...] が undefined になり、以下の分岐が自然に無効化される。
+          // 実ファイル（パス貼り付け候補・計算結果・URLエンコード/デコード結果・
+          // Web検索行を除く）を指している場合のみ有効なインデックス。負の値・範囲外の
+          // 場合は search.results[...] が undefined になり、以下の分岐が自然に無効化される。
           const selectedFile =
-            search.results[search.selected - calcLength - urlConvertLength];
+            search.results[
+              search.selected - pathPasteLength - calcLength - urlConvertLength
+            ];
           if (e.shiftKey) {
             // Shift+Enter は格納フォルダを開く操作専用。ファイル検索結果・最近使った
-            // ファイル一覧以外（計算結果・URLエンコード/デコード結果・システムコマンド
-            // 候補・クリップボード履歴・プレフィックスコマンド候補・Web検索行）は
-            // ファイルパスを持たないため、selectedFile が存在する場合のみ実行する。
+            // ファイル一覧以外（パス貼り付け候補・計算結果・URLエンコード/デコード結果・
+            // システムコマンド候補・クリップボード履歴・プレフィックスコマンド候補・
+            // Web検索行）はファイルパスを持たないため、selectedFile が存在する場合のみ実行する。
             if (selectedFile) {
               search.openContainingFolder(selectedFile.path);
             }
@@ -280,11 +360,26 @@ export default function App() {
                 search.prefixCommandCandidates[search.selected]
               );
             }
-          } else if (search.calcResult !== null && search.selected === 0) {
+          } else if (
+            search.pathPasteCandidate &&
+            search.selected < pathPasteLength
+          ) {
+            if (search.selected === 0) {
+              search.startShortcutWizard();
+            } else if (
+              search.selected === 1 &&
+              search.pathPasteCandidate.isDir
+            ) {
+              search.addSearchFolderFromPaste();
+            }
+          } else if (
+            search.calcResult !== null &&
+            search.selected === pathPasteLength
+          ) {
             search.copyResult(search.calcResult);
           } else if (
             search.urlConvertResult !== null &&
-            search.selected === calcLength
+            search.selected === pathPasteLength + calcLength
           ) {
             search.copyUrlConvertResult(search.urlConvertResult.text);
           } else if (selectedFile) {
@@ -323,6 +418,11 @@ export default function App() {
       search.results,
       search.launchFile,
       search.openContainingFolder,
+      pathPasteLength,
+      search.pathPasteWizardMode,
+      search.pathPasteCandidate,
+      search.startShortcutWizard,
+      search.addSearchFolderFromPaste,
     ]
   );
 
@@ -405,6 +505,7 @@ export default function App() {
         recentSettingsError={settings.recentSettingsError}
         onSetOcrEnabled={settings.setOcrEnabled}
         onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
+        onSetPathPasteEnabled={settings.setPathPasteEnabled}
         folders={settings.folders}
         onAddFolder={settings.addFolder}
         onToggleFolder={settings.toggleFolder}
@@ -445,10 +546,15 @@ export default function App() {
         query={search.query}
         onQueryChange={search.setQuery}
         onKeyDown={handleKeyDown}
-        disabled={search.pendingCommand !== null}
+        disabled={search.pendingCommand !== null || search.pathPasteWizardMode}
         onOpenSettings={openSettings}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
+        }
+        onPathPaste={
+          settings.appSettings.pathPasteEnabled
+            ? search.detectPastedPath
+            : undefined
         }
       />
 
@@ -468,7 +574,8 @@ export default function App() {
         />
       )}
 
-      {/* 検索結果 / 計算結果 / クリップボード履歴（OCR プレビュー中は非表示） */}
+      {/* 検索結果 / 計算結果 / クリップボード履歴 / パス貼り付けウィザード
+          （OCR プレビュー中は非表示） */}
       {!ocrActive &&
         (search.clipboardMode ? (
           <ClipboardPanel
@@ -479,8 +586,19 @@ export default function App() {
             initialLeftWidth={clipboardPaneWidth}
             onWidthChange={handlePaneWidthChange}
           />
+        ) : search.pathPasteWizardMode ? (
+          <PathPasteWizard
+            step={search.wizardStep}
+            folders={search.wizardFolders}
+            selected={search.selected}
+            onSelect={search.selectFromHover}
+            onSelectFolder={search.selectWizardFolder}
+            name={search.wizardName}
+            onNameChange={search.setWizardName}
+          />
         ) : (
           <ResultList
+            pathPasteCandidate={search.pathPasteCandidate}
             calcResult={search.calcResult}
             prefixCommandMode={search.prefixCommandMode}
             prefixCommandCandidates={search.prefixCommandCandidates}
@@ -491,6 +609,8 @@ export default function App() {
             baseLength={baseLength}
             webSearchVisible={webSearchVisible}
             onSelect={search.selectFromHover}
+            onAddSearchFolder={search.addSearchFolderFromPaste}
+            onStartShortcutWizard={search.startShortcutWizard}
             onCopyResult={search.copyResult}
             onSelectPrefixCommand={search.selectPrefixCommand}
             onLaunchFile={search.launchFile}
@@ -506,16 +626,24 @@ export default function App() {
           webSearchVisible={webSearchVisible}
           isWebSearchSelected={search.selected === baseLength}
           clipboardMode={search.clipboardMode}
+          pathPasteWizardStep={
+            search.pathPasteWizardMode ? search.wizardStep : null
+          }
+          isPathPasteCandidateSelected={
+            search.pathPasteCandidate !== null &&
+            search.selected < pathPasteLength
+          }
           isCalcSelected={
-            search.calcResult !== null && search.selected === 0
+            search.calcResult !== null && search.selected === pathPasteLength
           }
           prefixCommandMode={search.prefixCommandMode}
           isUrlConvertSelected={
-            search.urlConvertResult !== null && search.selected === calcLength
+            search.urlConvertResult !== null &&
+            search.selected === pathPasteLength + calcLength
           }
           isFileSelected={
             search.results[
-              search.selected - calcLength - urlConvertLength
+              search.selected - pathPasteLength - calcLength - urlConvertLength
             ] !== undefined
           }
         />

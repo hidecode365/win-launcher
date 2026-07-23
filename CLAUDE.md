@@ -48,6 +48,20 @@
   - 削除されるのは静的な `console.debug(...)` / `console.log(...)` の呼び出し式そのものであり、変数へ代入した参照（例: `const log = console.debug; log(...)`）等の間接呼び出しは対象外になる点に注意する（通常の直接呼び出しの書き方をしていれば問題ない）
 - `ErrorBoundary`（`src/components/ErrorBoundary.tsx`）：上記の調査用ログとは異なり、**開発・本番を問わず常時有効な恒久的な安全装置**。描画中の例外を捕捉し、画面が白紙のまま固まって見える状態を避けてエラーメッセージを表示する。Terser の除去対象ではなく、削除・無効化を前提としない
 
+## バグ修正フロー
+
+不具合の調査・修正にあたっては、以下の7ステップを基本とする。
+
+1. **症状の再現条件を切り分ける**：毎回必ず起きるのか、特定の条件（ファイル種別・処理の重さ等）に依存するのかを最初に明確化する。曖昧なまま次のステップに進まない
+2. **直接原因を特定する**：「なぜ起きたか」を技術的に一つに絞り込む
+3. **横並び調査**：特定した原因パターンが、他のどの機能・どのアクションにも当てはまるかを、コードベース上で必ず全数確認する。思いつく範囲でのリストアップで済ませず、grep 等で機械的に洗い出すこと
+4. **原因の性質を判定する（個数によらず初回から必ず行う）**：「そのアクション固有の実装ミスなのか」「今回使った設計パターンそのものが持つ構造的な弱さなのか」を判定する。「同種の個別対応が何個目か」は判断基準にしない。後者（構造的な弱さ）に該当すると判断したら、たとえ初回のバグであっても全体設計の見直しを検討する。個別対応で済ませる場合は、「なぜ全体設計の見直しをしなかったか」を判断根拠として明示すること
+5. **個別対応 or 全体設計見直しの実施**：全体設計を見直す場合は、設計案を複数比較した上で「なぜその設計が良いか」を言語化し、対象範囲全体に一括適用する。既存の個別対応（その場しのぎのフラグ・ガード等）のうち、新しい設計に統合できるものは削除し、複雑化を解消する
+6. **検証範囲の明示**：3の洗い出し結果に基づき、確認すべき項目をチェックリスト化してから動作確認を依頼する
+7. **知見の型化**：CLAUDE.md への追記は、個別の不具合事例の列挙ではなく、再利用可能な「設計原則」として記載する
+
+基本姿勢：症状ごとの場当たり的なパッチ（モグラ叩き）は最も避けるべき対応であり、急がば回れで根本原因・共通設計に向き合うことを常に優先する。
+
 ## 概要
 
 Windows 11 向けキーボードランチャー。Alt+Space でウィンドウをトグルし、
@@ -73,9 +87,10 @@ win-launcher/
 │   │   ├── useOcr.ts         # OCR状態管理（ローディング・結果・エラー・クリア）
 │   │   └── useUpdater.ts     # アップデートダイアログの状態管理・check_for_update/download_and_install_update呼び出し
 │   ├── components/
-│   │   ├── SearchBox.tsx           # 検索入力欄（ドラッグ領域・歯車ボタン含む）。画像ペーストを検出して onImagePaste を呼ぶ
+│   │   ├── SearchBox.tsx           # 検索入力欄（ドラッグ領域・歯車ボタン含む）。画像ペーストを検出して onImagePaste を呼ぶ。それ以外の貼り付けは onPathPaste を呼ぶ
 │   │   ├── OcrPreview.tsx          # OCR結果プレビュー（編集可能テキストエリア＋コピー・閉じるボタン）
-│   │   ├── ResultList.tsx          # 計算結果/システムコマンド候補/ファイル検索結果のリスト
+│   │   ├── ResultList.tsx          # 計算結果/システムコマンド候補/ファイル検索結果/パス貼り付け候補行のリスト
+│   │   ├── PathPasteWizard.tsx     # パス貼り付け機能2（ショートカット配置）のミニウィザード（フォルダ選択・名前編集ステップ）
 │   │   ├── ClipboardPanel.tsx      # クリップボード履歴モードの2カラムパネル
 │   │   ├── WebSearchRow.tsx        # 「Googleで〇〇を検索」行
 │   │   ├── SystemCommandModal.tsx  # システムコマンドの確認モーダル
@@ -84,6 +99,7 @@ win-launcher/
 │   │   ├── SettingsPanel.tsx       # 設定パネル全体（タブ構成）
 │   │   ├── GeneralSettings.tsx     # 全般タブ（ホットキー）
 │   │   ├── FileSearchSettings.tsx  # ファイル検索タブ
+│   │   ├── PathPasteSettings.tsx   # パス貼り付けタブ
 │   │   ├── CalcSettings.tsx        # 数式計算タブ
 │   │   ├── SystemCommandSettings.tsx # システムコマンドタブ
 │   │   ├── WebSearchSettings.tsx   # Web検索タブ
@@ -95,7 +111,8 @@ win-launcher/
 ├── src-tauri/
 │   ├── src/
 │   │   ├── main.rs         # Rust バックエンド（全ロジック）
-│   │   └── recent_files.rs # 最近使ったファイル一覧の取得ロジック（Windows/Office Recent フォルダ・OneDrive パス解決）
+│   │   ├── recent_files.rs # 最近使ったファイル一覧の取得ロジック（Windows/Office Recent フォルダ・OneDrive パス解決）
+│   │   └── path_paste.rs   # パス貼り付けによる検索フォルダ管理：CF_HDROP確認・テキストからの実在パス判定・`.lnk` 作成（IShellLinkW直接呼び出し）・連番付与ロジック
 │   ├── capabilities/
 │   │   └── default.json    # Tauri v2 権限設定
 │   ├── icons/               # トレイ/アプリアイコン
@@ -119,7 +136,13 @@ win-launcher/
 | React | 18 |
 | TypeScript | 5 |
 | Tailwind CSS | 3 |
-| Vite | 5 |
+| Vite | 6 |
+
+- 依存バージョンの更新状況：
+  - `vite`：5系から `6.4.3` へ更新済み（`package.json` は `^6.4.3` 固定）
+  - `esbuild`（`vite` の間接依存）：`0.25.12` に更新済み
+  - `@vitejs/plugin-react`：`4.7.0` のまま据え置き（追加の更新なし）
+  - `glib`（Rust、`src-tauri/Cargo.lock` 上の間接依存。Windows ビルドでは未使用）：Dependabot が medium 指摘を出しているが、`tauri` が要求する `gtk 0.18.2` に固定されているため単独更新不可。`tauri` 本体の上流アップデート待ちで保留中
 
 ## Tauri プラグイン
 
@@ -133,6 +156,7 @@ win-launcher/
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
 | `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
 | `tauri-plugin-updater` | 自動アップデート（GitHub Releases + `latest.json` の確認・ダウンロード・インストール） |
+| `tauri-plugin-notification` | パス貼り付けによる検索フォルダ管理（検索フォルダ追加・ショートカット配置）完了時の Windows トースト通知 |
 | `tauri` (tray-icon feature) | システムトレイ常駐 |
 
 ## 設計方針
@@ -206,7 +230,7 @@ win-launcher/
 
 ### 設定画面（Rust / フロントエンド）
 
-- 設定パネルは左にカテゴリナビ（全般／ファイル検索／数式計算／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）
+- 設定パネルは左にカテゴリナビ（全般／ファイル検索／パス貼り付け／数式計算／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）
 - 設定パネルは検索ボックス右の歯車アイコンのクリック、または `Ctrl+S` でトグル開閉する（検索 UI 表示中なら開く、設定パネル表示中なら閉じる）
 - 設定パネル表示中は `Ctrl+S` または `Esc` のどちらでも検索 UI に戻る
 - `Ctrl+S` の開閉トグルは input 要素のローカル `onKeyDown` ではなく、`window` への `keydown` イベントリスナー（`useEffect`）で一括処理する
@@ -214,7 +238,7 @@ win-launcher/
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
   - `folders: { path, enabled }[]`（ファイル検索カテゴリの検索フォルダ一覧）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, ocrEnabled, checkUpdateOnStartup }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照））
+  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, ocrEnabled, checkUpdateOnStartup, pathPasteEnabled }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照））
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（プレフィックスコマンド候補の使用履歴。`frecency` と同形式・同方式で、キーがファイルパスではなく呼び出し文字列（`/shutdown` 等）になる。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「プレフィックスコマンド候補表示」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
@@ -223,13 +247,14 @@ win-launcher/
 - 各カテゴリの内容
   - **全般**：起動ホットキーの表示・変更（修飾キーのチェックボックス＋通常キーのプルダウン。「グローバルホットキー」節を参照）＋起動時アップデートチェック ON/OFF トグル（「自動アップデート機能」節を参照）
   - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）。各フォルダパステキストは既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶクリッカブルボタンとして実装し、クリックでエクスプローラーを開く（追加の Rust コマンドや権限は不要）。ボタンにはホバー時 `cursor-pointer` + 下線を付与し、チェックボックス・削除ボタンの動作には影響しない
+  - **パス貼り付け**：機能 ON/OFF トグルのみ（従属設定なし。「パス貼り付けによる検索フォルダ管理」節を参照）
   - **数式計算**：機能 ON/OFF トグル＋クリップボードコピー時のカンマ区切り ON/OFF トグル（「計算結果をカンマ区切りでコピー」。「計算機能」節を参照）
   - **システムコマンド**：機能 ON/OFF トグル＋シャットダウン・再起動・スリープそれぞれの呼び出しキーワードの独立したテキスト入力（3つの入力欄。1つの共通プレフィックス設定ではない。「システムコマンド機能」節を参照）
   - **Web検索**：機能 ON/OFF トグルのみ（「Web検索機能」節を参照）
   - **クリップボード**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力＋最大保持件数の数値入力（「クリップボード履歴」節を参照）
   - **最近使ったファイル**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力（「最近使ったファイル一覧」節を参照）
   - **OCR**：機能 ON/OFF トグルのみ（「OCR機能」節を参照）
-- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_system_command_keyword` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_recent_files_enabled` / `set_recent_keyword` / `set_ocr_enabled` / `set_check_update_on_startup`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
+- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_system_command_keyword` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_recent_files_enabled` / `set_recent_keyword` / `set_ocr_enabled` / `set_check_update_on_startup` / `set_path_paste_enabled`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
 - フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定（計算モード／プレフィックスコマンド候補表示モード／ファイル検索／Web検索行の表示／クリップボード履歴モード）に反映する。OFF の機能は対応する Tauri コマンド（`calculate` / `search_files`、プレフィックスコマンド候補表示、Web検索行の表示、クリップボード履歴モードへの切替）自体を呼び出さない・表示しない
 
 ### 計算機能（Rust / フロントエンド）
@@ -371,6 +396,51 @@ win-launcher/
   - `App.tsx` の `handleKeyDown` で `e.shiftKey` を判定し、計算結果・URLエンコード/デコード結果・Web検索行のインデックスオフセットを踏まえた同一の計算式（`search.results[search.selected - calcLength - urlConvertLength]`）で対象ファイルを求める。この計算式は通常の Enter 起動と共通の `selectedFile` 変数として1箇所にまとめている（計算結果・Web検索行等が選択中の場合は範囲外アクセスとなり `undefined` になるため、Shift+Enter は自然に無効化される。個別の除外条件を書く必要がない）
   - フッターのキー操作ヒント（`StatusFooter.tsx`）：`isFileSelected` が真（＝選択中の項目が実ファイル）のときのみ「Shift+Enter フォルダを開く」を表示する
 
+### パス貼り付けによる検索フォルダ管理（Rust / フロントエンド）
+
+- Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・「モード共存・排他一覧」節を参照
+- `appSettings.pathPasteEnabled`（デフォルト `true`）が `false` の場合、判定自体を行わない（`set_path_paste_enabled` コマンド）
+
+#### 貼り付け判定（Rust、`path_paste.rs` / `read_pasted_hdrop_path`・`judge_pasted_path` コマンド）
+
+CF_HDROP の確認と、パスの実在判定（テキスト解釈）は、別々の2つのコマンド・別々のタイミングで行う1経路に統一している（**経緯**：以前は CF_HDROP を検知した場合にバックエンド側で直接パスを判定して候補を生成する経路と、テキスト貼り付けを検索ボックス経由で判定する経路の2つが並存していたが、CF_HDROP も最終的に検索ボックスへ流し込むことで両者を1つの判定経路へ統一した。REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節の「貼り付け内容の判定方法」を参照）。
+
+- `SearchBox.tsx` の `onPaste` は画像ペースト（OCR）以外のすべての貼り付けで `onPathPaste`（`useSearch.ts` の `detectPastedPath`）を呼ぶ。画像判定と異なり `e.preventDefault()` はしない（通常のテキスト貼り付け動作を妨げない）
+  - CF_HDROP はブラウザ／WebView2 の `clipboardData` に実ファイルパスとして現れない（`items`/`getData` 経由では取得できない）ため、確認は常に Rust 側（`read_pasted_hdrop_path` コマンド）で実クリップボードを直接読み直す方式にしている。JS 側の貼り付けイベントはあくまで「確認のトリガー」としてのみ機能する
+- `read_pasted_hdrop_path`（Rust）：`clipboard-win` クレート（`Clipboard::new_attempts` でクリップボードを開き、`formats::FileList` の `Getter::read_clipboard` で読む）で `CF_HDROP` の有無のみを確認する。パスが単一の場合はそのパス文字列をそのまま返し（クォート等の加工はしない）、複数パスの場合・`CF_HDROP` 自体が存在しない場合はいずれも `None` を返す（呼び出し側はこの2ケースを区別する必要がない）。実在確認・フォルダ/ファイル判定はここでは行わない
+  - `clipboard-win` は既存のクリップボード履歴機能（`tauri-plugin-clipboard-manager` が内部で使う `arboard` の間接依存）として既に依存関係ツリーに含まれていたクレートを、`Cargo.toml` に直接依存として追加して使う（新規のクレート調査コストなしで導入できるため）
+- フロントエンド（`useSearch.ts` の `detectPastedPath`）：`read_pasted_hdrop_path` が `Some(path)` を返した場合のみ `setQuery(path)` で検索ボックスへそのまま流し込む（複数パス・CF_HDROP なしの場合は何もしない＝ OS 標準の Ctrl+V にそのまま委ねる。単一パスの場合も `e.preventDefault()` していないため OS 標準のペーストと並行して走るが、CF_HDROP のみの内容は通常テキスト表現を持たないため実際に競合することはない）
+- `judge_pasted_path`（Rust）：検索ボックスの文字列（上記の流し込み・通常のテキスト貼り付け・手入力のいずれも区別しない）を受け取り、`parse_text_path`（前後のダブルクォートのみを取り除く。「パスのコピー」等でクリップボードに入る `"C:\Users\...\file.txt"` 形式・クォートなしの生のパス文字列のいずれも同様に処理できる）→ `Path::exists()`/`Path::is_dir()` で実在確認・フォルダ/ファイル判定、の順に処理する（実在しない場合は `None`）
+  - メインの検索 `useEffect`（`query` 変更のたび発火）から `calculate`/`search_files` と同様に毎回呼ぶ。`calcEnabled`/`fileSearchEnabled` 同様、呼び出し自体をフロントエンド側の `appSettings.pathPasteEnabled` で制御するため、`calculate`/`search_files` 同様この Rust コマンド自体は設定値を確認しない（`read_pasted_hdrop_path` は貼り付けイベント起点のため `ocr_from_clipboard` と同様に Rust 側でも `path_paste_enabled` を確認する。2つのコマンドでこの点が異なるのは、呼び出しの起点（イベント駆動 vs. クエリ変更のたび）が異なるため）
+  - `pathPasteCandidate` は `query` から直接導出される値になったため、以前存在した「貼り付け時点の `query` を記録し、その後 `query` が変化したら候補を破棄する」ための鏡 ref（`pathPasteCandidateQueryRef`）は不要になり削除した（CF_HDROP 経由の貼り付けも検索ボックスの `query` を経由するようになったことで、候補と `query` が構造的に常に同期するため）
+
+#### 機能1: 検索フォルダとして追加（Rust、`add_search_folder_from_paste` コマンド）
+
+- 判定したパスがフォルダの場合のみ候補行に表示する。Enter／クリックで確定すると `closeWindow()`（「ウィンドウを閉じる系アクションの共通設計」節）経由で実行する
+- 既存の検索フォルダ一覧に同じパスが既に存在する場合は追加処理をスキップし、トースト通知「既に登録済みです」を表示する（エラー扱いにはしない）。新規追加時は「検索フォルダに追加しました: `<フォルダ名>`」を表示する
+
+#### 機能2: 検索フォルダにショートカットとして追加（Rust / フロントエンド）
+
+- 判定したパスがフォルダ・ファイルいずれの場合も候補行に表示する。Enter／クリックで、3ステップのミニウィザード（`useSearch.ts` の `wizardStep`: `"idle"` → `"folderSelect"` → `"nameEdit"`、`PathPasteWizard.tsx` が `"folderSelect"`/`"nameEdit"` の描画を担当）に遷移する。これは既存の暗黙判定・プレフィックスコマンドが採る「Enter一発で確定」パターンとは異なる新しいインタラクションパターン
+  - `"folderSelect"`：`get_folders` で登録済み検索フォルダ一覧を取得し、プレフィックスコマンド候補と同様のリストUIで選択させる
+  - `"nameEdit"`：選択したフォルダを配置先として、デフォルト値が元のファイル/フォルダ名の編集可能な名前入力欄（`PathPasteWizard.tsx` 内の専用 `<input>`。メインの検索ボックスはウィザード中 `readOnly` になるため、マウント時に明示的に `focus()` する）を表示する
+- ウィザード進行中（`wizardStep !== "idle"`）は `useSearch.ts` の `pathPasteWizardMode` として公開され、ファイル検索・数式計算・URLエンコード/デコード・プレフィックスコマンド候補と排他になる（メインの検索効果（`useEffect`）は早期 return し、`search_files`/`calculate` を呼ばない）
+- **ウィザード中のキー操作（↑↓・Enter・Escape）は、`"folderSelect"`／`"nameEdit"` いずれのステップも `App.tsx` の window レベル `keydown` リスナー（Ctrl+S/Ctrl+D と同じもの）が一括して処理する。`SearchBox`・各ステップの入力要素側にはローカルの `onKeyDown` を持たせない**
+  - **経緯（フォーカス依存の不具合と、その修正が生んだリグレッションの経緯）**：当初 `"folderSelect"` ステップの候補行（`SearchBox` とは別の `<button>` 要素）は Enter 確定直後や行のクリックでフォーカスが `SearchBox` から外れることがあり、フォーカス先の行がステップ遷移で DOM から消えると `document.body` にフォーカスが戻って `SearchBox` の React `onKeyDown` に keydown が届かなくなる（＝ Escape 等が効かない）不具合があった。Ctrl+S/Ctrl+D と同じ理由（フォーカス状態に依存しないよう window レベルに統一する）で `"folderSelect"` のみを window リスナーに移した際、`"nameEdit"` ステップ側は専用入力欄のローカル `onKeyDown`（Enter＝保存／Escape＝1ステップ戻る）に残したままにしたところ、window リスナー・ローカル `onKeyDown` の双方が同一の Escape キー押下に反応しうる状態になり、「名前編集ステップの Escape が1ステップ（フォルダ選択に戻る）ではなく2ステップ分（通常の検索状態まで）戻ってしまう」というリグレッションが発生した。これを踏まえ、`"nameEdit"` 側のローカル `onKeyDown` を撤去し、`"folderSelect"` と同じ window リスナーに一本化することで、二重ハンドラの併存自体を構造的に無くした
+- Escape は `wizardBack()` でステップを1つ戻す（名前編集→フォルダ選択、フォルダ選択→候補行表示 or 通常のファイル検索結果表示）。これは Esc＝ウィンドウ非表示という基本挙動の例外
+- 保存（ステップ3の Enter）も `closeWindow()` 経由で実行し、`.lnk` ファイルの作成自体（`create_shortcut` コマンド）は非表示解決後に裏で行う
+  - `.lnk` の作成には Windows COM の `IShellLinkW`／`IPersistFile` インターフェースを `windows-rs` 経由で直接呼び出す（`path_paste::write_shortcut_file`）。読み取り専用の `lnk` クレート（`recent_files.rs` でリンク先解決に使用）とは書き込み/読み取りで役割が異なる別物であり、置き換えではない
+    - **経緯（サードパーティクレート `mslnk` からの切り替え）**：当初は `mslnk`（`ShellLink::new(target).create_lnk(path)` の2手順のみのシンプルな API）を採用していたが、実運用でフォルダを対象にショートカットを作成すると「リンク先」「作業フォルダー」が空欄になり機能しない不具合が発覚した。`mslnk` 0.1.8 のソース（`ShellLink::new()`）を確認したところ、対象が `fs::metadata().is_dir()` の場合はリンク先情報（相対パス文字列・作業フォルダー文字列・LinkTargetIDList）を一切設定せず `FILE_ATTRIBUTE_DIRECTORY` を立てるだけで終わる実装になっており、ファイル向けの else 分岐でしか実際のリンク先が書き込まれないことが原因と判明した。さらに `LinkTargetIdList::set_linktarget()` 内部のロジックも、パスの終端セグメントを常に「ファイル」として分類する作りで、仮に呼び出し側でフラグ・パス情報を手動補完してもフォルダの終端アイテムが誤ってファイル種別としてマークされてしまう、という2つ目の潜在的な仕様違反も確認した。上流リポジトリ（`dobefore/mslnk`）の Issue #6「Empty lnk with directory target」（2025-03-28 起票）で同一事象が既に報告されているが、直近のマージ済み PR が2022年で止まっており未対応のまま放置されている状況だった。これらを踏まえ、外部クレートのパッチ的回避（public API 経由でのフラグ手動補完）ではなく、本プロジェクトが `ShellExecuteW`・`SHGetFileInfoW`・クリップボードの Win32 API 直接操作・OCR の WinRT 直呼び出しなど随所で採用している「サードパーティ再実装に頼らず Windows 標準 API を直接呼ぶ」方針との一貫性を優先し、`IShellLinkW`/`IPersistFile` を直接使う実装に切り替えた。標準 API は PIDL（ITEMIDLIST）の構築を内部で行うため、対象がファイルかディレクトリかで呼び出し側の処理を分岐する必要が原理的にない
+    - 実装：`CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)` で `IShellLinkW` を生成し、`SetPath`（リンク先）・`SetWorkingDirectory`（対象の親フォルダ）を設定した後、`.cast::<IPersistFile>()` で `IPersistFile` を取得して `Save(lnk_path, true)` で書き出す。`CoInitializeEx(None, COINIT_MULTITHREADED)` の RAII ラッパー（`ComInit`）は `ocr` モジュールの同名パターンと同じ考え方だが、モジュールが異なるため個別に定義している
+  - 同名の `.lnk` が既に存在する場合は Explorer 標準の挙動に倣い「名前 (2)」のように連番を付与する（`path_paste::unique_lnk_name`。上書きしない）
+  - 保存成功時、トースト通知「ショートカットを配置しました: `<名前>`」を表示する
+
+#### トースト通知（Rust、`show_toast` 関数）
+
+- Windows のトースト通知には `tauri-plugin-notification`（Tauri 公式プラグイン）を使う。サーバーレス・無料方針に合致し、`AppHandle` の `NotificationExt` トレイト経由でアプリ内から直接呼び出せるため、外部サービス連携や追加のランタイム依存なしに導入できる標準的な選択肢として採用した
+- `show_toast(app, message)` が `app.notification().builder().title("WinLauncher").body(message).show()` を呼ぶだけの薄いヘルパー。失敗（通知権限なし等）は無視する（トーストはあくまで補助的なフィードバックであり、失敗してもフォルダ追加・ショートカット作成自体は成功しているため）
+- `capabilities/default.json` に `notification:default` permission が必要
+
 ### プレフィックスコマンド候補表示（フロントエンド）
 
 - 検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`useSearch.ts` の `buildPrefixCommandCandidates`）
@@ -392,7 +462,7 @@ win-launcher/
 
 ### ウィンドウを閉じる系アクションの共通設計（フロントエンド）
 
-ウィンドウを閉じる系のアクション——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）——は、すべて `useSearch.ts` の `closeWindow(options?)` を経由する。**新しくウィンドウを閉じる系アクションを追加する場合も、必ずこの関数を経由すること。** `closeWindow()` を経由しない独自のクローズ処理・個別の `useRef` ガードを新設しない。
+ウィンドウを閉じる系のアクション——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`／`addSearchFolderFromPaste`／`confirmShortcut`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）——は、すべて `useSearch.ts` の `closeWindow(options?)` を経由する。**新しくウィンドウを閉じる系アクションを追加する場合も、必ずこの関数を経由すること。** `closeWindow()` を経由しない独自のクローズ処理・個別の `useRef` ガードを新設しない。
 
 **設計原則：`hideWindow()` を最優先で `await` し、React state の変更は解決後に行う**
 
@@ -455,6 +525,14 @@ const closeWindow = useCallback(
   - 戻り値の `HINSTANCE` は ShellExecute の仕様上、成功時は 32 を超える値、失敗時は 32 以下のエラーコードを返すため、`<= 32` で失敗判定する
   - `#[cfg(not(windows))]` 側は `cargo build` を非Windows環境でも通すためのフォールバック（このアプリ自体は Windows 専用）
   - 必要な `windows` クレートの feature（`Win32_UI_Shell`・`Win32_UI_WindowsAndMessaging`）はシェルアイコン取得・クリップボード機能で既に有効化済みのため追加不要
+
+### OCR機能（Rust）
+
+- 実装本体（Windows OCR API 呼び出し・行ソート・単語間スペース挿入ロジック等）は「Tauri コマンド」節の `ocr_from_clipboard` を参照
+- **前処理による精度改善の検証結果（却下・見送り確定）**：クリップボード画像に対する2〜3倍拡大＋グレースケール化＋コントラスト補正の前処理を追加すれば OCR 精度が上がるのではという仮説を、検証用テストバイナリ（`ocr_tune`。使い捨ての検証用コードでありリポジトリには残していない）を使って比較実験した
+  - 結果：濁点/半濁点の誤認識、英数字の誤認識（`l` と `1` の混同等）は、どの前処理パターンでも改善しなかった。3倍拡大＋グレースケール＋コントラスト補正の組み合わせでは、パターンによっては素の状態より悪化する結果も観測された
+  - 原因：検証に使った画像の解像度は元々 Windows OCR エンジンにとって十分であり、誤認識は前処理不足ではなく Windows OCR エンジン自体の認識能力の限界に起因すると判明した
+  - 結論：前処理による精度改善は見送りとし、実装は前処理なし（クリップボード画像をそのまま `Windows.Media.Ocr` に渡す）の状態を維持する。今後の精度向上手段として現実的なのは PP-OCR 系モデルのオプトイン導入（任意ダウンロード方式）のみと判断している。**同じ検証を将来繰り返さないための記録として残す**
 
 ### システムトレイ
 
@@ -533,6 +611,11 @@ const closeWindow = useCallback(
 | `check_for_update()` | GitHub Releases（`latest.json`）に対してアップデートの有無を確認し、`{ available, version, notes }` を返す。見つかった更新は次の `download_and_install_update` 呼び出しに備えて Rust 側に保持する |
 | `download_and_install_update()` | 保持しておいた更新をダウンロード＆インストールする。成功時は内部でアプリを終了するため呼び出し元に制御は戻らない |
 | `set_check_update_on_startup(enabled)` | 起動時アップデートチェックの ON/OFF を切り替えて `AppSettings` を返す |
+| `set_path_paste_enabled(enabled)` | パス貼り付けによる検索フォルダ管理の ON/OFF を切り替えて `AppSettings` を返す |
+| `read_pasted_hdrop_path()` | 検索ボックスへの貼り付けイベント発生時に呼ぶ。クリップボードの `CF_HDROP` を直接読み、パスが単一の場合はその文字列（実在確認・フォルダ/ファイル判定は行わない）を返す。複数パス・`CF_HDROP` なしの場合は `null` |
+| `judge_pasted_path(text)` | 検索ボックスの文字列（貼り付け・手入力を問わない）に対し、前後のダブルクォートを取り除いたうえで実在確認・フォルダ/ファイル判定を行い、`{ path, name, isDir }` を返す（実在しない場合は `null`） |
+| `add_search_folder_from_paste(path)` | 機能1：検索フォルダとして追加する。既に登録済みの場合は追加をスキップし、いずれもトースト通知で結果を伝える |
+| `create_shortcut(targetPath, folderPath, name)` | 機能2：`folderPath` 配下に `targetPath` を指す `.lnk` を作成する（`windows-rs` 経由の `IShellLinkW`/`IPersistFile` 直接呼び出し）。同名が既に存在する場合は連番を付与し、成功時にトースト通知を表示する |
 
 ## フロントエンド
 
@@ -540,7 +623,7 @@ const closeWindow = useCallback(
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
-  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード（`clipboardMode`/`clipboardFilterText`）・最近使ったファイル一覧モード（`recentMode`/`recentFilterText`、`get_recent_files` の呼び出しとフィルタ）の判定もここで行う（クエリとプレフィックスのみに依存し、履歴データには依存しないため）
+  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード（`clipboardMode`/`clipboardFilterText`）・最近使ったファイル一覧モード（`recentMode`/`recentFilterText`、`get_recent_files` の呼び出しとフィルタ）の判定もここで行う（クエリとプレフィックスのみに依存し、履歴データには依存しないため）。パス貼り付けによる検索フォルダ管理（`pathPasteCandidate`/`pathPasteWizardMode`/`wizardStep` 等、機能1・機能2のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクション（`addSearchFolderFromPaste`/`confirmShortcut`）を持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している（`pathPasteWizardMode` は検索用 `useEffect` の排他判定にも必要なため、`useSearch` の外に出すと相互依存になる）
     - 選択インデックスの操作を「キーボード操作（`setSelected`）」と「マウスホバー（`selectFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する（`selectFromHover`）
       1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
       2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）

@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
-import { FileEntry, PrefixCommand, UrlConvertResult } from "../types";
+import { FileEntry, PastedPathInfo, PrefixCommand, UrlConvertResult } from "../types";
 
 const URL_CONVERT_KIND_LABEL: Record<UrlConvertResult["kind"], string> = {
   decode: "デコード結果",
@@ -17,6 +17,7 @@ const PREFIX_COMMAND_ICON_PATH: Record<PrefixCommand["kind"], string> = {
 };
 
 export function ResultList({
+  pathPasteCandidate,
   calcResult,
   prefixCommandMode,
   prefixCommandCandidates,
@@ -27,12 +28,15 @@ export function ResultList({
   baseLength,
   webSearchVisible,
   onSelect,
+  onAddSearchFolder,
+  onStartShortcutWizard,
   onCopyResult,
   onSelectPrefixCommand,
   onLaunchFile,
   onOpenWebSearch,
   onCopyUrlConvertResult,
 }: {
+  pathPasteCandidate: PastedPathInfo | null;
   calcResult: string | null;
   prefixCommandMode: boolean;
   prefixCommandCandidates: PrefixCommand[];
@@ -43,6 +47,8 @@ export function ResultList({
   baseLength: number;
   webSearchVisible: boolean;
   onSelect: (index: number, clientX: number, clientY: number) => void;
+  onAddSearchFolder: () => void;
+  onStartShortcutWizard: () => void;
   onCopyResult: (text: string) => void;
   onSelectPrefixCommand: (cmd: PrefixCommand) => void;
   onLaunchFile: (path: string) => void;
@@ -51,8 +57,18 @@ export function ResultList({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
-  const calcOffset = calcResult !== null ? 1 : 0;
-  const urlConvertOffset = urlConvertResult !== null ? 1 : 0;
+  // パス貼り付けの候補行（ショートカット配置→(フォルダのみ)検索フォルダに追加）は
+  // 常に先頭を占有する。ローカルパスは数式計算・URLエンコード/デコードの判定条件と
+  // 構造上両立しないため、この2つと同時に発生することはない（詳細は
+  // REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節を参照）。
+  const pathPasteOffset = pathPasteCandidate
+    ? pathPasteCandidate.isDir
+      ? 2
+      : 1
+    : 0;
+  const calcIndex = pathPasteOffset;
+  const calcOffset = pathPasteOffset + (calcResult !== null ? 1 : 0);
+  const urlConvertOffset = calcOffset + (urlConvertResult !== null ? 1 : 0);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto">
@@ -107,16 +123,98 @@ export function ResultList({
         </>
       ) : (
         <>
+          {pathPasteCandidate !== null && (
+            <>
+              <button
+                data-index={0}
+                className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
+                  selected === 0
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+                onClick={onStartShortcutWizard}
+                onMouseEnter={(e) => onSelect(0, e.clientX, e.clientY)}
+              >
+                <svg
+                  className={`w-4 h-4 mr-3 flex-shrink-0 ${
+                    selected === 0 ? "text-white" : "text-blue-500"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 115.656 5.656l-4 4a4 4 0 01-5.656 0"
+                  />
+                </svg>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    検索フォルダにショートカット配置: {pathPasteCandidate.name}
+                  </div>
+                  <div
+                    className={`text-xs truncate ${
+                      selected === 0 ? "text-blue-100" : "text-gray-400"
+                    }`}
+                  >
+                    Enter で名前・配置先を選択
+                  </div>
+                </div>
+              </button>
+              {pathPasteCandidate.isDir && (
+                <button
+                  data-index={1}
+                  className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
+                    selected === 1
+                      ? "bg-blue-500 text-white"
+                      : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                  onClick={onAddSearchFolder}
+                  onMouseEnter={(e) => onSelect(1, e.clientX, e.clientY)}
+                >
+                  <svg
+                    className={`w-4 h-4 mr-3 flex-shrink-0 ${
+                      selected === 1 ? "text-white" : "text-blue-500"
+                    }`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 10v6m3-3H9m11 5V7a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v11a2 2 0 002 2h14a2 2 0 002-2z"
+                    />
+                  </svg>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      検索フォルダに追加: {pathPasteCandidate.name}
+                    </div>
+                    <div
+                      className={`text-xs truncate ${
+                        selected === 1 ? "text-blue-100" : "text-gray-400"
+                      }`}
+                    >
+                      Enter で追加
+                    </div>
+                  </div>
+                </button>
+              )}
+            </>
+          )}
           {calcResult !== null && (
             <button
-              data-index={0}
+              data-index={calcIndex}
               className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
-                selected === 0
+                selected === calcIndex
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
               }`}
               onClick={() => onCopyResult(calcResult)}
-              onMouseEnter={(e) => onSelect(0, e.clientX, e.clientY)}
+              onMouseEnter={(e) => onSelect(calcIndex, e.clientX, e.clientY)}
             >
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate">
@@ -124,7 +222,7 @@ export function ResultList({
                 </div>
                 <div
                   className={`text-xs truncate ${
-                    selected === 0 ? "text-blue-100" : "text-gray-400"
+                    selected === calcIndex ? "text-blue-100" : "text-gray-400"
                   }`}
                 >
                   Enter でコピー
