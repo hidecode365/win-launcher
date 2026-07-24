@@ -365,10 +365,12 @@ win-launcher/
   2. Office の Recent フォルダ（`%APPDATA%\Microsoft\Office\Recent`）：対応する Known Folder API が存在しないため `%APPDATA%` 環境変数からパスを組み立てる
   - `.lnk`：`lnk` クレートの `ShellLink::open` でパースし `link_target()` でリンク先ローカルパスを取得する。リンク先がフォルダ、または実在しない場合は除外する。`link_target()` は `lnk` クレート側の制約で `panic` しうるため `catch_unwind` で保護し、1件の異常な `.lnk` がプロセス全体を巻き込まないようにする（release ビルドは `panic = "abort"` のため素通しは致命的）
     - 文字コード：`ShellLink::open` はエンコーディング引数を要求する。固定で `WINDOWS_1252` を渡すと、`LinkInfo` の ANSI フォールバック文字列（Unicode フィールドとは別に必ず読み込まれる）が日本語（Shift-JIS）パスでデコード不能となり `Err` を返す＝一覧から静かに欠落するバグになる。`GetACP()`（Win32 API）でシステム既定 ANSI コードページを取得し、`encoding_rs` の対応エンコーディング（932 → `SHIFT_JIS` 等）を都度渡すことで解消している（`system_default_encoding`）
-  - `.url`：テキスト（INI形式）としてパースし `URL=` 行の値を取得する。`https://d.docs.live.net/` で始まる URL のみ OneDrive 上のファイルとみなし、ローカル同期先パスへの変換を試みる（`resolve_onedrive_local_path`）
-    1. レジストリ `HKEY_CURRENT_USER\Software\Microsoft\OneDrive\Accounts` 配下の全サブキー（`Personal`・`Business1` 等、個数は環境依存）を動的に列挙し、各々の `UserFolder` 値をローカル同期先パスの候補とする
-    2. URL からアカウント識別子セグメントを読み飛ばした残りをパーセントデコードし、OneDrive ルートからの相対パスとして扱う
-    3. 候補ルートそれぞれで「候補ルート＋相対パス」の実在確認を行い、最初に見つかったものを採用する。どの候補でも見つからなければ削除済みファイルと同様に除外する
+  - `.url`：テキスト（INI形式）としてパースし `URL=` 行の値を取得する。同期ライブラリ（個人 OneDrive 本体・OneDrive for Business の個人領域・SharePoint チームサイトの共有ライブラリ・OneDrive に追加したショートカット等）上のファイルを指す URL のみ、ローカル同期先パスへの変換を試みる（`resolve_sync_engine_local_path`）
+    1. レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` 配下の全サブキーを動的に列挙し、各サブキーの `UrlNamespace`（クラウド上URLのルート）と `MountPoint`（対応するローカル同期先フォルダ）の対応表を取得する（`sync_engine_mount_points`）。個人・組織・複数ライブラリいずれの構成もこの同じレジストリ配下に登録されることを実地検証で確認済み
+    2. `UrlNamespace` が URL に前方一致するエントリを探し、複数該当する場合は最も長く一致するものを採用する（最長一致優先）。`UrlNamespace` がホスト名のみの場合（個人 OneDrive 本体 `https://d.docs.live.net` 等）は、直後に挟まるアカウント識別子セグメントを追加で1つ読み飛ばしてから相対パスとして扱う
+       - **パーセントエンコーディングの正規化**：レジストリの `UrlNamespace` は生の文字列（例: `Shared Documents`）で登録される一方、`.url` の `URL=` 値はパーセントエンコード済み（例: `Shared%20Documents`）であり、両者の表記が食い違う場合がある。個人 OneDrive（`d.docs.live.net`）は `UrlNamespace` がエンコード不要な区間（ホスト名のみ）でたまたま一致していたため表面化しなかったが、SharePoint チームサイトのように `UrlNamespace` 自体が半角スペースや日本語のサイト名等を含む場合、生の文字列同士の前方一致では不一致となり変換に失敗する（実機で SharePoint チームサイトのショートカット経由ファイルが `/recent` 一覧に出ないバグとして発見・修正済み）。これを吸収するため、比較・相対パス抽出は `UrlNamespace`・URL 双方をパーセントデコードで正規化した文字列同士で行う（`%20` だけの個別対応ではなく、非ASCII文字も含めて救える汎用的な正規化処理にしてある）
+       - ショートカット名（`MountPoint` に対応するローカルフォルダ名）をユーザーが変更しても、OneDrive クライアント側の同期タイミングに応じてレジストリの `MountPoint` 値が追従して更新される（反映まで数分〜PC再起動を要する場合がある）ため、アプリ側で特別な対応・注釈は不要と判断している
+    3. マッチした残りの相対パス（正規化済み）を `MountPoint` と結合してローカルパスを組み立てる。実在確認は呼び出し元（`process_url`）が行う
     - 表示名はファイル名から末尾の `.url` を除いたもの。除去後に「もっともらしい拡張子」（ASCII 英数字のみの拡張子）で終わらないもの（OneDrive 上のフォルダ的参照）は、フォルダを除外する既存ルールに従い一覧から除外する（`has_plausible_extension`）
     - ソートキーは変換の成否に関わらず `.url` 自体の mtime
   - Windows の Recent フォルダと Office の Recent フォルダの両方に同一のローカルパスを指すエントリが存在する場合は1件に統合する（mtime が新しい方を採用）。`.lnk` 由来・`.url` 由来（ローカルパス変換成功済み）を問わず同じ統合ロジックを適用する
