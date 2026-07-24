@@ -166,11 +166,13 @@ export default function App() {
     settings.resetClipboardSettingsError();
     settings.resetRecentSettingsError();
     settings.resetSystemCommandKeywordErrors();
+    settings.resetFolderSettingsError();
   }, [
     hotkey.resetHotkeyError,
     settings.resetClipboardSettingsError,
     settings.resetRecentSettingsError,
     settings.resetSystemCommandKeywordErrors,
+    settings.resetFolderSettingsError,
   ]);
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
@@ -511,6 +513,9 @@ export default function App() {
         onToggleFolder={settings.toggleFolder}
         onRemoveFolder={settings.removeFolder}
         onOpenFolder={settings.openFolder}
+        onSaveFolderSettings={settings.setFolderSettings}
+        folderSettingsError={settings.folderSettingsError}
+        onResetFolderSettingsError={settings.resetFolderSettingsError}
         onClose={closeSettings}
       />
     );

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   AppSettings,
   DEFAULT_APP_SETTINGS,
+  FolderDetailSettings,
   FolderEntry,
   SystemCommandAction,
   SystemCommandKeywordErrors,
@@ -26,6 +27,9 @@ export function useSettings(showSettings: boolean) {
       restart: null,
       sleep: null,
     });
+  const [folderSettingsError, setFolderSettingsError] = useState<
+    string | null
+  >(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
@@ -232,6 +236,34 @@ export function useSettings(showSettings: boolean) {
     await invoke("launch_file", { path }).catch(console.error);
   }, []);
 
+  // フォルダごとの詳細設定ダイアログの「保存」ボタン専用。他の set_* と異なり
+  // 一括保存のため、成功/失敗を戻り値の真偽値で返す（呼び出し側はこれを見て
+  // モーダルを閉じるか、エラー表示のまま開いた状態を維持するかを判断する）。
+  const setFolderSettings = useCallback(
+    async (path: string, detail: FolderDetailSettings) => {
+      setFolderSettingsError(null);
+      try {
+        const updated = await invoke<FolderEntry[]>("set_folder_settings", {
+          path,
+          maxDepth: detail.maxDepth,
+          includeFolders: detail.includeFolders,
+          extensionFilterMode: detail.extensionFilterMode,
+          extensions: detail.extensions,
+        });
+        setFolders(updated);
+        return true;
+      } catch (e) {
+        setFolderSettingsError(String(e));
+        return false;
+      }
+    },
+    []
+  );
+
+  const resetFolderSettingsError = useCallback(() => {
+    setFolderSettingsError(null);
+  }, []);
+
   const resetClipboardSettingsError = useCallback(() => {
     setClipboardSettingsError(null);
   }, []);
@@ -256,6 +288,8 @@ export function useSettings(showSettings: boolean) {
     resetRecentSettingsError,
     systemCommandKeywordErrors,
     resetSystemCommandKeywordErrors,
+    folderSettingsError,
+    resetFolderSettingsError,
     setFileSearchEnabled,
     setCalcEnabled,
     setCopyWithComma,
@@ -278,5 +312,6 @@ export function useSettings(showSettings: boolean) {
     toggleFolder,
     removeFolder,
     openFolder,
+    setFolderSettings,
   };
 }

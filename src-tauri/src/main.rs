@@ -362,10 +362,58 @@ mod shell_icon {
     }
 }
 
+// 検索フォルダごとの詳細設定（検索階層数・拡張子フィルタリング等）で使うデフォルト値。
+// 新規追加フィールドのため、旧バージョンの settings.json（これらのキーを持たない）を
+// 読み込んだ際に deserialize が失敗しないよう `serde(default = ...)` で個別に補う。
+// 既存の登録済みフォルダはこのデフォルト値が自動的に適用される。
+fn default_folder_max_depth() -> u32 {
+    3
+}
+
+fn default_extension_filter_mode() -> ExtensionFilterMode {
+    ExtensionFilterMode::Blacklist
+}
+
+/// 拡張子フィルタリングのモード。ホワイトリスト/ブラックリストは排他（同時に両方は
+/// 効かせない）。ブラックリストのデフォルトは空リスト（＝全拡張子許可）。ホワイトリストに
+/// 切り替えた場合、`*` のような全許可を意味する特殊タグは用意しないため、タグを1件も
+/// 追加していない状態では検索対象が0件になる（意図した挙動）。
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+enum ExtensionFilterMode {
+    Blacklist,
+    Whitelist,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct FolderEntry {
     path: String,
     enabled: bool,
+    #[serde(default = "default_folder_max_depth")]
+    max_depth: u32,
+    #[serde(default)]
+    include_folders: bool,
+    #[serde(default = "default_extension_filter_mode")]
+    extension_filter_mode: ExtensionFilterMode,
+    #[serde(default)]
+    extensions: Vec<String>,
+}
+
+impl FolderEntry {
+    /// 新規フォルダ登録用のコンストラクタ。詳細設定は上記デフォルト値（3階層・
+    /// フォルダ非対象・ブラックリスト空）で初期化する。`add_folder`／
+    /// `add_search_folder_from_paste` の両方から使う。
+    fn new(path: String) -> Self {
+        Self {
+            path,
+            enabled: true,
+            max_depth: default_folder_max_depth(),
+            include_folders: false,
+            extension_filter_mode: default_extension_filter_mode(),
+            extensions: Vec::new(),
+        }
+    }
 }
 
 fn load_folders(app: &AppHandle) -> Vec<FolderEntry> {
@@ -401,7 +449,7 @@ fn pick_folder(app: AppHandle) -> Option<String> {
 fn add_folder(app: AppHandle, path: String) -> Result<Vec<FolderEntry>, String> {
     let mut folders = load_folders(&app);
     if !folders.iter().any(|f| f.path == path) {
-        folders.push(FolderEntry { path, enabled: true });
+        folders.push(FolderEntry::new(path));
     }
     save_folders(&app, &folders)?;
     Ok(folders)
@@ -423,6 +471,74 @@ fn toggle_folder(app: AppHandle, path: String) -> Result<Vec<FolderEntry>, Strin
     }
     save_folders(&app, &folders)?;
     Ok(folders)
+}
+
+/// 検索フォルダごとの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子
+/// フィルタリング）をまとめて保存する。設定ダイアログの「保存」ボタン押下時にのみ
+/// 呼ばれ、フォームの4項目を一括で反映する（個別の `set_*` コマンドには分割しない）。
+/// 拡張子タグは前後の空白除去・先頭の `.` 除去・小文字化・重複除去のうえで保存する。
+#[tauri::command]
+fn set_folder_settings(
+    app: AppHandle,
+    path: String,
+    max_depth: u32,
+    include_folders: bool,
+    extension_filter_mode: ExtensionFilterMode,
+    extensions: Vec<String>,
+) -> Result<Vec<FolderEntry>, String> {
+    if !(1..=20).contains(&max_depth) {
+        return Err("検索階層数は1以上20以下の整数を指定してください".to_string());
+    }
+
+    let mut normalized_extensions: Vec<String> = Vec::new();
+    for ext in extensions {
+        let normalized = ext.trim().trim_start_matches('.').to_lowercase();
+        if !normalized.is_empty() && !normalized_extensions.contains(&normalized) {
+            normalized_extensions.push(normalized);
+        }
+    }
+
+    let mut folders = load_folders(&app);
+    let Some(f) = folders.iter_mut().find(|f| f.path == path) else {
+        return Err("フォルダが見つかりません".to_string());
+    };
+    f.max_depth = max_depth;
+    f.include_folders = include_folders;
+    f.extension_filter_mode = extension_filter_mode;
+    f.extensions = normalized_extensions;
+    save_folders(&app, &folders)?;
+    Ok(folders)
+}
+
+/// 拡張子フィルタリングの判定。ディレクトリには適用しない（呼び出し側でファイルのみに
+/// 限定して呼ぶこと）。ブラックリストは空リストの場合に全許可、ホワイトリストは
+/// `*` 相当の特殊タグを持たないため空リストの場合は全拒否になる。拡張子を持たない
+/// ファイルは、ブラックリストのどのタグにも一致し得ないため許可、ホワイトリストの
+/// どのタグにも一致し得ないため拒否となる。
+fn passes_extension_filter(
+    path: &Path,
+    mode: &ExtensionFilterMode,
+    extensions: &[String],
+) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+    match mode {
+        ExtensionFilterMode::Blacklist => {
+            if extensions.is_empty() {
+                return true;
+            }
+            match ext {
+                Some(ext) => !extensions.iter().any(|e| e == &ext),
+                None => true,
+            }
+        }
+        ExtensionFilterMode::Whitelist => match ext {
+            Some(ext) => extensions.iter().any(|e| e == &ext),
+            None => false,
+        },
+    }
 }
 
 /// Windows のトースト通知を1件表示する。失敗（通知権限なし等）は無視する
@@ -476,7 +592,7 @@ fn add_search_folder_from_paste(app: AppHandle, path: String) -> Result<(), Stri
         return Ok(());
     }
 
-    folders.push(FolderEntry { path, enabled: true });
+    folders.push(FolderEntry::new(path));
     save_folders(&app, &folders)?;
     show_toast(&app, &format!("検索フォルダに追加しました: {name}"));
     Ok(())
@@ -1251,10 +1367,9 @@ fn paste_clipboard_image(id: String, cache: tauri::State<ClipboardImageCache>) -
 
 #[tauri::command]
 fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
-    let enabled_dirs: Vec<String> = load_folders(&app)
+    let enabled_dirs: Vec<FolderEntry> = load_folders(&app)
         .into_iter()
         .filter(|f| f.enabled)
-        .map(|f| f.path)
         .collect();
 
     let mut results = Vec::new();
@@ -1265,13 +1380,34 @@ fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
     let query_lower = query.to_lowercase();
 
     'outer: for dir in &enabled_dirs {
-        let search_dir = Path::new(dir);
+        let search_dir = Path::new(&dir.path);
         if !search_dir.exists() {
             continue;
         }
-        for entry in WalkDir::new(search_dir).follow_links(true).max_depth(5) {
+        for entry in WalkDir::new(search_dir)
+            .follow_links(true)
+            .max_depth(dir.max_depth as usize)
+        {
             let Ok(entry) = entry else { continue };
-            if !entry.file_type().is_file() {
+            // フォルダ自身（走査ルート、depth 0）は「フォルダ自体を検索対象に含める」
+            // 設定に関わらず結果に含めない（既存の「フォルダは検索対象外」挙動と
+            // 同様、検索フォルダ自身が結果に出るのは意図しない）。
+            if entry.depth() == 0 {
+                continue;
+            }
+            let is_file = entry.file_type().is_file();
+            let is_dir = entry.file_type().is_dir();
+            if !is_file && !(is_dir && dir.include_folders) {
+                continue;
+            }
+            // 拡張子フィルタリングはファイルのみに適用する（フォルダは対象外）。
+            if is_file
+                && !passes_extension_filter(
+                    entry.path(),
+                    &dir.extension_filter_mode,
+                    &dir.extensions,
+                )
+            {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().to_string();
@@ -1789,6 +1925,7 @@ fn main() {
             add_folder,
             remove_folder,
             toggle_folder,
+            set_folder_settings,
             execute_system_command,
             get_app_settings,
             set_file_search_enabled,

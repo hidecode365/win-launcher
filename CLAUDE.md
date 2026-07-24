@@ -204,9 +204,10 @@ win-launcher/
 
 - `appSettings.fileSearchEnabled` が `false` の場合、フロントエンドは `search_files` を呼ばず検索結果を表示しない
 - 検索対象フォルダは設定で複数登録可能（有効/無効を個別に切替）
-- 有効なフォルダのみ `walkdir` で再帰走査（最大深さ 5、シンボリックリンク追跡あり）
+- 有効なフォルダのみ `walkdir` で再帰走査（シンボリックリンク追跡あり）。最大深さはフォルダごとの詳細設定（`max_depth`。デフォルト3）に従う（かつて全フォルダ共通のハードコード値5だったものを、フォルダごとの個別設定に置き換えた。詳細は「検索フォルダごとの詳細設定」節を参照）
 - クエリを小文字変換してファイル名に部分一致
 - 全フォルダ合計で最大 50 件に絞って返却
+- 走査ルート自身（`WalkDir` の depth 0 エントリ、＝検索フォルダそのもの）は「フォルダ自体を検索対象に含める」設定に関わらず結果に含めない（検索フォルダ自身が自分自身の検索結果に出るのは意図しないため）
 - 各ファイルの Windows シェルアイコン（エクスプローラーと同じアイコン）を取得し、`data:image/png;base64,...` 形式の文字列として結果に含める
   - Win32 API `SHGetFileInfoW`（`SHGFI_ICON | SHGFI_SMALLICON`）でファイルパスから `HICON` を取得
   - `GetIconInfo` → `GetObjectW` でカラービットマップ（`HBITMAP`）の寸法を取得し、`GetDIBits` で 32bpp トップダウン BGRA のピクセルデータへ変換
@@ -228,6 +229,26 @@ win-launcher/
 - この機能の ON/OFF トグルは設けない（常時有効）
 - `recordFrecency(path)` はファイル起動時の後処理として `launchFile` の `closeWindow({ cleanup })` の `cleanup` 内で呼ぶ。ウィンドウが実際に隠れた後にのみ実行されるため、この呼び出しが引き起こす再レンダーのタイミングを個別に気にする必要はない（詳細・経緯は「ウィンドウを閉じる系アクションの共通設計」節を参照）
 
+### 検索フォルダごとの詳細設定（Rust / フロントエンド）
+
+- 設定画面「ファイル検索」タブの検索フォルダ一覧の各行に歯車アイコンボタンを配置し、押下すると `FolderDetailSettingsModal.tsx` が中央オーバーレイのモーダルとして開く（既存の削除確認モーダル・`SystemCommandModal` と同じ `absolute inset-0` オーバーレイパターンを踏襲）
+- データ構造：Rust の `FolderEntry`（`folders: FolderEntry[]`。「設定画面」節を参照）に既存の `path`/`enabled` と並べてフォルダごとの詳細設定4項目を追加した
+  - `max_depth: u32`（検索階層数。デフォルト3。バリデーション範囲は1〜20）
+  - `include_folders: bool`（フォルダ自体を検索対象に含めるか。デフォルト `false`）
+  - `extension_filter_mode: ExtensionFilterMode`（`"blacklist"` | `"whitelist"` の2値 enum。`#[serde(rename_all = "camelCase")]` により JS 側は小文字の文字列として扱う。デフォルト `"blacklist"`）
+  - `extensions: Vec<String>`（拡張子タグの配列。デフォルト空。保存時に Rust 側でトリム・先頭 `.` 除去・小文字化・重複除去を行ってから保存する）
+  - 新規4フィールドはすべて `#[serde(default = ...)]` を付与している。旧バージョンで保存された `folders` エントリ（これらのキーを持たない）を読み込んだ場合、deserialize 時にこのデフォルト値（3階層・フォルダ非対象・ブラックリスト空）が自動的に補われる（要件の「既存フォルダへのデフォルト値自動適用」はこの serde のデフォルト補完機構でそのまま満たされ、マイグレーション処理は別途必要ない）
+  - `FolderEntry::new(path)` コンストラクタで新規フォルダ登録時（`add_folder`／`add_search_folder_from_paste` の両方）にも同じデフォルト値を設定する（`FolderEntry { path, enabled: true }` のようなリテラル構築を残すと新フィールドの初期値がその都度バラバラになりうるため、コンストラクタに一本化した）
+- 保存 UI：モーダルは「保存」「キャンセル」ボタンを持つ一括保存方式とする。他の設定タブ（ON/OFF は変更immediate、テキスト/数値は「保存」ボタンで個別 invoke）とは異なり、このモーダルは4項目をローカル state（ドラフト）で保持し、「保存」押下時に `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, extensions)` を一度だけ呼ぶ。「キャンセル」はドラフトを破棄してモーダルを閉じるのみで、invoke を呼ばない
+  - `useSettings.ts` の `setFolderSettings` は成功/失敗を真偽値で返す（他の `set_*` 系フックが `AppSettings` を返すのと違うパターン）。`FileSearchSettings.tsx` はこの戻り値を見て、成功時のみモーダルを閉じ、失敗時はエラーメッセージ（`folderSettingsError`）を表示したままモーダルを開いた状態を維持する
+- 拡張子タグ入力 UI：`FolderDetailSettingsModal.tsx` 内にタグ形式の入力欄を実装（1件ずつテキスト入力→Enterまたは「追加」ボタンでタグ化、各タグに削除ボタン付き）。汎用コンポーネントへの切り出しは行わず、このモーダル専用のローカル実装とした（他画面での再利用箇所が今のところないため）
+- 検索ロジックへの反映（`search_files`、Rust）
+  - `WalkDir::new(...).max_depth(dir.max_depth as usize)` でフォルダごとの階層数を反映する（従来の全フォルダ共通ハードコード値 `5` を置き換え）
+  - `entry.depth() == 0`（走査ルート＝検索フォルダ自身）は `include_folders` の値に関わらず常にスキップする
+  - `is_dir && dir.include_folders` の場合のみディレクトリエントリを結果候補に含める。ファイル（`is_file`）は従来通り常に候補
+  - 拡張子フィルタリング（`passes_extension_filter`）はファイルのみに適用し、ディレクトリには適用しない。ブラックリストは空リストなら常に許可、ホワイトリストは空リストなら常に拒否（`*` のような全許可特殊タグは実装しない。空ホワイトリストは意図的に「0件」を意味する）。拡張子を持たないファイルは、ブラックリストの個々のタグに一致しようがないため許可、ホワイトリストの個々のタグに一致しようがないため拒否、という扱いになる
+  - アイコン取得（`shell_icon::get_icon_data_url`）はファイル・フォルダ双方に対して既存のまま動作する（`SHGetFileInfoW` はディレクトリにも有効なため、フォルダ結果にもエクスプローラーと同じフォルダアイコンが付く。個別対応不要）
+
 ### 設定画面（Rust / フロントエンド）
 
 - 設定パネルは左にカテゴリナビ（全般／ファイル検索／パス貼り付け／数式計算／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）
@@ -237,7 +258,7 @@ win-launcher/
   - input のローカルハンドラに持たせると、WebView2 のフォーカス状態や Ctrl+S の既定動作（ページ保存）の影響で発火しないことがあるため
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
-  - `folders: { path, enabled }[]`（ファイル検索カテゴリの検索フォルダ一覧）
+  - `folders: { path, enabled, maxDepth, includeFolders, extensionFilterMode, extensions }[]`（ファイル検索カテゴリの検索フォルダ一覧。`maxDepth`/`includeFolders`/`extensionFilterMode`/`extensions` はフォルダごとの詳細設定。詳細は「検索フォルダごとの詳細設定」節を参照）
   - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, ocrEnabled, checkUpdateOnStartup, pathPasteEnabled }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照））
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（プレフィックスコマンド候補の使用履歴。`frecency` と同形式・同方式で、キーがファイルパスではなく呼び出し文字列（`/shutdown` 等）になる。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「プレフィックスコマンド候補表示」節を参照）
@@ -246,7 +267,7 @@ win-launcher/
   - `clipboardPaneWidth: number`（クリップボード履歴パネルの左ペイン幅、px。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。ドラッグ終了時（mouseup）およびフォーカスアウト時（blur）に保存する。Rust コマンドは追加しない）
 - 各カテゴリの内容
   - **全般**：起動ホットキーの表示・変更（修飾キーのチェックボックス＋通常キーのプルダウン。「グローバルホットキー」節を参照）＋起動時アップデートチェック ON/OFF トグル（「自動アップデート機能」節を参照）
-  - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）。各フォルダパステキストは既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶクリッカブルボタンとして実装し、クリックでエクスプローラーを開く（追加の Rust コマンドや権限は不要）。ボタンにはホバー時 `cursor-pointer` + 下線を付与し、チェックボックス・削除ボタンの動作には影響しない
+  - **ファイル検索**：機能 ON/OFF トグル＋検索フォルダの追加（`tauri-plugin-dialog` のフォルダ選択）・有効/無効トグル・削除（既存の検索フォルダ管理 UI をこのタブ配下に配置）。各フォルダパステキストは既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶクリッカブルボタンとして実装し、クリックでエクスプローラーを開く（追加の Rust コマンドや権限は不要）。ボタンにはホバー時 `cursor-pointer` + 下線を付与し、チェックボックス・削除ボタンの動作には影響しない。各行には歯車アイコンボタンを追加し、押下でフォルダごとの詳細設定モーダル（検索階層数・フォルダ自体の検索対象可否・拡張子フィルタリング）を開く（詳細は「検索フォルダごとの詳細設定」節を参照）
   - **パス貼り付け**：機能 ON/OFF トグルのみ（従属設定なし。「パス貼り付けによる検索フォルダ管理」節を参照）
   - **数式計算**：機能 ON/OFF トグル＋クリップボードコピー時のカンマ区切り ON/OFF トグル（「計算結果をカンマ区切りでコピー」。「計算機能」節を参照）
   - **システムコマンド**：機能 ON/OFF トグル＋シャットダウン・再起動・スリープそれぞれの呼び出しキーワードの独立したテキスト入力（3つの入力欄。1つの共通プレフィックス設定ではない。「システムコマンド機能」節を参照）
@@ -593,6 +614,7 @@ const closeWindow = useCallback(
 | `add_folder(path)` | 検索フォルダを追加する |
 | `remove_folder(path)` | 検索フォルダを削除する |
 | `toggle_folder(path)` | 検索フォルダの有効/無効を切り替える |
+| `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, extensions)` | 指定した検索フォルダの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子フィルタリング）をまとめて保存する。`maxDepth` が1〜20の範囲外の場合はエラーを返し保存しない。拡張子タグはトリム・先頭 `.` 除去・小文字化・重複除去のうえで保存する |
 | `execute_system_command(action)` | システムコマンド（`shutdown` / `restart` / `sleep`）を実行する |
 | `get_app_settings()` | ホットキー・各機能 ON/OFF（`AppSettings`）を返す |
 | `set_file_search_enabled(enabled)` | ファイル検索機能の ON/OFF を切り替えて `AppSettings` を返す |

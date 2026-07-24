@@ -22,7 +22,23 @@ export interface FrecencyEntry {
 
 export type FrecencyMap = Record<string, FrecencyEntry>;
 
-export interface FolderEntry {
+// 拡張子フィルタリングのモード。ホワイトリスト/ブラックリストは排他選択で、
+// 「*」等の全許可を意味する特殊タグは用意しない（詳細は REQUIREMENTS.md
+// 「検索フォルダの詳細設定ダイアログ」節を参照）。
+export type ExtensionFilterMode = "blacklist" | "whitelist";
+
+export const DEFAULT_FOLDER_MAX_DEPTH = 3;
+
+// フォルダごとの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子
+// フィルタリング）の入力値。保存ボタン押下時に `set_folder_settings` へまとめて渡す。
+export interface FolderDetailSettings {
+  maxDepth: number;
+  includeFolders: boolean;
+  extensionFilterMode: ExtensionFilterMode;
+  extensions: string[];
+}
+
+export interface FolderEntry extends FolderDetailSettings {
   path: string;
   enabled: boolean;
 }

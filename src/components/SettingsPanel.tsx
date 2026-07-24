@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   AppSettings,
+  FolderDetailSettings,
   FolderEntry,
   SystemCommandAction,
   SystemCommandKeywordErrors,
@@ -72,6 +73,9 @@ export function SettingsPanel({
   onToggleFolder,
   onRemoveFolder,
   onOpenFolder,
+  onSaveFolderSettings,
+  folderSettingsError,
+  onResetFolderSettingsError,
   onClose,
 }: {
   appSettings: AppSettings;
@@ -106,6 +110,12 @@ export function SettingsPanel({
   onToggleFolder: (path: string) => void;
   onRemoveFolder: (path: string) => void;
   onOpenFolder: (path: string) => void;
+  onSaveFolderSettings: (
+    path: string,
+    detail: FolderDetailSettings
+  ) => Promise<boolean>;
+  folderSettingsError: string | null;
+  onResetFolderSettingsError: () => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -181,6 +191,9 @@ export function SettingsPanel({
               onToggleFolder={onToggleFolder}
               onRemoveFolder={onRemoveFolder}
               onOpenFolder={onOpenFolder}
+              onSaveFolderSettings={onSaveFolderSettings}
+              folderSettingsError={folderSettingsError}
+              onResetFolderSettingsError={onResetFolderSettingsError}
             />
           )}
           {tab === "pathPaste" && (
