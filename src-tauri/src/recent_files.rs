@@ -59,16 +59,33 @@ fn wide(s: &str) -> Vec<u16> {
     OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
 }
 
-/// レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` 配下の
-/// すべてのサブキーを列挙し、各サブキーの `UrlNamespace`（そのライブラリのクラウド上
-/// URLのルート）と `MountPoint`（対応するローカル同期先フォルダのパス）の組を取得する。
-/// 個人のOneDrive本体・OneDrive for Businessの個人領域・SharePointチームサイトの
-/// 共有ライブラリ・OneDriveに追加したショートカットのいずれも、この同じレジストリ配下に
-/// 登録されることが実地検証で確認されている。サブキー名を決め打ちにせず動的に列挙する
-/// ことで、個人・組織・複数ライブラリいずれの構成にも対応する。失敗箇所は
-/// `crate::log_debug` でログ出力したうえでスキップする（黙って握りつぶさない）。
+/// レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` の1サブキー
+/// （＝1つの同期ライブラリ）から読み取った情報。
 #[cfg(windows)]
-fn sync_engine_mount_points() -> Vec<(String, String)> {
+struct SyncEngineMount {
+    /// `UrlNamespace`：そのライブラリ（ドキュメントライブラリ）のクラウド上 URL のルート。
+    namespace: String,
+    /// `FullRemotePath`：実際に同期対象としているサブフォルダの URL。Teams サイト形式の
+    /// マウントでは、ローカルの `MountPoint` は `UrlNamespace` ではなくこちらに対応する
+    /// （詳細は `resolve_sync_engine_local_path` を参照）。個人 OneDrive
+    /// （`personal/...` 形式）ではこの値が空文字列で登録される。値が存在しない・空文字列
+    /// の場合はどちらも空文字列として扱う（呼び出し側で「フォールバックが必要」の判定に
+    /// `is_empty()` を使うため、`None`/`Some("")` を区別しない）。
+    full_remote_path: String,
+    /// 対応するローカル同期先フォルダのパス。
+    mount_point: String,
+}
+
+/// レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` 配下の
+/// すべてのサブキーを列挙し、各サブキーの `UrlNamespace`・`FullRemotePath`・
+/// `MountPoint` を読み取る。個人のOneDrive本体・OneDrive for Businessの個人領域・
+/// SharePointチームサイトの共有ライブラリ・OneDriveに追加したショートカットのいずれも、
+/// この同じレジストリ配下に登録されることが実地検証で確認されている。サブキー名を
+/// 決め打ちにせず動的に列挙することで、個人・組織・複数ライブラリいずれの構成にも
+/// 対応する。失敗箇所は `crate::log_debug` でログ出力したうえでスキップする（黙って
+/// 握りつぶさない）。
+#[cfg(windows)]
+fn sync_engine_mount_points() -> Vec<SyncEngineMount> {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
     use windows::Win32::System::Registry::{
@@ -134,9 +151,14 @@ fn sync_engine_mount_points() -> Vec<(String, String)> {
         };
         if open_sub == ERROR_SUCCESS {
             let namespace = read_registry_string_expand(subkey, "UrlNamespace");
+            let full_remote_path = read_registry_string_expand(subkey, "FullRemotePath");
             let mount_point = read_registry_string_expand(subkey, "MountPoint");
             match (namespace, mount_point) {
-                (Some(ns), Some(mp)) => mounts.push((ns, mp)),
+                (Some(namespace), Some(mount_point)) => mounts.push(SyncEngineMount {
+                    namespace,
+                    full_remote_path: full_remote_path.unwrap_or_default(),
+                    mount_point,
+                }),
                 _ => crate::log_debug(&format!(
                     "[recent_files] SyncEngines provider key '{subkey_name}' is missing UrlNamespace or MountPoint"
                 )),
@@ -300,34 +322,49 @@ fn namespace_is_host_only(namespace: &str) -> bool {
 }
 
 /// `.url` の `URL=` 値を、同期ライブラリのローカル同期先パスへ変換する。
-/// `mounts`（`UrlNamespace` → `MountPoint` の対応表）の中から `UrlNamespace` が URL に
-/// 前方一致するエントリを探し、複数該当する場合は最も長く一致するものを採用する
-/// （最長一致優先）。一致したら URL から `UrlNamespace` 部分を除いた残りを相対パスとする。
+///
+/// 【マッチング・相対パス抽出の基準：`FullRemotePath` 優先、`UrlNamespace` はフォールバック】
+/// `MountPoint` が対応するクラウド上のルートは、常に `UrlNamespace`（ドキュメントライブラリ
+/// 自体のルート）とは限らない。Teams サイト形式のマウント（実地検証で確認）では、
+/// `UrlNamespace` がライブラリ全体のルート（例: `.../Shared Documents/`）を指す一方、
+/// `FullRemotePath` は実際に同期対象としているサブフォルダ（例:
+/// `.../Shared Documents/General`）を指しており、`MountPoint`（ローカルフォルダ）は
+/// この `FullRemotePath` に対応する。ここで `UrlNamespace` を基準に相対パスを計算すると、
+/// `UrlNamespace` と `FullRemotePath` の差分（上記の例では `General`）が `MountPoint` に
+/// 含まれる分と重複し、`...\General\General\...` のようにフォルダ名が二重になる不具合に
+/// なる。個人 OneDrive（`personal/...` 形式）では `FullRemotePath` が空文字列で登録される
+/// ため、この場合は従来通り `UrlNamespace` を基準にする（`SyncEngineMount::full_remote_path`
+/// のドキュメントコメントを参照）。`FullRemotePath` と `UrlNamespace` が同値のマウント
+/// （差分がない Teams サイト）では、どちらを基準にしても結果は変わらない。
+///
+/// `mounts` の中から、上記の基準（`FullRemotePath` があればそれ、無ければ `UrlNamespace`）
+/// が URL に前方一致するエントリを探し、複数該当する場合は最も長く一致するものを採用する
+/// （最長一致優先）。一致したら URL から基準部分を除いた残りを相対パスとする。
 ///
 /// 【パーセントエンコーディングの正規化】`.url` の `URL=` 値は URL エンコードされている
-/// （例: `Shared%20Documents`）一方、レジストリの `UrlNamespace` は生の文字列（例:
-/// `Shared Documents`）で登録されている。個人 OneDrive（`https://d.docs.live.net/...`）は
-/// たまたま `UrlNamespace` がエンコード不要な区間（ホスト名のみ）で一致していたため
-/// 表面化しなかったが、SharePoint チームサイト（例:
-/// `https://contoso.sharepoint.com/sites/team/Shared Documents/...`）のように
-/// `UrlNamespace` 自体が半角スペースや日本語のサイト名等を含む場合、生の文字列同士の
-/// `starts_with` では一致せず変換に失敗する。これを解消するため、比較・相対パス抽出は
-/// 両者をパーセントデコードで正規化した文字列同士で行う（URL 側だけでなく `UrlNamespace`
-/// 側もデコードするのは、レジストリ側の値が将来エンコード済みで登録されるケースがあっても
-/// 同じロジックで吸収できるようにするため）。デコードは URL 全体に対して一度だけ行い、
-/// 前方一致した長さでそのままデコード済み文字列をスライスして相対パスを取り出す
-/// （マッチが成立した時点でその長さは常に UTF-8 の文字境界と一致するため、マルチバイト
-/// 文字が混じっていてもスライス位置がずれることはない）。
+/// （例: `Shared%20Documents`）一方、レジストリの `UrlNamespace`/`FullRemotePath` は生の
+/// 文字列（例: `Shared Documents`）で登録されている。個人 OneDrive
+/// （`https://d.docs.live.net/...`）はたまたま基準がエンコード不要な区間（ホスト名のみ）で
+/// 一致していたため表面化しなかったが、SharePoint チームサイト（例:
+/// `https://contoso.sharepoint.com/sites/team/Shared Documents/...`）のように基準の文字列
+/// 自体が半角スペースや日本語のサイト名等を含む場合、生の文字列同士の `starts_with` では
+/// 一致せず変換に失敗する。これを解消するため、比較・相対パス抽出は両者をパーセントデコード
+/// で正規化した文字列同士で行う（URL 側だけでなく基準側もデコードするのは、レジストリ側の
+/// 値が将来エンコード済みで登録されるケースがあっても同じロジックで吸収できるようにする
+/// ため）。デコードは URL 全体に対して一度だけ行い、前方一致した長さでそのままデコード済み
+/// 文字列をスライスして相対パスを取り出す（マッチが成立した時点でその長さは常に UTF-8 の
+/// 文字境界と一致するため、マルチバイト文字が混じっていてもスライス位置がずれることはない）。
 ///
-/// ただし `UrlNamespace` がホスト名のみの場合（`namespace_is_host_only`）は、個人
-/// OneDrive のアカウント識別子セグメントを追加で1つ読み飛ばしてから相対パスとして扱う
-/// （詳細は `namespace_is_host_only` のドキュメントコメントを参照）。相対パスの末尾が
-/// `/` の場合はファイルではなくフォルダへの参照とみなし、ローカルパスを組み立てずに
-/// `None` を返す（「ファイルのみを対象とし、フォルダは除外する」既存ルールに従う）。
-/// それ以外は `MountPoint` と結合してローカルパスを組み立てる。実在チェックは呼び出し元
-/// （`process_url`）が行う。
+/// ただし基準の文字列がホスト名のみの場合（`namespace_is_host_only`）は、個人 OneDrive の
+/// アカウント識別子セグメントを追加で1つ読み飛ばしてから相対パスとして扱う（詳細は
+/// `namespace_is_host_only` のドキュメントコメントを参照。`FullRemotePath` は実データ上
+/// 常にホスト名より深い階層を持つため、この分岐は事実上 `UrlNamespace` フォールバック時
+/// のみ該当する）。相対パスの末尾が `/` の場合はファイルではなくフォルダへの参照とみなし、
+/// ローカルパスを組み立てずに `None` を返す（「ファイルのみを対象とし、フォルダは除外する」
+/// 既存ルールに従う）。それ以外は `MountPoint` と結合してローカルパスを組み立てる。
+/// 実在チェックは呼び出し元（`process_url`）が行う。
 #[cfg(windows)]
-fn resolve_sync_engine_local_path(url: &str, mounts: &[(String, String)]) -> Option<String> {
+fn resolve_sync_engine_local_path(url: &str, mounts: &[SyncEngineMount]) -> Option<String> {
     let Some(decoded_url) = percent_decode(url) else {
         crate::log_debug(&format!(
             "[recent_files] failed to percent-decode url: {url}"
@@ -335,34 +372,39 @@ fn resolve_sync_engine_local_path(url: &str, mounts: &[(String, String)]) -> Opt
         return None;
     };
 
-    let mut best: Option<(String, &String)> = None;
-    for (namespace, mount_point) in mounts {
-        let Some(decoded_namespace) = percent_decode(namespace) else {
+    let mut best: Option<(String, &str)> = None;
+    for mount in mounts {
+        let basis = if mount.full_remote_path.is_empty() {
+            mount.namespace.as_str()
+        } else {
+            mount.full_remote_path.as_str()
+        };
+        let Some(decoded_basis) = percent_decode(basis) else {
             continue;
         };
-        if !decoded_url.starts_with(decoded_namespace.as_str()) {
+        if !decoded_url.starts_with(decoded_basis.as_str()) {
             continue;
         }
         let is_longer_match = match &best {
-            Some((current_ns, _)) => decoded_namespace.len() > current_ns.len(),
+            Some((current_basis, _)) => decoded_basis.len() > current_basis.len(),
             None => true,
         };
         if is_longer_match {
-            best = Some((decoded_namespace, mount_point));
+            best = Some((decoded_basis, mount.mount_point.as_str()));
         }
     }
 
-    let Some((namespace, mount_point)) = best else {
+    let Some((basis, mount_point)) = best else {
         crate::log_debug(&format!(
-            "[recent_files] no matching sync engine UrlNamespace for: {url}"
+            "[recent_files] no matching sync engine namespace for: {url}"
         ));
         return None;
     };
 
-    let mut remainder = decoded_url[namespace.len()..].trim_start_matches('/');
+    let mut remainder = decoded_url[basis.len()..].trim_start_matches('/');
 
-    if namespace_is_host_only(&namespace) {
-        // 個人 OneDrive 等、UrlNamespace がホスト名のみの場合は、その直後に挟まる
+    if namespace_is_host_only(&basis) {
+        // 個人 OneDrive 等、基準の文字列がホスト名のみの場合は、その直後に挟まる
         // アカウント識別子セグメント（次の "/" まで）を追加で読み飛ばす。
         let Some(slash_pos) = remainder.find('/') else {
             crate::log_debug(&format!(
@@ -573,7 +615,7 @@ fn has_plausible_extension(name: &str) -> bool {
 fn process_url(
     url_path: &std::path::Path,
     fallback_encoding: &'static encoding_rs::Encoding,
-    mounts: &[(String, String)],
+    mounts: &[SyncEngineMount],
     last_accessed: u64,
 ) -> Option<RecentFile> {
     let content = read_text_file_lossy(url_path, fallback_encoding)?;
@@ -748,16 +790,54 @@ pub fn get_recent_files(_max_results: usize, _max_age_days: i64) -> Vec<RecentFi
 
 #[cfg(all(test, windows))]
 mod tests {
-    use super::resolve_sync_engine_local_path;
+    use super::{resolve_sync_engine_local_path, SyncEngineMount};
 
-    /// SharePoint チームサイト（`sites/` 形式）: レジストリの `UrlNamespace` は
-    /// スペースを含む生の文字列だが、.url の `URL=` 値はそのスペースが `%20` に
-    /// エンコードされている。両者を正規化して比較しないと一致しないケース。
+    /// テスト用に `SyncEngineMount` を組み立てるヘルパー。`full_remote_path` に空文字列を
+    /// 渡すと、個人 OneDrive（`personal/...` 形式）のようにレジストリにこの値が存在しない
+    /// 構成を表す。
+    fn mount(namespace: &str, full_remote_path: &str, mount_point: &str) -> SyncEngineMount {
+        SyncEngineMount {
+            namespace: namespace.to_string(),
+            full_remote_path: full_remote_path.to_string(),
+            mount_point: mount_point.to_string(),
+        }
+    }
+
+    /// 実機で確認された a_731 のケース：`FullRemotePath`
+    /// （`.../Shared Documents/General`）が `UrlNamespace`
+    /// （`.../Shared Documents/`）より深い階層を指しており、`MountPoint`
+    /// （`...\Team A - General`）は `FullRemotePath` に対応する。`FullRemotePath` を
+    /// 基準に相対パスを計算しないと、`UrlNamespace` との差分（`General`）が `MountPoint`
+    /// に含まれる分と重複し `...\General\General\...` の二重フォルダになってしまう
+    /// （修正前の不具合）。あわせて `.url` 側のパーセントエンコード（`Shared%20Documents`）
+    /// も正規化されることを確認する。
     #[test]
-    fn resolves_sharepoint_team_site_url_with_percent_encoded_space() {
-        let mounts = vec![(
-            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/".to_string(),
-            r"C:\Users\user\OneDrive - Contoso\Team A - General".to_string(),
+    fn resolves_teams_site_url_without_duplicating_folder_name() {
+        let mounts = vec![mount(
+            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/",
+            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/General",
+            r"C:\Users\user\OneDrive - Contoso\Team A - General",
+        )];
+        let url = "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared%20Documents/General/02_%E5%88%86%E9%87%8E%E5%90%91%E3%81%91%E6%96%BD%E7%AD%96/report.xlsx";
+
+        let resolved = resolve_sync_engine_local_path(url, &mounts);
+
+        assert_eq!(
+            resolved,
+            Some(
+                r"C:\Users\user\OneDrive - Contoso\Team A - General\02_分野向け施策\report.xlsx"
+                    .to_string()
+            )
+        );
+    }
+
+    /// ファイルが `FullRemotePath` 直下（サブフォルダを挟まない）にあるケース。
+    #[test]
+    fn resolves_teams_site_url_for_file_directly_under_full_remote_path() {
+        let mounts = vec![mount(
+            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/",
+            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/General",
+            r"C:\Users\user\OneDrive - Contoso\Team A - General",
         )];
         let url = "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared%20Documents/General/report.xlsx";
 
@@ -765,7 +845,27 @@ mod tests {
 
         assert_eq!(
             resolved,
-            Some(r"C:\Users\user\OneDrive - Contoso\Team A - General\General\report.xlsx".to_string())
+            Some(r"C:\Users\user\OneDrive - Contoso\Team A - General\report.xlsx".to_string())
+        );
+    }
+
+    /// `FullRemotePath` が `UrlNamespace` と同値の Teams サイト（`msteams_50e724`・`M7G`
+    /// 等、ライブラリのルートそのものを同期しているため差分が無いケース）でも、
+    /// どちらを基準にしても結果が変わらず正しく解決できることを確認する。
+    #[test]
+    fn resolves_teams_site_url_when_full_remote_path_equals_namespace() {
+        let mounts = vec![mount(
+            "https://contoso.sharepoint.com/sites/M7G/Shared Documents",
+            "https://contoso.sharepoint.com/sites/M7G/Shared Documents",
+            r"C:\Users\user\OneDrive - Contoso\M7G",
+        )];
+        let url = "https://contoso.sharepoint.com/sites/M7G/Shared%20Documents/report.xlsx";
+
+        let resolved = resolve_sync_engine_local_path(url, &mounts);
+
+        assert_eq!(
+            resolved,
+            Some(r"C:\Users\user\OneDrive - Contoso\M7G\report.xlsx".to_string())
         );
     }
 
@@ -773,9 +873,10 @@ mod tests {
     /// 含まれるケース。パーセントデコード後もマルチバイト境界がずれないことを確認する。
     #[test]
     fn resolves_sharepoint_team_site_url_with_japanese_segments() {
-        let mounts = vec![(
-            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/".to_string(),
-            r"C:\Users\user\OneDrive - Contoso\Team A - General".to_string(),
+        let mounts = vec![mount(
+            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/",
+            "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared Documents/General",
+            r"C:\Users\user\OneDrive - Contoso\Team A - General",
         )];
         let url = "https://nttdatajpprod.sharepoint.com/sites/a_731/Shared%20Documents/General/%E5%88%A5%E7%B4%99_%E7%AE%A1%E7%90%86%E7%B0%BF.xlsx";
 
@@ -784,20 +885,21 @@ mod tests {
         assert_eq!(
             resolved,
             Some(
-                r"C:\Users\user\OneDrive - Contoso\Team A - General\General\別紙_管理簿.xlsx"
-                    .to_string()
+                r"C:\Users\user\OneDrive - Contoso\Team A - General\別紙_管理簿.xlsx".to_string()
             )
         );
     }
 
-    /// 個人 OneDrive for Business（`-my.sharepoint.com/personal/...`）: `UrlNamespace`
-    /// がホスト名より深い階層（`.../personal/{user}/Documents`）まで含めて登録される
-    /// ケースが、正規化後も引き続き解決できることを確認する（デグレ防止）。
+    /// 個人 OneDrive for Business（`-my.sharepoint.com/personal/...`）：`FullRemotePath`
+    /// が空文字列（レジストリにこの構成では登録されない）ため `UrlNamespace`（ホスト名より
+    /// 深い階層 `.../personal/{user}/Documents` まで含む）にフォールバックするケースが、
+    /// 正規化後も引き続き解決できることを確認する（デグレ防止）。
     #[test]
-    fn resolves_personal_onedrive_url_unaffected_by_normalization() {
-        let mounts = vec![(
-            "https://contoso-my.sharepoint.com/personal/user_contoso_com/Documents".to_string(),
-            r"C:\Users\user\OneDrive - Contoso".to_string(),
+    fn resolves_personal_onedrive_url_falls_back_to_namespace_when_full_remote_path_is_empty() {
+        let mounts = vec![mount(
+            "https://contoso-my.sharepoint.com/personal/user_contoso_com/Documents",
+            "",
+            r"C:\Users\user\OneDrive - Contoso",
         )];
         let url = "https://contoso-my.sharepoint.com/personal/user_contoso_com/Documents/report.xlsx";
 
@@ -809,13 +911,16 @@ mod tests {
         );
     }
 
-    /// 個人 OneDrive（`d.docs.live.net`）: アカウント識別子セグメントの読み飛ばしが
+    /// 個人 OneDrive（`d.docs.live.net`）：`FullRemotePath` が空文字列で `UrlNamespace`
+    /// （ホスト名のみ）にフォールバックし、アカウント識別子セグメントの読み飛ばしが
     /// 正規化後も引き続き機能することを確認する（デグレ防止）。
     #[test]
-    fn resolves_personal_onedrive_consumer_url_unaffected_by_normalization() {
-        let mounts = vec![(
-            "https://d.docs.live.net".to_string(),
-            r"C:\Users\user\OneDrive".to_string(),
+    fn resolves_personal_onedrive_consumer_url_falls_back_to_namespace_when_full_remote_path_is_empty()
+    {
+        let mounts = vec![mount(
+            "https://d.docs.live.net",
+            "",
+            r"C:\Users\user\OneDrive",
         )];
         let url = "https://d.docs.live.net/abcdef1234567890/Documents/report.xlsx";
 
@@ -827,12 +932,13 @@ mod tests {
         );
     }
 
-    /// マッチする UrlNamespace が存在しない場合は `None` を返す。
+    /// マッチする基準（`FullRemotePath`／`UrlNamespace`）が存在しない場合は `None` を返す。
     #[test]
     fn returns_none_when_no_namespace_matches() {
-        let mounts = vec![(
-            "https://contoso.sharepoint.com/sites/other/Shared Documents/".to_string(),
-            r"C:\Users\user\OneDrive - Contoso\Other".to_string(),
+        let mounts = vec![mount(
+            "https://contoso.sharepoint.com/sites/other/Shared Documents/",
+            "",
+            r"C:\Users\user\OneDrive - Contoso\Other",
         )];
         let url = "https://contoso.sharepoint.com/sites/unrelated/Shared%20Documents/report.xlsx";
 
