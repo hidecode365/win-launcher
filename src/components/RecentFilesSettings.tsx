@@ -1,5 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { ExtensionFilterMode, RecentDisplaySettings } from "../types";
+import { ExtensionFilterEditor } from "./ExtensionFilterEditor";
 import { FeatureToggle } from "./FeatureToggle";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsIndent } from "./SettingsIndent";
+import { SettingsSaveBar } from "./SettingsSaveBar";
+import { draftInputClassName } from "./settingsFieldStyles";
+import { useSettingsDraft } from "../hooks/useSettingsDraft";
+import { arraysEqual } from "../lib/arrayUtils";
 
 export function RecentFilesSettings({
   enabled,
@@ -10,29 +18,112 @@ export function RecentFilesSettings({
   onChangeMaxAgeDays,
   maxResults,
   onChangeMaxResults,
-  error,
+  includeFolders,
+  extensionFilterMode,
+  blacklistExtensions,
+  whitelistExtensions,
+  onSaveDisplaySettings,
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
   keyword: string;
-  onChangeKeyword: (keyword: string) => void;
+  onChangeKeyword: (keyword: string) => Promise<string | null>;
   maxAgeDays: number;
-  onChangeMaxAgeDays: (maxAgeDays: number) => void;
+  onChangeMaxAgeDays: (maxAgeDays: number) => Promise<string | null>;
   maxResults: number;
-  onChangeMaxResults: (maxResults: number) => void;
-  error: string | null;
+  onChangeMaxResults: (maxResults: number) => Promise<string | null>;
+  includeFolders: boolean;
+  extensionFilterMode: ExtensionFilterMode;
+  blacklistExtensions: string[];
+  whitelistExtensions: string[];
+  onSaveDisplaySettings: (
+    detail: RecentDisplaySettings
+  ) => Promise<string | null>;
 }) {
-  const [keywordInput, setKeywordInput] = useState(keyword);
-  const [maxAgeDaysInput, setMaxAgeDaysInput] = useState(String(maxAgeDays));
-  const [maxResultsInput, setMaxResultsInput] = useState(String(maxResults));
+  const [keywordDraft, setKeywordDraft, keywordDirty] = useSettingsDraft(keyword);
+  const [maxAgeDaysInput, setMaxAgeDaysInput, maxAgeDaysDirty] = useSettingsDraft(
+    String(maxAgeDays)
+  );
+  const [maxResultsInput, setMaxResultsInput, maxResultsDirty] = useSettingsDraft(
+    String(maxResults)
+  );
 
-  useEffect(() => setKeywordInput(keyword), [keyword]);
-  useEffect(() => setMaxAgeDaysInput(String(maxAgeDays)), [maxAgeDays]);
-  useEffect(() => setMaxResultsInput(String(maxResults)), [maxResults]);
+  // 拡張子フィルタリング（モード・ブラックリスト・ホワイトリスト）はタグ入力のため
+  // タブ末尾の一括保存対象。「フォルダを対象に含める」はトグルのため即時保存とし、
+  // このドラフト管理の対象には含めない（下記 handleToggleIncludeFolders を参照）。
+  const [filterModeDraft, setFilterModeDraft, filterModeDirty] =
+    useSettingsDraft<ExtensionFilterMode>(extensionFilterMode);
+  const [blacklistDraft, setBlacklistDraft, blacklistDirty] = useSettingsDraft(
+    blacklistExtensions,
+    arraysEqual
+  );
+  const [whitelistDraft, setWhitelistDraft, whitelistDirty] = useSettingsDraft(
+    whitelistExtensions,
+    arraysEqual
+  );
 
-  const isKeywordDirty = keywordInput !== keyword;
-  const isMaxAgeDaysDirty = maxAgeDaysInput !== String(maxAgeDays);
-  const isMaxResultsDirty = maxResultsInput !== String(maxResults);
+  const activeExtensionsDraft =
+    filterModeDraft === "blacklist" ? blacklistDraft : whitelistDraft;
+  const setActiveExtensionsDraft =
+    filterModeDraft === "blacklist" ? setBlacklistDraft : setWhitelistDraft;
+
+  const extensionFilterDirty = filterModeDirty || blacklistDirty || whitelistDirty;
+  const isDirty =
+    keywordDirty || maxAgeDaysDirty || maxResultsDirty || extensionFilterDirty;
+
+  // 4フィールド共有の単一エラー文字列。タブコンポーネントのローカル state のため、
+  // 他タブへ切り替える（＝このコンポーネントが unmount される）と自動的に破棄される
+  // （詳細は CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
+  const [error, setError] = useState<string | null>(null);
+
+  // 「フォルダを対象に含める」はトグルのため、操作した時点で即時保存する
+  // （CLAUDE.md「設定画面」節の「保存モデル」を参照）。拡張子フィルタリングの
+  // ドラフト（未保存の可能性がある）は巻き込まず、保存済みの現在値を使う。
+  const handleToggleIncludeFolders = async (checked: boolean) => {
+    const err = await onSaveDisplaySettings({
+      includeFolders: checked,
+      extensionFilterMode,
+      blacklistExtensions,
+      whitelistExtensions,
+    });
+    setError(err);
+  };
+
+  // 直列保存で打ち切り式にする理由は SystemCommandSettings/ClipboardSettings と同じ
+  // （error は4フィールド共有の単一エラー文字列のため）。
+  const handleSave = async () => {
+    setError(null);
+    if (keywordDirty) {
+      const err = await onChangeKeyword(keywordDraft);
+      if (err) {
+        setError(err);
+        return;
+      }
+    }
+    if (maxAgeDaysDirty) {
+      const err = await onChangeMaxAgeDays(Number(maxAgeDaysInput));
+      if (err) {
+        setError(err);
+        return;
+      }
+    }
+    if (maxResultsDirty) {
+      const err = await onChangeMaxResults(Number(maxResultsInput));
+      if (err) {
+        setError(err);
+        return;
+      }
+    }
+    if (extensionFilterDirty) {
+      const err = await onSaveDisplaySettings({
+        includeFolders,
+        extensionFilterMode: filterModeDraft,
+        blacklistExtensions: blacklistDraft,
+        whitelistExtensions: whitelistDraft,
+      });
+      if (err) setError(err);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,100 +133,72 @@ export function RecentFilesSettings({
         checked={enabled}
         onChange={onToggle}
       />
-      <div className="pt-3 border-t border-gray-200/60">
-        <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">/</span>
-          <input
-            type="text"
-            value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            className={`border rounded px-2 py-1 text-sm w-24 ${
-              isKeywordDirty
-                ? "border-amber-400 ring-1 ring-amber-200"
-                : "border-gray-300"
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => onChangeKeyword(keywordInput)}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            保存
-          </button>
-        </div>
-        {isKeywordDirty && (
-          <div className="text-xs text-amber-600 mt-1">
-            未保存の変更があります
+      <SettingsIndent>
+        <div>
+          <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-400">/</span>
+            <input
+              type="text"
+              value={keywordDraft}
+              onChange={(e) => setKeywordDraft(e.target.value)}
+              className={draftInputClassName(keywordDirty)}
+            />
           </div>
-        )}
-        <div className="text-xs text-gray-400 mt-1">
-          「/」が自動的に先頭に付与されます
+          <div className="text-xs text-gray-400 mt-1">
+            「/」が自動的に先頭に付与されます
+          </div>
         </div>
-      </div>
-      <div className="pt-3 border-t border-gray-200/60">
-        <div className="text-sm font-medium text-gray-800 mb-1">保持期間（日）</div>
-        <div className="flex items-center gap-2">
+        <div>
+          <div className="text-sm font-medium text-gray-800 mb-1">保持期間（日）</div>
           <input
             type="number"
             min={1}
             max={3650}
             value={maxAgeDaysInput}
             onChange={(e) => setMaxAgeDaysInput(e.target.value)}
-            className={`border rounded px-2 py-1 text-sm w-24 ${
-              isMaxAgeDaysDirty
-                ? "border-amber-400 ring-1 ring-amber-200"
-                : "border-gray-300"
-            }`}
+            className={draftInputClassName(maxAgeDaysDirty)}
           />
-          <button
-            type="button"
-            onClick={() => onChangeMaxAgeDays(Number(maxAgeDaysInput))}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            保存
-          </button>
-        </div>
-        {isMaxAgeDaysDirty && (
-          <div className="text-xs text-amber-600 mt-1">
-            未保存の変更があります
+          <div className="text-xs text-gray-400 mt-1">
+            最終アクセス日時がこの日数より前のファイルは一覧に表示されません（1〜3650日）
           </div>
-        )}
-        <div className="text-xs text-gray-400 mt-1">
-          最終アクセス日時がこの日数より前のファイルは一覧に表示されません（1〜3650日）
         </div>
-      </div>
-      <div className="pt-3 border-t border-gray-200/60">
-        <div className="text-sm font-medium text-gray-800 mb-1">最大表示件数</div>
-        <div className="flex items-center gap-2">
+        <div>
+          <div className="text-sm font-medium text-gray-800 mb-1">最大表示件数</div>
           <input
             type="number"
             min={1}
             max={200}
             value={maxResultsInput}
             onChange={(e) => setMaxResultsInput(e.target.value)}
-            className={`border rounded px-2 py-1 text-sm w-24 ${
-              isMaxResultsDirty
-                ? "border-amber-400 ring-1 ring-amber-200"
-                : "border-gray-300"
-            }`}
+            className={draftInputClassName(maxResultsDirty)}
           />
-          <button
-            type="button"
-            onClick={() => onChangeMaxResults(Number(maxResultsInput))}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            保存
-          </button>
+          <div className="text-xs text-gray-400 mt-1">1〜200件</div>
         </div>
-        {isMaxResultsDirty && (
-          <div className="text-xs text-amber-600 mt-1">
-            未保存の変更があります
+        <SettingsGroup title="表示対象設定">
+          <FeatureToggle
+            label="フォルダを対象に含める"
+            description="OFFの場合、リンク先がフォルダのショートカットは一覧から除外されます。"
+            checked={includeFolders}
+            onChange={handleToggleIncludeFolders}
+          />
+          <div>
+            <div className="text-sm font-medium text-gray-800 mb-2">拡張子フィルタリング</div>
+            <ExtensionFilterEditor
+              mode={filterModeDraft}
+              onModeChange={setFilterModeDraft}
+              extensions={activeExtensionsDraft}
+              onAddExtension={(ext) =>
+                setActiveExtensionsDraft([...activeExtensionsDraft, ext])
+              }
+              onRemoveExtension={(ext) =>
+                setActiveExtensionsDraft(activeExtensionsDraft.filter((e) => e !== ext))
+              }
+            />
           </div>
-        )}
-        <div className="text-xs text-gray-400 mt-1">1〜200件</div>
-      </div>
-      {error && <div className="text-xs text-red-500">{error}</div>}
+        </SettingsGroup>
+        <SettingsSaveBar isDirty={isDirty} onSave={handleSave} error={error} />
+      </SettingsIndent>
     </div>
   );
 }

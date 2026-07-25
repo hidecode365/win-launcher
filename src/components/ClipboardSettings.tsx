@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FeatureToggle } from "./FeatureToggle";
+import { SettingsIndent } from "./SettingsIndent";
+import { SettingsSaveBar } from "./SettingsSaveBar";
+import { draftInputClassName } from "./settingsFieldStyles";
+import { useSettingsDraft } from "../hooks/useSettingsDraft";
 
 export function ClipboardSettings({
   enabled,
@@ -8,24 +12,42 @@ export function ClipboardSettings({
   onChangePrefix,
   maxItems,
   onChangeMaxItems,
-  error,
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
   prefix: string;
-  onChangePrefix: (prefix: string) => void;
+  onChangePrefix: (prefix: string) => Promise<string | null>;
   maxItems: number;
-  onChangeMaxItems: (maxItems: number) => void;
-  error: string | null;
+  onChangeMaxItems: (maxItems: number) => Promise<string | null>;
 }) {
-  const [prefixInput, setPrefixInput] = useState(prefix);
-  const [maxItemsInput, setMaxItemsInput] = useState(String(maxItems));
+  const [prefixDraft, setPrefixDraft, prefixDirty] = useSettingsDraft(prefix);
+  const [maxItemsInput, setMaxItemsInput, maxItemsDirty] = useSettingsDraft(
+    String(maxItems)
+  );
+  // 2フィールド共有の単一エラー文字列。タブコンポーネントのローカル state のため、
+  // 他タブへ切り替える（＝このコンポーネントが unmount される）と自動的に破棄される
+  // （詳細は CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => setPrefixInput(prefix), [prefix]);
-  useEffect(() => setMaxItemsInput(String(maxItems)), [maxItems]);
+  const isDirty = prefixDirty || maxItemsDirty;
 
-  const isPrefixDirty = prefixInput !== prefix;
-  const isMaxItemsDirty = maxItemsInput !== String(maxItems);
+  // 直列保存で打ち切り式にする理由は SystemCommandSettings と同じ
+  // （error は2フィールド共有の単一エラー文字列のため、後続の成功で先行フィールドの
+  // 失敗表示を上書き・消去しないようにするため）。
+  const handleSave = async () => {
+    setError(null);
+    if (prefixDirty) {
+      const err = await onChangePrefix(prefixDraft);
+      if (err) {
+        setError(err);
+        return;
+      }
+    }
+    if (maxItemsDirty) {
+      const err = await onChangeMaxItems(Number(maxItemsInput));
+      if (err) setError(err);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -35,68 +57,36 @@ export function ClipboardSettings({
         checked={enabled}
         onChange={onToggle}
       />
-      <div className="pt-3 border-t border-gray-200/60">
-        <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400">/</span>
-          <input
-            type="text"
-            value={prefixInput}
-            onChange={(e) => setPrefixInput(e.target.value)}
-            className={`border rounded px-2 py-1 text-sm w-24 ${
-              isPrefixDirty
-                ? "border-amber-400 ring-1 ring-amber-200"
-                : "border-gray-300"
-            }`}
-          />
-          <button
-            type="button"
-            onClick={() => onChangePrefix(prefixInput)}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            保存
-          </button>
-        </div>
-        {isPrefixDirty && (
-          <div className="text-xs text-amber-600 mt-1">
-            未保存の変更があります
+      <SettingsIndent>
+        <div>
+          <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-400">/</span>
+            <input
+              type="text"
+              value={prefixDraft}
+              onChange={(e) => setPrefixDraft(e.target.value)}
+              className={draftInputClassName(prefixDirty)}
+            />
           </div>
-        )}
-        <div className="text-xs text-gray-400 mt-1">
-          「/」が自動的に先頭に付与されます
+          <div className="text-xs text-gray-400 mt-1">
+            「/」が自動的に先頭に付与されます
+          </div>
         </div>
-      </div>
-      <div className="pt-3 border-t border-gray-200/60">
-        <div className="text-sm font-medium text-gray-800 mb-1">最大保持件数</div>
-        <div className="flex items-center gap-2">
+        <div>
+          <div className="text-sm font-medium text-gray-800 mb-1">最大保持件数</div>
           <input
             type="number"
             min={1}
             max={200}
             value={maxItemsInput}
             onChange={(e) => setMaxItemsInput(e.target.value)}
-            className={`border rounded px-2 py-1 text-sm w-24 ${
-              isMaxItemsDirty
-                ? "border-amber-400 ring-1 ring-amber-200"
-                : "border-gray-300"
-            }`}
+            className={draftInputClassName(maxItemsDirty)}
           />
-          <button
-            type="button"
-            onClick={() => onChangeMaxItems(Number(maxItemsInput))}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            保存
-          </button>
+          <div className="text-xs text-gray-400 mt-1">1〜200件</div>
         </div>
-        {isMaxItemsDirty && (
-          <div className="text-xs text-amber-600 mt-1">
-            未保存の変更があります
-          </div>
-        )}
-        <div className="text-xs text-gray-400 mt-1">1〜200件</div>
-      </div>
-      {error && <div className="text-xs text-red-500">{error}</div>}
+        <SettingsSaveBar isDirty={isDirty} onSave={handleSave} error={error} />
+      </SettingsIndent>
     </div>
   );
 }

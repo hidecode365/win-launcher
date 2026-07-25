@@ -5,8 +5,8 @@ import {
   DEFAULT_APP_SETTINGS,
   FolderDetailSettings,
   FolderEntry,
+  RecentDisplaySettings,
   SystemCommandAction,
-  SystemCommandKeywordErrors,
 } from "../types";
 
 export function useSettings(showSettings: boolean) {
@@ -15,21 +15,6 @@ export function useSettings(showSettings: boolean) {
   );
   const appSettingsRef = useRef<AppSettings>(DEFAULT_APP_SETTINGS);
   const [folders, setFolders] = useState<FolderEntry[]>([]);
-  const [clipboardSettingsError, setClipboardSettingsError] = useState<
-    string | null
-  >(null);
-  const [recentSettingsError, setRecentSettingsError] = useState<
-    string | null
-  >(null);
-  const [systemCommandKeywordErrors, setSystemCommandKeywordErrors] =
-    useState<SystemCommandKeywordErrors>({
-      shutdown: null,
-      restart: null,
-      sleep: null,
-    });
-  const [folderSettingsError, setFolderSettingsError] = useState<
-    string | null
-  >(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   useEffect(() => {
@@ -92,20 +77,24 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  // タブ末尾の単一保存ボタン（一括保存）から、対象コマンドが未保存の場合のみ呼ばれる。
+  // 成功時は `null`、失敗時はエラーメッセージ文字列を返す（`setFolderSettings` と同じ
+  // 契約）。エラー表示用の state はこのフックでは持たない（詳細は useHotkey.ts の
+  // コメント、および CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
   const setSystemCommandKeyword = useCallback(
-    async (command: SystemCommandAction, keyword: string) => {
-      setSystemCommandKeywordErrors((prev) => ({ ...prev, [command]: null }));
+    async (
+      command: SystemCommandAction,
+      keyword: string
+    ): Promise<string | null> => {
       try {
         const updated = await invoke<AppSettings>(
           "set_system_command_keyword",
           { command, keyword }
         );
         setAppSettings(updated);
+        return null;
       } catch (e) {
-        setSystemCommandKeywordErrors((prev) => ({
-          ...prev,
-          [command]: String(e),
-        }));
+        return String(e);
       }
     },
     []
@@ -125,27 +114,40 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
-  const setClipboardPrefix = useCallback(async (prefix: string) => {
-    setClipboardSettingsError(null);
-    try {
-      const updated = await invoke<AppSettings>("set_clipboard_prefix", { prefix });
-      setAppSettings(updated);
-    } catch (e) {
-      setClipboardSettingsError(String(e));
-    }
-  }, []);
+  // 「クリップボード」タブ末尾の単一保存ボタンから、未保存の場合のみ呼ばれる。成功時は
+  // `null`、失敗時はエラーメッセージ文字列を返す。呼び出し側（一括保存の直列実行）は
+  // これを見て、後続フィールドの保存を続けるか、失敗時点で打ち切ってエラーを表示するかを
+  // 判断する。エラー表示用の state はこのフックでは持たない（詳細は useHotkey.ts の
+  // コメントを参照）。
+  const setClipboardPrefix = useCallback(
+    async (prefix: string): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_clipboard_prefix", {
+          prefix,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
 
-  const setClipboardMaxItems = useCallback(async (maxItems: number) => {
-    setClipboardSettingsError(null);
-    try {
-      const updated = await invoke<AppSettings>("set_clipboard_max_items", {
-        maxItems,
-      });
-      setAppSettings(updated);
-    } catch (e) {
-      setClipboardSettingsError(String(e));
-    }
-  }, []);
+  const setClipboardMaxItems = useCallback(
+    async (maxItems: number): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_clipboard_max_items", {
+          maxItems,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
 
   const setRecentFilesEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_recent_files_enabled", {
@@ -154,39 +156,76 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
-  const setRecentKeyword = useCallback(async (keyword: string) => {
-    setRecentSettingsError(null);
-    try {
-      const updated = await invoke<AppSettings>("set_recent_keyword", { keyword });
-      setAppSettings(updated);
-    } catch (e) {
-      setRecentSettingsError(String(e));
-    }
-  }, []);
+  // 「最近使ったファイル」タブ末尾の単一保存ボタンから、未保存の場合のみ呼ばれる。
+  // 成功時は `null`、失敗時はエラーメッセージ文字列を返す理由は setClipboardPrefix と
+  // 同じ（一括保存の直列実行を制御し、後続フィールドの成功が先行フィールドのエラー
+  // 表示を消してしまうのを防ぐ）。エラー表示用の state はこのフックでは持たない。
+  const setRecentKeyword = useCallback(
+    async (keyword: string): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_recent_keyword", {
+          keyword,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
 
-  const setRecentMaxAgeDays = useCallback(async (days: number) => {
-    setRecentSettingsError(null);
-    try {
-      const updated = await invoke<AppSettings>("set_recent_max_age_days", {
-        days,
-      });
-      setAppSettings(updated);
-    } catch (e) {
-      setRecentSettingsError(String(e));
-    }
-  }, []);
+  const setRecentMaxAgeDays = useCallback(
+    async (days: number): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_recent_max_age_days", {
+          days,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
 
-  const setRecentMaxResults = useCallback(async (maxResults: number) => {
-    setRecentSettingsError(null);
-    try {
-      const updated = await invoke<AppSettings>("set_recent_max_results", {
-        maxResults,
-      });
-      setAppSettings(updated);
-    } catch (e) {
-      setRecentSettingsError(String(e));
-    }
-  }, []);
+  const setRecentMaxResults = useCallback(
+    async (maxResults: number): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_recent_max_results", {
+          maxResults,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
+
+  // /recent の「表示対象設定」の保存専用。フォルダ詳細設定モーダルの `setFolderSettings`
+  // と同じ一括保存パターン（成功時は `null`、失敗時はエラーメッセージ文字列を返す）を
+  // 踏襲する。エラー表示は呼び出し元（RecentFilesSettings）のローカル state を使う
+  // （呼び出しキーワード・保持期間・最大表示件数の保存失敗時と同じ state で共有する）。
+  const setRecentDisplaySettings = useCallback(
+    async (detail: RecentDisplaySettings): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_recent_display_settings", {
+          includeFolders: detail.includeFolders,
+          extensionFilterMode: detail.extensionFilterMode,
+          blacklistExtensions: detail.blacklistExtensions,
+          whitelistExtensions: detail.whitelistExtensions,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
 
   const setOcrEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_ocr_enabled", {
@@ -237,44 +276,30 @@ export function useSettings(showSettings: boolean) {
   }, []);
 
   // フォルダごとの詳細設定ダイアログの「保存」ボタン専用。他の set_* と異なり
-  // 一括保存のため、成功/失敗を戻り値の真偽値で返す（呼び出し側はこれを見て
-  // モーダルを閉じるか、エラー表示のまま開いた状態を維持するかを判断する）。
+  // 一括保存のため、成功時は `null`、失敗時はエラーメッセージ文字列を返す（呼び出し側は
+  // これを見てモーダルを閉じるか、エラー表示のまま開いた状態を維持するかを判断する）。
   const setFolderSettings = useCallback(
-    async (path: string, detail: FolderDetailSettings) => {
-      setFolderSettingsError(null);
+    async (
+      path: string,
+      detail: FolderDetailSettings
+    ): Promise<string | null> => {
       try {
         const updated = await invoke<FolderEntry[]>("set_folder_settings", {
           path,
           maxDepth: detail.maxDepth,
           includeFolders: detail.includeFolders,
           extensionFilterMode: detail.extensionFilterMode,
-          extensions: detail.extensions,
+          blacklistExtensions: detail.blacklistExtensions,
+          whitelistExtensions: detail.whitelistExtensions,
         });
         setFolders(updated);
-        return true;
+        return null;
       } catch (e) {
-        setFolderSettingsError(String(e));
-        return false;
+        return String(e);
       }
     },
     []
   );
-
-  const resetFolderSettingsError = useCallback(() => {
-    setFolderSettingsError(null);
-  }, []);
-
-  const resetClipboardSettingsError = useCallback(() => {
-    setClipboardSettingsError(null);
-  }, []);
-
-  const resetRecentSettingsError = useCallback(() => {
-    setRecentSettingsError(null);
-  }, []);
-
-  const resetSystemCommandKeywordErrors = useCallback(() => {
-    setSystemCommandKeywordErrors({ shutdown: null, restart: null, sleep: null });
-  }, []);
 
   return {
     appSettings,
@@ -282,14 +307,6 @@ export function useSettings(showSettings: boolean) {
     appSettingsRef,
     settingsLoaded,
     folders,
-    clipboardSettingsError,
-    resetClipboardSettingsError,
-    recentSettingsError,
-    resetRecentSettingsError,
-    systemCommandKeywordErrors,
-    resetSystemCommandKeywordErrors,
-    folderSettingsError,
-    resetFolderSettingsError,
     setFileSearchEnabled,
     setCalcEnabled,
     setCopyWithComma,
@@ -305,6 +322,7 @@ export function useSettings(showSettings: boolean) {
     setRecentKeyword,
     setRecentMaxAgeDays,
     setRecentMaxResults,
+    setRecentDisplaySettings,
     setOcrEnabled,
     setCheckUpdateOnStartup,
     setPathPasteEnabled,

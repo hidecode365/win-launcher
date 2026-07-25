@@ -232,21 +232,23 @@ win-launcher/
 ### 検索フォルダごとの詳細設定（Rust / フロントエンド）
 
 - 設定画面「ファイル検索」タブの検索フォルダ一覧の各行に歯車アイコンボタンを配置し、押下すると `FolderDetailSettingsModal.tsx` が中央オーバーレイのモーダルとして開く（既存の削除確認モーダル・`SystemCommandModal` と同じ `absolute inset-0` オーバーレイパターンを踏襲）
-- データ構造：Rust の `FolderEntry`（`folders: FolderEntry[]`。「設定画面」節を参照）に既存の `path`/`enabled` と並べてフォルダごとの詳細設定4項目を追加した
+- データ構造：Rust の `FolderEntry`（`folders: FolderEntry[]`。「設定画面」節を参照）に既存の `path`/`enabled` と並べてフォルダごとの詳細設定5項目を追加した
   - `max_depth: u32`（検索階層数。デフォルト3。バリデーション範囲は1〜20）
   - `include_folders: bool`（フォルダ自体を検索対象に含めるか。デフォルト `false`）
   - `extension_filter_mode: ExtensionFilterMode`（`"blacklist"` | `"whitelist"` の2値 enum。`#[serde(rename_all = "camelCase")]` により JS 側は小文字の文字列として扱う。デフォルト `"blacklist"`）
-  - `extensions: Vec<String>`（拡張子タグの配列。デフォルト空。保存時に Rust 側でトリム・先頭 `.` 除去・小文字化・重複除去を行ってから保存する）
-  - 新規4フィールドはすべて `#[serde(default = ...)]` を付与している。旧バージョンで保存された `folders` エントリ（これらのキーを持たない）を読み込んだ場合、deserialize 時にこのデフォルト値（3階層・フォルダ非対象・ブラックリスト空）が自動的に補われる（要件の「既存フォルダへのデフォルト値自動適用」はこの serde のデフォルト補完機構でそのまま満たされ、マイグレーション処理は別途必要ない）
+  - `blacklist_extensions: Vec<String>` / `whitelist_extensions: Vec<String>`（拡張子タグの配列。いずれもデフォルト空。保存時に Rust 側でトリム・先頭 `.` 除去・小文字化・重複除去を行ってから保存する）
+    - **ブラックリスト用・ホワイトリスト用を独立フィールドとして持たせている理由**：当初は `extensions: Vec<String>` という単一フィールドを両モードで共有していたが、これだと「ブラックリストで入力したタグ一覧を、ホワイトリストに切り替えた瞬間に流用してしまう（あるいはその逆）」という、ユーザーの意図しないデータ共有が起きる。ブラックリスト（除外リスト）とホワイトリスト（許可リスト）は意味的に全く別物であり、モードを行き来しながらそれぞれ別のタグ集合を組み立てたいユースケース（例：一旦ホワイトリストで絞り込みを試してから、ブラックリストでの除外運用に戻す）を考えると、値を共有する設計は構造的に誤りと判断し、2フィールドに分離した。フロントエンド（`FolderDetailSettingsModal.tsx`）側もこれに合わせて `blacklistExtensions`/`whitelistExtensions` の2つの state を持ち、`filterMode` に応じてどちらを表示・編集するかを `activeExtensions`/`setActiveExtensions` で切り替える（タグの追加・削除ハンドラ自体は1本のまま、対象リストだけを動的に differ させる構成。モード自体はラジオボタンで即座に切り替わるが、切替時に他方のリストを破棄する処理は行わない＝入力内容は保持される）
+  - 新規5フィールドはすべて `#[serde(default = ...)]` を付与している。旧バージョンで保存された `folders` エントリ（これらのキーを持たない）を読み込んだ場合、deserialize 時にこのデフォルト値（3階層・フォルダ非対象・ブラックリスト空・ホワイトリスト空）が自動的に補われる（要件の「既存フォルダへのデフォルト値自動適用」はこの serde のデフォルト補完機構でそのまま満たされ、マイグレーション処理は別途必要ない）
+  - **単一 `extensions` フィールドから `blacklist_extensions`/`whitelist_extensions` の2フィールドへ移行した際のマイグレーション方針（決め打ちでリセット）**：旧フィールド名 `extensions` で保存されていた既存データは、どちらのリストへ引き継ぐかの一意な正解がない（ブラックリストとして保存されていたタグをホワイトリストへ引き継ぐのは明らかに誤りだが、「保存時点の `extensionFilterMode` に応じて機械的に振り分ける」ような救済ロジックを組んでも、後から手動でモードだけ切り替えて放置していたデータ等では実態と食い違いうる）。本機能はリリース直後（v0.8.0）で実利用者が少なく設定の消失を許容できる時期だったため、複雑な引き継ぎロジックは実装せず、フィールド名の変更（`extensions` → 新2フィールド）によって旧キーが単純に無視され、`#[serde(default)]` で両リストとも空にリセットされる、という serde の既定動作にそのまま委ねている。今後同種の「意味が変わるフィールド分割」を行う場合も、リリース初期で影響範囲が小さいと判断できるなら同様に決め打ちリセットを優先し、複雑な移行コードを書かないこと
   - `FolderEntry::new(path)` コンストラクタで新規フォルダ登録時（`add_folder`／`add_search_folder_from_paste` の両方）にも同じデフォルト値を設定する（`FolderEntry { path, enabled: true }` のようなリテラル構築を残すと新フィールドの初期値がその都度バラバラになりうるため、コンストラクタに一本化した）
-- 保存 UI：モーダルは「保存」「キャンセル」ボタンを持つ一括保存方式とする。他の設定タブ（ON/OFF は変更immediate、テキスト/数値は「保存」ボタンで個別 invoke）とは異なり、このモーダルは4項目をローカル state（ドラフト）で保持し、「保存」押下時に `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, extensions)` を一度だけ呼ぶ。「キャンセル」はドラフトを破棄してモーダルを閉じるのみで、invoke を呼ばない
+- 保存 UI：モーダルは「保存」「キャンセル」ボタンを持つ一括保存方式とする。他の設定タブ（ON/OFF は変更immediate、テキスト/数値は「保存」ボタンで個別 invoke）とは異なり、このモーダルは5項目をローカル state（ドラフト）で保持し、「保存」押下時に `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` を一度だけ呼ぶ。「キャンセル」はドラフトを破棄してモーダルを閉じるのみで、invoke を呼ばない
   - `useSettings.ts` の `setFolderSettings` は成功/失敗を真偽値で返す（他の `set_*` 系フックが `AppSettings` を返すのと違うパターン）。`FileSearchSettings.tsx` はこの戻り値を見て、成功時のみモーダルを閉じ、失敗時はエラーメッセージ（`folderSettingsError`）を表示したままモーダルを開いた状態を維持する
 - 拡張子タグ入力 UI：`FolderDetailSettingsModal.tsx` 内にタグ形式の入力欄を実装（1件ずつテキスト入力→Enterまたは「追加」ボタンでタグ化、各タグに削除ボタン付き）。汎用コンポーネントへの切り出しは行わず、このモーダル専用のローカル実装とした（他画面での再利用箇所が今のところないため）
 - 検索ロジックへの反映（`search_files`、Rust）
   - `WalkDir::new(...).max_depth(dir.max_depth as usize)` でフォルダごとの階層数を反映する（従来の全フォルダ共通ハードコード値 `5` を置き換え）
   - `entry.depth() == 0`（走査ルート＝検索フォルダ自身）は `include_folders` の値に関わらず常にスキップする
   - `is_dir && dir.include_folders` の場合のみディレクトリエントリを結果候補に含める。ファイル（`is_file`）は従来通り常に候補
-  - 拡張子フィルタリング（`passes_extension_filter`）はファイルのみに適用し、ディレクトリには適用しない。ブラックリストは空リストなら常に許可、ホワイトリストは空リストなら常に拒否（`*` のような全許可特殊タグは実装しない。空ホワイトリストは意図的に「0件」を意味する）。拡張子を持たないファイルは、ブラックリストの個々のタグに一致しようがないため許可、ホワイトリストの個々のタグに一致しようがないため拒否、という扱いになる
+  - 拡張子フィルタリング（`passes_extension_filter`）はファイルのみに適用し、ディレクトリには適用しない。`dir.extension_filter_mode` に応じて `dir.blacklist_extensions`／`dir.whitelist_extensions` のどちらを使うかを呼び出し側（`search_files`）で選んでから渡す。ブラックリストは空リストなら常に許可、ホワイトリストは空リストなら常に拒否（`*` のような全許可特殊タグは実装しない。空ホワイトリストは意図的に「0件」を意味する）。拡張子を持たないファイルは、ブラックリストの個々のタグに一致しようがないため許可、ホワイトリストの個々のタグに一致しようがないため拒否、という扱いになる
   - アイコン取得（`shell_icon::get_icon_data_url`）はファイル・フォルダ双方に対して既存のまま動作する（`SHGetFileInfoW` はディレクトリにも有効なため、フォルダ結果にもエクスプローラーと同じフォルダアイコンが付く。個別対応不要）
 
 ### 設定画面（Rust / フロントエンド）
@@ -258,8 +260,8 @@ win-launcher/
   - input のローカルハンドラに持たせると、WebView2 のフォーカス状態や Ctrl+S の既定動作（ページ保存）の影響で発火しないことがあるため
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
-  - `folders: { path, enabled, maxDepth, includeFolders, extensionFilterMode, extensions }[]`（ファイル検索カテゴリの検索フォルダ一覧。`maxDepth`/`includeFolders`/`extensionFilterMode`/`extensions` はフォルダごとの詳細設定。詳細は「検索フォルダごとの詳細設定」節を参照）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, ocrEnabled, checkUpdateOnStartup, pathPasteEnabled }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照））
+  - `folders: { path, enabled, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions }[]`（ファイル検索カテゴリの検索フォルダ一覧。`maxDepth`/`includeFolders`/`extensionFilterMode`/`blacklistExtensions`/`whitelistExtensions` はフォルダごとの詳細設定。詳細は「検索フォルダごとの詳細設定」節を参照）
+  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, recentMaxAgeDays, recentMaxResults, recentIncludeFolders, recentExtensionFilterMode, recentBlacklistExtensions, recentWhitelistExtensions, ocrEnabled, checkUpdateOnStartup, pathPasteEnabled }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照）。`recentIncludeFolders`/`recentExtensionFilterMode`/`recentBlacklistExtensions`/`recentWhitelistExtensions` は `/recent` の「表示対象設定」で、デフォルトはそれぞれ `false`/`"blacklist"`/空配列/空配列（詳細は「/recent の表示対象設定」節を参照））
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（プレフィックスコマンド候補の使用履歴。`frecency` と同形式・同方式で、キーがファイルパスではなく呼び出し文字列（`/shutdown` 等）になる。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「プレフィックスコマンド候補表示」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
@@ -273,10 +275,47 @@ win-launcher/
   - **システムコマンド**：機能 ON/OFF トグル＋シャットダウン・再起動・スリープそれぞれの呼び出しキーワードの独立したテキスト入力（3つの入力欄。1つの共通プレフィックス設定ではない。「システムコマンド機能」節を参照）
   - **Web検索**：機能 ON/OFF トグルのみ（「Web検索機能」節を参照）
   - **クリップボード**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力＋最大保持件数の数値入力（「クリップボード履歴」節を参照）
-  - **最近使ったファイル**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力（「最近使ったファイル一覧」節を参照）
+  - **最近使ったファイル**：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力＋保持期間・最大表示件数の数値入力＋表示対象設定（フォルダを対象に含めるか・拡張子フィルタリング）（「最近使ったファイル一覧」「/recent の表示対象設定」の各節を参照）
   - **OCR**：機能 ON/OFF トグルのみ（「OCR機能」節を参照）
 - 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_system_command_keyword` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_recent_files_enabled` / `set_recent_keyword` / `set_ocr_enabled` / `set_check_update_on_startup` / `set_path_paste_enabled`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
 - フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定（計算モード／プレフィックスコマンド候補表示モード／ファイル検索／Web検索行の表示／クリップボード履歴モード）に反映する。OFF の機能は対応する Tauri コマンド（`calculate` / `search_files`、プレフィックスコマンド候補表示、Web検索行の表示、クリップボード履歴モードへの切替）自体を呼び出さない・表示しない
+
+#### 設定画面の共通レイアウト・保存方針（フロントエンド）
+
+全タブに共通のレイアウト・保存ルール（REQUIREMENTS.md「設定画面」節の「共通レイアウト・保存方針（全カテゴリ共通）」を参照）を、以下の共通コンポーネント・共通フックで実現している。タブごとに個別実装せず、新しいタブ・設定項目を追加する際もこれらを再利用すること。
+
+**縦ラインによる区切りは、設定画面のどの箇所でも使用しない。** `SettingsGroup`（後述）がカード背景・左端の縦ラインを使わない設計であることに加え、タブ内で個別に要素をグルーピングしたい場合（例：起動ホットキーの修飾キー群とプルダウンの境目）も `border-l` 等の縦の区切り線を新設せず、`gap` による余白の広さだけで区別を表現する。過去に「全般」タブのホットキー設定で `border-l` を使った独自の区切りを入れたことがあったが、間隔が開きすぎる副作用を招いたうえこの方針にも反していたため、gap のみの表現に統一した（詳細は後述の「全般」タブの記述を参照）。
+
+- **階層構造（インデント）**：`SettingsIndent`（`src/components/SettingsIndent.tsx`）が担う。`pl-7` の左インデントのみを行う薄いラッパーで、各タブは「親 `FeatureToggle`」＋「`SettingsIndent` で包んだ従属設定群」という構成にする
+  - `disabled` prop を渡すとグレーアウト・操作不可（`opacity-40 pointer-events-none`）になる。ただしこのグレーアウトは「計算・変換」タブの機能ブロック単位（後述の `FeatureBlock`）でのみ使用する既存挙動を維持したもので、システムコマンド／クリップボード／最近使ったファイル／ファイル検索／OCR の各タブでは `disabled` を渡さず、機能 OFF 時も従属設定は編集可能なまま（従来の挙動を維持）
+  - `className` prop でレイアウト（`flex flex-col gap-*` 等）を上書きできる。ファイル検索タブの検索フォルダ一覧のように `flex-1 min-h-0` を必要とする特殊なレイアウトはこの prop で個別対応する
+  - `FeatureBlock`（`src/components/FeatureBlock.tsx`。既存。「計算・変換」タブの機能ブロックで使用）は内部で `SettingsIndent` を利用するようリファクタリングした（`FeatureToggle` ＋ `SettingsIndent disabled={!checked}` の組み合わせに委譲。見た目・挙動は変更していない）
+- **設定グループの表現**：`SettingsGroup`（`src/components/SettingsGroup.tsx`）が担う。要素順は「小見出し → 区切り線 → 説明文（任意）→ 子要素（設定項目）」で、カード背景・左端の縦ラインは使わない。**タブ内で複数の設定項目（または検索フォルダ一覧のような単一のリスト型設定）をまとめて示す見出しは、必ずこのコンポーネントを使うこと**（プレーンな `text-sm font-medium ...` の div を見出し代わりに使わない）。現在の使用箇所：「全般」タブの「起動ホットキー」（説明文あり）、「ファイル検索」タブの「検索フォルダ」（説明文なし）、「最近使ったファイル」タブの「表示対象設定」（説明文なし）
+  - 区切り線は小見出しの直下（数px程度の狭い間隔）に配置する。説明文や設定項目との間に置くと「見出しの下線」ではなく単なる仕切り線に見えてしまうため、必ず小見出し直後に置く
+  - 区切り線は `<hr>` ではなく `border-t` を持つ `div` で明示的に描画する（`<hr>` は Tailwind の preflight リセットの影響で意図した太さ・色で描画されず、実際にほぼ視認できなくなる事例があったため）。色も通常の項目間セパレータ（`border-gray-200/60`）より濃い `border-gray-300` にし、確実に視認できる濃さにする
+  - グループ小見出しは、サイズ・太さを通常の項目ラベル（`text-sm font-medium text-gray-800`）と揃え、色のみ一段抑える（`text-gray-700`）。「項目ラベルより目立たなくする」のではなく「項目ラベルとは役割が違う」ことが伝わるようにするための、控えめな差別化に留める（サイズまで落とすと単なるキャプションに見え、グループの起点としての存在感がなくなることが分かったため、サイズは通常ラベルと同等に戻した経緯がある）
+  - `description` prop は省略可能。グループの意味が自明でない場合にのみ使う。「表示対象設定」に元々付いていた説明文（「フォルダごとではなく `/recent` 機能全体で共有する設定」という趣旨の文言）は、ファイル検索側のフォルダ単位設定との内部的な対比を説明しているだけで、このタブしか見ないユーザーには意味が伝わらないと判断し削除した（同種の「実装上の対比を説明するだけの補足」は今後も description に含めないこと）
+  - グループ開始前の余白は、呼び出し側の flex gap（多くの場合 `gap-4` = 16px）に依存せず、`SettingsGroup` 自身が既定で `mt-8`（32px、目安2倍）を持つことで、通常の項目間の余白より明確に広い余白を保証する
+  - `className`（既定 `"mt-8"`）・`contentClassName`（既定 `"mt-3 flex flex-col gap-3"`）で外側ラッパー／子要素コンテナのレイアウトを個別に上書きできる（`SettingsIndent` の `className` prop と同じ考え方）。用途の例：
+    - 「全般」タブの「起動ホットキー」はそのタブの先頭要素（上に区切るべき内容がない）なので `className=""` で既定の `mt-8` を打ち消している
+    - 「ファイル検索」タブの「検索フォルダ」は一覧をスクロール表示するため、`className="mt-8 flex-1 flex flex-col min-h-0"` / `contentClassName="mt-3 flex-1 flex flex-col min-h-0 gap-2"` で `flex-1`/`min-h-0` を伝播させている
+  - 「ファイル検索」タブの検索フォルダ一覧は、各行の `max-w-md` で一覧全体の最大幅を制限している（`FileSearchSettings.tsx`）。フォルダ名（行左端、`flex-1 min-w-0 truncate`）と詳細設定／削除アイコン（行右端）が同一行内にあるため、行がパネル幅いっぱいに広がるウィンドウ幅の広い環境では両者の距離が開きすぎ、どのフォルダに対する操作アイコンか対応が取りにくくなる。行ごとにアイコンをフォルダ名の直後へ寄せる方式（可変幅）ではなく、一覧全体に固定の最大幅を設ける方式を採用した（複数行にわたってアイコンの位置が縦に揃い、スキャンしやすいため）。以前あった、一覧を設定パネルの右端まで見せかけ上ブリードさせる `-mr-4` の負のマージンは、この上限幅の導入に伴い意味を失うため削除した
+- **保存モデル（一括保存）**：
+  - `useSettingsDraft<T>(committedValue, isEqual?)`（`src/hooks/useSettingsDraft.ts`）：テキスト・数値・タグ入力1項目分のドラフト state を管理する共通フック。`[draft, setDraft, isDirty]` を返す。`committedValue`（保存済みの値＝props）が変化するたびドラフトを再同期し、`isDirty` はドラフトと `committedValue` の差分から都度算出する（別 state を持たない）。配列（拡張子タグ等）を扱う場合は第2引数に `arraysEqual`（`src/lib/arrayUtils.ts`）等の等価判定関数を渡す
+  - `SettingsSaveBar`（`src/components/SettingsSaveBar.tsx`）：タブ末尾に置く単一の「保存」ボタン＋「未保存の変更があります」表示＋エラー表示をまとめた共通コンポーネント。`isDirty` が `false` の間はボタンを無効化する
+  - 各タブは複数の `useSettingsDraft` を束ね、`isDirty`（OR）と `handleSave`（ダーティなフィールドだけを対象コマンドへ直列で保存）をタブコンポーネント側に実装する。直列保存は「ダーティな項目を先頭から順に保存し、いずれかが失敗した時点で打ち切る」方式で統一している（クリップボード／最近使ったファイルのように複数フィールドが単一のエラー文字列 state を共有するタブで、後続フィールドの保存成功が先行フィールドの失敗表示を上書き・消去してしまう事故を避けるため）。この直列保存を可能にするため、対象の `set_*` 系フックコールバック（`useSettings.ts` の `setSystemCommandKeyword` / `setClipboardPrefix` / `setClipboardMaxItems` / `setRecentKeyword` / `setRecentMaxAgeDays` / `setRecentMaxResults` / `setRecentDisplaySettings` / `setFolderSettings`、`useHotkey.ts` の `setHotkey`）は、**成功時は `null`、失敗時はエラーメッセージ文字列（`Promise<string | null>`）を返す**契約に統一している（旧 `Promise<boolean>` からの変更経緯は次項「エラー状態の保持場所」を参照）。呼び出し元は戻り値が非 `null` ならその文字列をそのままエラー表示に使う
+  - トグル・チェックボックス・ラジオボタンは引き続き操作した時点で即時保存する（`onChange` から直接 `set_*` を呼ぶ、従来通りのパターン）。「最近使ったファイル」タブの「フォルダを対象に含める」トグルは、同じグループ内の拡張子フィルタリング（タグ入力＝一括保存対象）とは独立して即時保存する（トグル変更時は `extensionFilterMode`/`blacklistExtensions`/`whitelistExtensions` の**保存済み**の値をそのまま使って `set_recent_display_settings` を呼び、未保存のタグ編集内容を巻き込まない）
+  - タブ切り替え時の未保存変更の破棄は追加コードなしで実現している：`SettingsPanel` は選択中のタブのみを条件付きレンダリングしており（他タブは unmount される）、`useSettingsDraft` のドラフト state はタブコンポーネントのローカル state のため、タブ切り替え時の unmount で自動的に破棄される
+- **エラー状態の保持場所（設計原則）**：バリデーションエラー（保存失敗時のメッセージ）は、**そのエラーを表示するタブ／モーダルコンポーネント自身のローカル state として保持する**。`App.tsx` の `useSettings`/`useHotkey` のようなタブより上位のフックには一切持たせない
+  - **経緯（不具合とその原因）**：ドラフト state をタブコンポーネントのローカルに統一した際、エラー state だけは `useSettings.ts`/`useHotkey.ts`（`App.tsx` で1度だけマウントされ、`SettingsPanel` が開いている間ずっと生き続ける）に取り残されていた。その結果、例えば「クリップボード」タブで「最大保持件数」に不正な値を入力・保存してエラーを表示させたあと、別タブへ切り替えて戻ってきても、そのエラーメッセージが消えずに残る不具合があった（`clipboardSettingsError` はタブが unmount されても影響を受けない、タブより上位の state だったため）
+  - **横並び調査の結果**：同一パターン（バリデーションエラーが `useSettings.ts`/`useHotkey.ts` 側の state として保持され、対応する `reset*Error` 関数が `App.tsx` の `closeSettings`（パネルを閉じた時のみ）からしか呼ばれない）が、`hotkeyError`（全般タブ）／`clipboardSettingsError`（クリップボードタブ）／`recentSettingsError`（最近使ったファイルタブ）／`systemCommandKeywordErrors`（システムコマンドタブ）／`folderSettingsError`（フォルダ詳細設定モーダル）の**5箇所全てに共通して存在していた**（`folderSettingsError` は、モーダルを開く直前に呼び出し元が明示的に `onResetFolderSettingsError()` を呼ぶ個別対応が既に入っていたため症状は表面化していなかったが、同じ構造的弱さを抱えていた）
+  - **原因の性質の判定**：特定のタブの実装ミスではなく、「エラー state の保持場所」というこの設定画面全体の設計に共通する構造的な弱さと判定した。ドラフト state は既にタブローカルに統一されていた（unmount で自動破棄される）のに対し、エラー state だけが取り残されていたという非対称性がある以上、1タブだけを個別に直しても他の4箇所が同じ形で再発するのは確実であり、全体設計の見直しを行った
+  - **検討した設計案**：(1) `SettingsPanel` のタブ切り替えハンドラで全エラー state の `reset*Error` をまとめて呼ぶ（対症療法。新しいタブ・新しいエラー state を追加するたびに、この1箇所への追加登録を手動で行うことを求め続ける必要があり、"忘れたら同じ不具合が再発する" という構造が残る）／(2) **エラー state 自体をタブ／モーダルコンポーネントのローカル state に変更する**（ドラフト state と同じ mount ライフサイクルに乗せることで、"unmount されたら消える" という既に信頼されている仕組みだけで自動的に正しくなる。新しいタブを追加する開発者が特別な配線を意識する必要がない）。(2) を採用した。理由：(1) は場当たり的な追加登録を要求し続ける点で「モグラ叩き」の再発を構造的に防げないのに対し、(2) は「エラーの寿命は、それを表示する UI の寿命と一致するべき」という単純な原則に沿っており、今後 SettingsPanel に新しいタブ・新しい保存項目が追加された場合も、単に `useState` をそのタブ内に置くという通常の実装パターンに従うだけで自動的に正しい挙動になる
+  - **適用した変更**：`useSettings.ts`/`useHotkey.ts` 側の `xxxError` state・`setXxxError`・`resetXxxError` を全廃し、対応する `set_*` コールバックの戻り値を `Promise<boolean>` から `Promise<string | null>`（成功時 `null`、失敗時エラーメッセージ）に変更した。呼び出し元（`GeneralSettings`/`SystemCommandSettings`/`ClipboardSettings`/`RecentFilesSettings`/`FolderDetailSettingsModal`）はそれぞれ `useState<string | null>` でエラーをローカルに保持し、`handleSave`（またはモーダルの `handleSave`）が戻り値を見て `setError` する。`App.tsx` の `closeSettings` から5つの `reset*Error` 呼び出しをすべて削除した（呼び出す対象の関数自体が存在しなくなったため）
+  - **副次的な単純化**：`FolderDetailSettingsModal` は `detailTarget` が `null` → フォルダオブジェクトに変わるたびに新規マウントされる（フォルダ→別フォルダへ直接遷移することはなく、必ず一度 `null` を経由する）ため、エラー state をモーダル自身のローカルに持たせるだけで「モーダルを開くたびにエラー表示がリセットされる」が自動的に成り立つ。これにより、以前 `FileSearchSettings.tsx` の歯車アイコンの `onClick` にあった `onResetFolderSettingsError()` の明示呼び出し（モーダルを開く直前に手動でエラーをリセットする個別対応）が不要になり削除できた
+- **対象外**：`FolderDetailSettingsModal`（検索フォルダの詳細設定ダイアログ）のレイアウト・保存ボタンの配置は本節の共通レイアウトルールの対象外。モーダル自身の「保存」「キャンセル」ボタンによる一括保存（従来通り）を維持する。ただし上記「エラー状態の保持場所」の原則（エラーをそのコンポーネント自身のローカル state に持つ）はレイアウトルールとは別の話であり、このモーダルにも適用されている
+- 「全般」タブ・「このアプリについて」タブは、タブ全体を表す単一の ON/OFF 機能が存在しないため、親 `FeatureToggle` ＋ `SettingsIndent` の構成は採用していない。「全般」タブのホットキーは元々タブ内専用の「保存」ボタンを持つ深い保存パターン（構成が複数コントロール＝チェックボックス＋プルダウンにまたがり、"少なくとも1つの修飾キー" のバリデーションを要するため、チェックボックス単体の即時保存にはできない）だったため、専用ボタンをタブ末尾の `SettingsSaveBar` に置き換える形で一括保存モデルへ統一した。「起動ホットキー」の見出し自体も他タブのグループ見出しと表現を揃えるため `SettingsGroup`（`className=""` で既定の `mt-8` を打ち消し、タブ先頭要素として不要な余白が生まれないようにしている）でラップしている
+  - ホットキーの入力コントロール（修飾キー Ctrl/Alt/Shift/Win のチェックボックス群＋通常キーのプルダウン＋現在の組み合わせのプレビュー表示）は、`flex flex-wrap` の1行レイアウトに統一している（配置順は Ctrl → Alt → Shift → Win → プルダウン → プレビュー）。修飾キーのチェックボックス群とプルダウン＋プレビューのグループは、外側コンテナの `gap-4`（修飾キー同士の間隔と同じ量）のみで区切る。当初は `border-l`（縦の区切り線）＋左右の余白（`ml-6 pl-6`）で境目を明示していたが、間隔が開きすぎて「ひとつのホットキー設定」に見えなくなったこと、また縦ラインによる区切りは本節冒頭の共通方針（後述）に反することから、gap のみに戻した。ウィンドウ幅が狭い場合は `flex-wrap` によりプルダウン＋プレビューのグループごと次の行へ折り返す（要素単位でバラバラに折り返さない）
 
 ### 計算機能（Rust / フロントエンド）
 
@@ -384,7 +423,7 @@ win-launcher/
 - 取得（Rust、`recent_files.rs`）：`get_recent_files()`（Rust コマンド）が以下2フォルダの直下（非再帰）を走査し、`.lnk`（ショートカット）・`.url`（インターネットショートカット）を最終アクセス日時（由来ファイル自体の mtime）降順で最大 `MAX_SEARCH_RESULTS`（50）件返す
   1. Windows の Recent フォルダ：Known Folder API（`SHGetKnownFolderPath(&FOLDERID_Recent, ...)`）で取得する。環境によって実パスが異なり得るためハードコードしない
   2. Office の Recent フォルダ（`%APPDATA%\Microsoft\Office\Recent`）：対応する Known Folder API が存在しないため `%APPDATA%` 環境変数からパスを組み立てる
-  - `.lnk`：`lnk` クレートの `ShellLink::open` でパースし `link_target()` でリンク先ローカルパスを取得する。リンク先がフォルダ、または実在しない場合は除外する。`link_target()` は `lnk` クレート側の制約で `panic` しうるため `catch_unwind` で保護し、1件の異常な `.lnk` がプロセス全体を巻き込まないようにする（release ビルドは `panic = "abort"` のため素通しは致命的）
+  - `.lnk`：`lnk` クレートの `ShellLink::open` でパースし `link_target()` でリンク先ローカルパスを取得する。リンク先が実在しない場合は除外する。リンク先がフォルダの場合の扱い・拡張子フィルタリングの適用は「/recent の表示対象設定」節を参照。`link_target()` は `lnk` クレート側の制約で `panic` しうるため `catch_unwind` で保護し、1件の異常な `.lnk` がプロセス全体を巻き込まないようにする（release ビルドは `panic = "abort"` のため素通しは致命的）
     - 文字コード：`ShellLink::open` はエンコーディング引数を要求する。固定で `WINDOWS_1252` を渡すと、`LinkInfo` の ANSI フォールバック文字列（Unicode フィールドとは別に必ず読み込まれる）が日本語（Shift-JIS）パスでデコード不能となり `Err` を返す＝一覧から静かに欠落するバグになる。`GetACP()`（Win32 API）でシステム既定 ANSI コードページを取得し、`encoding_rs` の対応エンコーディング（932 → `SHIFT_JIS` 等）を都度渡すことで解消している（`system_default_encoding`）
   - `.url`：テキスト（INI形式）としてパースし `URL=` 行の値を取得する。同期ライブラリ（個人 OneDrive 本体・OneDrive for Business の個人領域・SharePoint チームサイトの共有ライブラリ・OneDrive に追加したショートカット等）上のファイルを指す URL のみ、ローカル同期先パスへの変換を試みる（`resolve_sync_engine_local_path`）
     1. レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` 配下の全サブキーを動的に列挙し、各サブキーの `UrlNamespace`（そのドキュメントライブラリ自体のルート URL）・`FullRemotePath`（実際に同期対象としているサブフォルダの URL）・`MountPoint`（対応するローカル同期先フォルダ）を取得する（`sync_engine_mount_points`、`SyncEngineMount`）。個人・組織・複数ライブラリいずれの構成もこの同じレジストリ配下に登録されることを実地検証で確認済み
@@ -393,7 +432,7 @@ win-launcher/
        - **パーセントエンコーディングの正規化**：レジストリの `UrlNamespace`/`FullRemotePath` は生の文字列（例: `Shared Documents`）で登録される一方、`.url` の `URL=` 値はパーセントエンコード済み（例: `Shared%20Documents`）であり、両者の表記が食い違う場合がある。個人 OneDrive（`d.docs.live.net`）は基準がエンコード不要な区間（ホスト名のみ）でたまたま一致していたため表面化しなかったが、SharePoint チームサイトのように基準の文字列自体が半角スペースや日本語のサイト名等を含む場合、生の文字列同士の前方一致では不一致となり変換に失敗する（実機で SharePoint チームサイトのショートカット経由ファイルが `/recent` 一覧に出ないバグとして発見・修正済み）。これを吸収するため、比較・相対パス抽出は基準の文字列・URL 双方をパーセントデコードで正規化した文字列同士で行う（`%20` だけの個別対応ではなく、非ASCII文字も含めて救える汎用的な正規化処理にしてある）
        - ショートカット名（`MountPoint` に対応するローカルフォルダ名）をユーザーが変更しても、OneDrive クライアント側の同期タイミングに応じてレジストリの `MountPoint` 値が追従して更新される（反映まで数分〜PC再起動を要する場合がある）ため、アプリ側で特別な対応・注釈は不要と判断している
     3. マッチした残りの相対パス（正規化済み）を `MountPoint` と結合してローカルパスを組み立てる。実在確認は呼び出し元（`process_url`）が行う
-    - 表示名はファイル名から末尾の `.url` を除いたもの。除去後に「もっともらしい拡張子」（ASCII 英数字のみの拡張子）で終わらないもの（OneDrive 上のフォルダ的参照）は、フォルダを除外する既存ルールに従い一覧から除外する（`has_plausible_extension`）
+    - 表示名はファイル名から末尾の `.url` を除いたもの。除去後に「もっともらしい拡張子」（ASCII 英数字のみの拡張子）で終わらないもの（OneDrive 上のフォルダ的参照）の扱い・拡張子フィルタリングの適用順序は「/recent の表示対象設定」節を参照（`has_plausible_extension`）
     - ソートキーは変換の成否に関わらず `.url` 自体の mtime
   - Windows の Recent フォルダと Office の Recent フォルダの両方に同一のローカルパスを指すエントリが存在する場合は1件に統合する（mtime が新しい方を採用）。`.lnk` 由来・`.url` 由来（ローカルパス変換成功済み）を問わず同じ統合ロジックを適用する
 - モード切替・フィルタ・表示（フロントエンド、`useSearch.ts`）
@@ -402,7 +441,26 @@ win-launcher/
   - `RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する（`RecentFile.path` は `.lnk`/`.url` いずれも実在確認済みのローカルパスに統一されているため、起動処理を由来で分岐する必要がない）
   - ファイル検索結果・計算結果・URLエンコード/デコード結果との関係は他のプレフィックスモードと同様に排他（`recentMode` の間は `search_files` を呼ばず、それらを表示しない）
   - frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）
-- 設定画面の「最近使ったファイル」カテゴリ：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力（`RecentFilesSettings.tsx`）
+- 設定画面の「最近使ったファイル」カテゴリ：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力＋保持期間・最大表示件数の数値入力＋「表示対象設定」（`RecentFilesSettings.tsx`。詳細は次項）
+
+#### /recent の表示対象設定（Rust / フロントエンド）
+
+- データ構造：`FolderEntry`（ファイル検索の検索フォルダごとの詳細設定）とは独立させ、`/recent` 機能全体で共有する単一のグローバル設定として `AppSettings` に直接持たせている（`folders: FolderEntry[]` のようなフォルダ単位の配列ではなく、`AppSettings` のスカラー/配列フィールドとして4つ追加した）
+  - `recent_include_folders: bool`（デフォルト `false`）
+  - `recent_extension_filter_mode: ExtensionFilterMode`（ファイル検索と同じ enum を再利用。デフォルト `"blacklist"`）
+  - `recent_blacklist_extensions: Vec<String>` / `recent_whitelist_extensions: Vec<String>`（デフォルトいずれも空）。ブラックリスト用・ホワイトリスト用を独立フィールドとして持たせる理由は「検索フォルダごとの詳細設定」節のブラックリスト/ホワイトリスト分離と全く同じ（モード切替時に他方の入力内容を消さないため）
+  - 新規4フィールドはすべて `#[serde(default)]` を付与しており、旧バージョンの `settings.json` を読み込んだ場合も自動的にこのデフォルト値が補われる（マイグレーション処理は不要）
+  - 拡張子タグの正規化（トリム・先頭 `.` 除去・小文字化・重複除去）は `normalize_extensions`（`main.rs`）を、拡張子フィルタリングの判定は `passes_extension_filter`（`main.rs`）を、いずれもファイル検索の検索フォルダ詳細設定と共有する（`pub(crate)` にして `recent_files.rs` から `crate::normalize_extensions`/`crate::passes_extension_filter` として呼ぶ。ロジックを複製しない）
+- 保存：`set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)`（Rust コマンド）が4項目を一括保存し、更新後の `AppSettings` を返す。`set_folder_settings` と同じ「一括保存」パターンだが、対象が `folders` 配列中の1エントリではなく `AppSettings` 単体である点が異なる
+- UI（フロントエンド）：`RecentFilesSettings.tsx` の「表示対象設定」ブロックに、「フォルダを対象に含める」トグル（`FeatureToggle`）と拡張子フィルタリング編集 UI を配置する
+  - 拡張子フィルタリング編集 UI（ブラックリスト/ホワイトリストの排他選択＋タグ形式の追加・削除）は `ExtensionFilterEditor.tsx` として `FolderDetailSettingsModal.tsx` から切り出し、`RecentFilesSettings.tsx` と共有する。切り出し前は「他画面での再利用箇所が今のところない」という理由でモーダル専用のローカル実装にしていたが（「検索フォルダごとの詳細設定」節を参照）、この機能追加で2箇所目の利用箇所ができたため方針を変更した
+  - 保存は他の個別テキスト入力欄（呼び出しキーワード・保持期間・最大表示件数、それぞれ「保存」ボタンで即座に個別 invoke）とは別に、「フォルダを対象に含める」トグル＋拡張子フィルタリング（モード・両リスト）をまとめて1つのローカル draft state として保持し、単一の「保存」ボタンで `set_recent_display_settings` を一度だけ呼ぶ（`FolderDetailSettingsModal.tsx` の一括保存パターンをモーダルではなくタブ内のインライン UI として踏襲したもの）
+  - エラー表示は既存の `recentSettingsError`（呼び出しキーワード・保持期間・最大表示件数の保存エラーと共通の state）をそのまま使う。表示対象設定は数値範囲バリデーション等の失敗要因を持たないため、実質的には transport エラーのみを拾う
+- `/recent` の取得・フィルタロジックへの反映（`recent_files.rs`）
+  - `get_recent_files` の6段階パイプライン（列挙→mtime降順ソート→保持期間による足切り→表示件数上限による足切り→リンク先解決/ローカルパス変換/実在チェック→重複統合）は変更していない。「表示対象設定」の判定は5番目の段階（`process_lnk`/`process_url`）に組み込む形で追加した。そのため、拡張子フィルタリングやフォルダ除外によって対象外と判定されたエントリも、既存の「実在しない・変換失敗のエントリ」と同様に4番目の段階（件数上限による足切り）より後で除外される＝最終的な表示件数が `max_results` よりやや少なくなることがある、という既存の許容仕様がそのまま適用される（拡張子フィルタリングを制限的に使うと結果が0件に近くなりうる点は既知の制約として許容する。件数上限より前の段階まで判定を遡らせる設計変更はスコープ外とした）
+  - `.lnk`（`process_lnk`）：リンク先の実在チェック（UNC 以外）で取得した `Metadata::is_dir()` の結果を使い、フォルダなら `include_folders` に従う（`false` なら除外）。ファイルの場合のみ、リンク先ローカルパスに対して `passes_extension_filter` を適用する。UNC パス（実在チェック自体をスキップする既存仕様）はフォルダかどうか判定できないため、常にファイル扱いとして拡張子フィルタリングのみ適用する（パス文字列からの判定のみで完結し I/O 不要なため、UNC でも適用できる）
+  - `.url`（`process_url`）：**パフォーマンス最適化として、判定順序を意図的に「表示対象設定の判定が最優先」に組み替えている。** `.url` ファイル名（＝拡張子除去後の表示名）だけで拡張子フィルタリング・フォルダ的参照の判定が完結する（`.url` 本体の読み込み・`URL=` 行のパース・レジストリを使ったローカルパスへの変換のいずれも不要）ため、この判定を最初に行い、対象外と分かった時点でそれらの重い処理（特にレジストリ列挙を伴う `resolve_sync_engine_local_path`）自体を一切実行せずに早期リターンする。表示名に拡張子がない場合（フォルダ的参照）は `include_folders` に従い、拡張子がある場合は `passes_extension_filter` で判定する。この最適化は「レジストリ変換より前に拡張子フィルタ判定を行う」という要件を満たすだけでなく、`.url` 本体の読み込み自体も省略できるため、対象外の `.url` に対しては旧実装（実在チェック後に表示名のフォルダ判定のみ行っていた）よりファイル I/O ・レジストリアクセスの両方を削減できる
+  - `search_files`（ファイル検索）と同様、`ExtensionFilterMode` に応じてブラックリスト/ホワイトリストのどちらのリストを使うかは呼び出し元（`get_recent_files` Tauri コマンド）が選んでから `recent_files::get_recent_files` に渡す（`recent_files.rs` 内で `AppSettings` を直接参照しない設計を維持するため）
 
 ### 格納フォルダを開く（Shift+Enter）（Rust / フロントエンド）
 
@@ -614,7 +672,7 @@ const closeWindow = useCallback(
 | `add_folder(path)` | 検索フォルダを追加する |
 | `remove_folder(path)` | 検索フォルダを削除する |
 | `toggle_folder(path)` | 検索フォルダの有効/無効を切り替える |
-| `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, extensions)` | 指定した検索フォルダの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子フィルタリング）をまとめて保存する。`maxDepth` が1〜20の範囲外の場合はエラーを返し保存しない。拡張子タグはトリム・先頭 `.` 除去・小文字化・重複除去のうえで保存する |
+| `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | 指定した検索フォルダの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子フィルタリング）をまとめて保存する。`maxDepth` が1〜20の範囲外の場合はエラーを返し保存しない。ブラックリスト・ホワイトリストの拡張子タグはそれぞれ独立にトリム・先頭 `.` 除去・小文字化・重複除去のうえで保存する |
 | `execute_system_command(action)` | システムコマンド（`shutdown` / `restart` / `sleep`）を実行する |
 | `get_app_settings()` | ホットキー・各機能 ON/OFF（`AppSettings`）を返す |
 | `set_file_search_enabled(enabled)` | ファイル検索機能の ON/OFF を切り替えて `AppSettings` を返す |
@@ -629,7 +687,8 @@ const closeWindow = useCallback(
 | `paste_clipboard_image(id)` | `ClipboardImageCache` から `id` に対応する画像バイナリを取得し、Win32 API でクリップボードへ直接書き込む |
 | `set_recent_files_enabled(enabled)` | 最近使ったファイル一覧機能の ON/OFF を切り替えて `AppSettings` を返す |
 | `set_recent_keyword(keyword)` | 最近使ったファイル一覧の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の4キーワードのいずれかと重複する場合はエラーを返して保存しない |
-| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件） |
+| `set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）をまとめて保存して `AppSettings` を返す。`FolderEntry` とは独立した /recent 機能全体のグローバル設定。拡張子タグの正規化は `set_folder_settings` と同じ `normalize_extensions` を使う（詳細は「/recent の表示対象設定」節を参照） |
+| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件）。「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を反映する（詳細は「/recent の表示対象設定」節を参照） |
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
 | `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（`chars().all(|c| c.is_ascii_alphanumeric())`）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
 | `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |

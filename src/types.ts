@@ -31,16 +31,31 @@ export const DEFAULT_FOLDER_MAX_DEPTH = 3;
 
 // フォルダごとの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子
 // フィルタリング）の入力値。保存ボタン押下時に `set_folder_settings` へまとめて渡す。
+// ブラックリスト用・ホワイトリスト用の拡張子リストは、モード切替時に互いの
+// 入力内容を消さないよう独立したフィールドとして保持する（詳細は CLAUDE.md
+// 「検索フォルダごとの詳細設定」節を参照）。
 export interface FolderDetailSettings {
   maxDepth: number;
   includeFolders: boolean;
   extensionFilterMode: ExtensionFilterMode;
-  extensions: string[];
+  blacklistExtensions: string[];
+  whitelistExtensions: string[];
 }
 
 export interface FolderEntry extends FolderDetailSettings {
   path: string;
   enabled: boolean;
+}
+
+// /recent の「表示対象設定」の入力値。保存ボタン押下時に `set_recent_display_settings`
+// へまとめて渡す。`FolderDetailSettings` から `maxDepth`（/recent には検索階層の概念が
+// ない）を除いた形で、フォルダ単位ではなく /recent 機能全体で共有する単一の設定として
+// 扱う（詳細は CLAUDE.md 「/recent の表示対象設定」節を参照）。
+export interface RecentDisplaySettings {
+  includeFolders: boolean;
+  extensionFilterMode: ExtensionFilterMode;
+  blacklistExtensions: string[];
+  whitelistExtensions: string[];
 }
 
 export interface AppSettings {
@@ -64,6 +79,14 @@ export interface AppSettings {
   recentKeyword: string;
   recentMaxAgeDays: number;
   recentMaxResults: number;
+  // /recent の「表示対象設定」。フォルダごとの `FolderEntry` とは異なり、/recent 機能
+  // 全体で共有する単一のグローバル設定（詳細は CLAUDE.md 「/recent の表示対象設定」節を
+  // 参照）。ブラックリスト用・ホワイトリスト用の拡張子リストは独立管理とする（詳細は
+  // `FolderDetailSettings` を参照）。
+  recentIncludeFolders: boolean;
+  recentExtensionFilterMode: ExtensionFilterMode;
+  recentBlacklistExtensions: string[];
+  recentWhitelistExtensions: string[];
   pathPasteEnabled: boolean;
 }
 
@@ -88,6 +111,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   recentKeyword: "recent",
   recentMaxAgeDays: 180,
   recentMaxResults: 50,
+  recentIncludeFolders: false,
+  recentExtensionFilterMode: "blacklist",
+  recentBlacklistExtensions: [],
+  recentWhitelistExtensions: [],
   pathPasteEnabled: true,
 };
 

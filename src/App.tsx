@@ -159,21 +159,16 @@ export default function App() {
     setShowSettings(true);
   }, []);
 
+  // 設定パネル内の各タブのバリデーションエラー（ホットキー・システムコマンドの
+  // キーワード・クリップボード・最近使ったファイル・フォルダ詳細設定）は、それぞれの
+  // タブ／モーダルコンポーネントのローカル state として保持している。SettingsPanel は
+  // パネルを閉じるとまるごと unmount されるため、ここで個別にリセットする必要はない
+  // （タブ切り替え時に各タブが unmount される際も同じ理由で自動的に破棄される。詳細は
+  // CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
   const closeSettings = useCallback(() => {
     setShowSettings(false);
     setSettingsVersion((v) => v + 1);
-    hotkey.resetHotkeyError();
-    settings.resetClipboardSettingsError();
-    settings.resetRecentSettingsError();
-    settings.resetSystemCommandKeywordErrors();
-    settings.resetFolderSettingsError();
-  }, [
-    hotkey.resetHotkeyError,
-    settings.resetClipboardSettingsError,
-    settings.resetRecentSettingsError,
-    settings.resetSystemCommandKeywordErrors,
-    settings.resetFolderSettingsError,
-  ]);
+  }, []);
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
   // ステップの操作は document レベルの keydown で処理する。input 要素のローカル
@@ -485,7 +480,6 @@ export default function App() {
     return (
       <SettingsPanel
         appSettings={settings.appSettings}
-        hotkeyError={hotkey.hotkeyError}
         onSaveHotkey={hotkey.setHotkey}
         onSetFileSearchEnabled={settings.setFileSearchEnabled}
         onSetCalcEnabled={settings.setCalcEnabled}
@@ -494,17 +488,15 @@ export default function App() {
         onSetUrlConvertKeepSpaceEncoded={settings.setUrlConvertKeepSpaceEncoded}
         onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
         onSetSystemCommandKeyword={settings.setSystemCommandKeyword}
-        systemCommandKeywordErrors={settings.systemCommandKeywordErrors}
         onSetWebSearchEnabled={settings.setWebSearchEnabled}
         onSetClipboardEnabled={settings.setClipboardEnabled}
         onSetClipboardPrefix={settings.setClipboardPrefix}
         onSetClipboardMaxItems={settings.setClipboardMaxItems}
-        clipboardSettingsError={settings.clipboardSettingsError}
         onSetRecentFilesEnabled={settings.setRecentFilesEnabled}
         onSetRecentKeyword={settings.setRecentKeyword}
         onSetRecentMaxAgeDays={settings.setRecentMaxAgeDays}
         onSetRecentMaxResults={settings.setRecentMaxResults}
-        recentSettingsError={settings.recentSettingsError}
+        onSaveRecentDisplaySettings={settings.setRecentDisplaySettings}
         onSetOcrEnabled={settings.setOcrEnabled}
         onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
         onSetPathPasteEnabled={settings.setPathPasteEnabled}
@@ -514,8 +506,6 @@ export default function App() {
         onRemoveFolder={settings.removeFolder}
         onOpenFolder={settings.openFolder}
         onSaveFolderSettings={settings.setFolderSettings}
-        folderSettingsError={settings.folderSettingsError}
-        onResetFolderSettingsError={settings.resetFolderSettingsError}
         onClose={closeSettings}
       />
     );

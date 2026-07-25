@@ -537,11 +537,25 @@ pub fn resolve_lnk_target_path(_lnk_path: &std::path::Path) -> Option<String> {
 
 /// `.lnk` を1件処理する。`last_accessed` は列挙段階（`get_recent_files` の手順1）で
 /// 既に取得済みの `.lnk` 自体の更新日時をそのまま使う（ここで再取得しない）。
-/// リンク先がローカルパスの場合のみ実在チェック・フォルダ除外を行う。UNC 形式
+/// リンク先がローカルパスの場合のみ実在チェック・フォルダ判定を行う。UNC 形式
 /// （ネットワークパス）の場合は実在チェックそのものをスキップし、無条件で一覧に含める
 /// （「実在チェックとネットワークパス（UNC）の扱い」を参照）。
+///
+/// 「表示対象設定」の反映：
+/// - `include_folders` が `false` の場合、リンク先がフォルダのエントリは従来通り除外する。
+///   `true` の場合は一覧に含める（拡張子フィルタリングは適用しない。フォルダには拡張子が
+///   ないため対象外）
+/// - 拡張子フィルタリングはリンク先ローカルパスの拡張子で判定する。リンク先パスの文字列
+///   から判定可能（I/O 不要）なため、UNC でフォルダ判定自体をスキップする場合でも適用する
+///   （UNC の場合はフォルダかどうか分からないため、常にファイルとして扱う既知の制約）
 #[cfg(windows)]
-fn process_lnk(lnk_path: &std::path::Path, last_accessed: u64) -> Option<RecentFile> {
+fn process_lnk(
+    lnk_path: &std::path::Path,
+    last_accessed: u64,
+    include_folders: bool,
+    extension_filter_mode: crate::ExtensionFilterMode,
+    extensions: &[String],
+) -> Option<RecentFile> {
     use std::path::PathBuf;
 
     let target = resolve_lnk_target_path(lnk_path)?;
@@ -552,8 +566,15 @@ fn process_lnk(lnk_path: &std::path::Path, last_accessed: u64) -> Option<RecentF
             return None;
         };
         if metadata.is_dir() {
+            if !include_folders {
+                return None;
+            }
+        } else if !crate::passes_extension_filter(&target_path, &extension_filter_mode, extensions)
+        {
             return None;
         }
+    } else if !crate::passes_extension_filter(&target_path, &extension_filter_mode, extensions) {
+        return None;
     }
 
     let name = target_path
@@ -603,21 +624,53 @@ fn has_plausible_extension(name: &str) -> bool {
 
 /// `.url`（インターネットショートカット）を1件処理する。`last_accessed` は列挙段階
 /// （`get_recent_files` の手順1）で既に取得済みの `.url` 自体の更新日時をそのまま使う
-/// （変換の成否に関わらず変わらない、既存仕様）。テキスト（INI形式）としてパースし
-/// `URL=` 行の値を取得したうえで、同期ライブラリのローカルパスへの変換を試みる
-/// （`resolve_sync_engine_local_path` を参照）。ローカルパスがドライブレター形式の
-/// 場合のみ実在チェックを行い、UNC 形式（ネットワークパス）の場合はスキップして
-/// 無条件で採用する（「実在チェックとネットワークパス（UNC）の扱い」を参照）。
-/// 変換に成功し実在確認も済んだものだけを一覧に含め、以降は `.lnk` 由来のエントリと
-/// 全く同じ扱い（実在確認済みのローカルファイル）にする。それ以外は削除済みファイルと
-/// 同じ扱いとして一覧から除外する。
+/// （変換の成否に関わらず変わらない、既存仕様）。
+///
+/// パフォーマンス上の理由（「表示対象設定」節を参照）から、「表示対象設定」（フォルダを
+/// 対象に含めるか・拡張子フィルタリング）の判定を最優先で行う。この判定は `.url`
+/// ファイル名（＝拡張子除去後の表示名）だけで完結し、`.url` 本体の読み込み・`URL=` 行の
+/// パース・レジストリを使ったローカルパスへの変換（`resolve_sync_engine_local_path`。
+/// レジストリ列挙・文字列処理を伴う）のいずれも必要としないため、対象外と判定できた
+/// 時点でそれらの処理を一切行わずに早期リターンする。
+/// - 表示名に拡張子が残らないもの（OneDrive 上のフォルダ的な参照）は `include_folders`
+///   に従う（`false` なら除外、`true` なら継続。拡張子フィルタリングは適用しない）
+/// - 表示名に拡張子があるものは、その拡張子で拡張子フィルタリングを判定する
+///
+/// 上記を通過したものだけ、テキスト（INI形式）としてパースし `URL=` 行の値を取得した
+/// うえで、同期ライブラリのローカルパスへの変換を試みる（`resolve_sync_engine_local_path`
+/// を参照）。ローカルパスがドライブレター形式の場合のみ実在チェックを行い、UNC 形式
+/// （ネットワークパス）の場合はスキップして無条件で採用する（「実在チェックと
+/// ネットワークパス（UNC）の扱い」を参照）。変換に成功し実在確認も済んだものだけを
+/// 一覧に含め、以降は `.lnk` 由来のエントリと全く同じ扱い（実在確認済みのローカル
+/// ファイル）にする。それ以外は削除済みファイルと同じ扱いとして一覧から除外する。
 #[cfg(windows)]
 fn process_url(
     url_path: &std::path::Path,
     fallback_encoding: &'static encoding_rs::Encoding,
     mounts: &[SyncEngineMount],
     last_accessed: u64,
+    include_folders: bool,
+    extension_filter_mode: crate::ExtensionFilterMode,
+    extensions: &[String],
 ) -> Option<RecentFile> {
+    // ファイル名から末尾の拡張子 ".url" を1つ取り除いたものを表示名とする
+    // （Windows のエクスプローラーが .url を隠して表示するのと同じ見た目にするため）。
+    let display_name = url_path.file_stem()?.to_string_lossy().to_string();
+
+    if has_plausible_extension(&display_name) {
+        if !crate::passes_extension_filter(
+            std::path::Path::new(&display_name),
+            &extension_filter_mode,
+            extensions,
+        ) {
+            return None;
+        }
+    } else if !include_folders {
+        // 拡張子を取り除いた結果、表示名に拡張子が残らないもの（OneDrive 上のフォルダ的な
+        // 参照）の扱いは「フォルダを対象に含めるか」設定に従う。
+        return None;
+    }
+
     let content = read_text_file_lossy(url_path, fallback_encoding)?;
     let url = content
         .lines()
@@ -632,16 +685,6 @@ fn process_url(
         crate::log_debug(&format!(
             "[recent_files] resolved local path does not exist: {local_path}"
         ));
-        return None;
-    }
-
-    // ファイル名から末尾の拡張子 ".url" を1つ取り除いたものを表示名とする
-    // （Windows のエクスプローラーが .url を隠して表示するのと同じ見た目にするため）。
-    let display_name = url_path.file_stem()?.to_string_lossy().to_string();
-
-    // 拡張子を取り除いた結果、表示名に拡張子が残らないもの（OneDrive 上のフォルダ的な
-    // 参照）は「ファイルのみを対象とし、フォルダは除外する」既存ルールに従い除外する。
-    if !has_plausible_extension(&display_name) {
         return None;
     }
 
@@ -694,17 +737,29 @@ struct ShortcutCandidate {
 /// 2. 更新日時で降順ソートする
 /// 3. 更新日時が `max_age_days` より前のものを除外する
 /// 4. `max_results` で足切りする
-/// 5. ここまで絞り込んだ候補のみ、リンク先解決・ローカルパス変換・実在チェック
-///    （UNC 除外ルールを含む）を行う
-/// 6. 5 の結果、実在しない・変換失敗のものはこの時点で除外する（3・4 で切り捨てた候補
-///    まで遡って再チェックしない。最終的な表示件数が `max_results` よりやや少なくなる
-///    ことがあるが、許容する仕様）
+/// 5. ここまで絞り込んだ候補のみ、「表示対象設定」（フォルダを対象に含めるか・拡張子
+///    フィルタリング）の判定、リンク先解決・ローカルパス変換・実在チェック（UNC 除外
+///    ルールを含む）を行う。`.url` の拡張子フィルタリングはローカルパス変換より前に
+///    判定し、対象外ならレジストリ変換自体を行わない（`process_url` を参照。パフォーマンス
+///    上の理由は「表示対象設定」節を参照）
+/// 6. 5 の結果、表示対象外・実在しない・変換失敗のものはこの時点で除外する（3・4 で
+///    切り捨てた候補まで遡って再チェックしない。最終的な表示件数が `max_results` より
+///    やや少なくなることがあるが、許容する仕様。フォルダ除外が既にこの性質を持っていた
+///    ことと同様に扱う）
 ///
 /// `max_results`（表示件数上限）・`max_age_days`（保持期間）はいずれも
 /// `AppSettings` の設定画面から変更可能な値を呼び出し元（`get_recent_files` コマンド）
-/// が渡す。
+/// が渡す。`include_folders`・`extension_filter_mode`・`extensions`（`extension_filter_mode`
+/// に対応する側のリストを呼び出し元が選んで渡す）は「表示対象設定」（`/recent` 機能全体で
+/// 共有する単一のグローバル設定。ファイル検索の `FolderEntry` とは独立）を反映する。
 #[cfg(windows)]
-pub fn get_recent_files(max_results: usize, max_age_days: i64) -> Vec<RecentFile> {
+pub fn get_recent_files(
+    max_results: usize,
+    max_age_days: i64,
+    include_folders: bool,
+    extension_filter_mode: crate::ExtensionFilterMode,
+    extensions: &[String],
+) -> Vec<RecentFile> {
     use std::collections::HashMap;
 
     // 1. 列挙する（変換・実在チェックなし）
@@ -759,10 +814,22 @@ pub fn get_recent_files(max_results: usize, max_age_days: i64) -> Vec<RecentFile
     let mut entries_by_path: HashMap<String, RecentFile> = HashMap::new();
     for candidate in &candidates {
         let file = match candidate.kind {
-            ShortcutKind::Lnk => process_lnk(&candidate.path, candidate.last_accessed),
-            ShortcutKind::Url => {
-                process_url(&candidate.path, encoding, &mounts, candidate.last_accessed)
-            }
+            ShortcutKind::Lnk => process_lnk(
+                &candidate.path,
+                candidate.last_accessed,
+                include_folders,
+                extension_filter_mode,
+                extensions,
+            ),
+            ShortcutKind::Url => process_url(
+                &candidate.path,
+                encoding,
+                &mounts,
+                candidate.last_accessed,
+                include_folders,
+                extension_filter_mode,
+                extensions,
+            ),
         };
         // 6. 実在しない・変換失敗のものはここで除外する（切り捨てた候補までは遡らない）
         let Some(file) = file else {
@@ -784,7 +851,13 @@ pub fn get_recent_files(max_results: usize, max_age_days: i64) -> Vec<RecentFile
 }
 
 #[cfg(not(windows))]
-pub fn get_recent_files(_max_results: usize, _max_age_days: i64) -> Vec<RecentFile> {
+pub fn get_recent_files(
+    _max_results: usize,
+    _max_age_days: i64,
+    _include_folders: bool,
+    _extension_filter_mode: crate::ExtensionFilterMode,
+    _extensions: &[String],
+) -> Vec<RecentFile> {
     Vec::new()
 }
 

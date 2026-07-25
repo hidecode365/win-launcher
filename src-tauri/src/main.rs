@@ -378,9 +378,9 @@ fn default_extension_filter_mode() -> ExtensionFilterMode {
 /// 効かせない）。ブラックリストのデフォルトは空リスト（＝全拡張子許可）。ホワイトリストに
 /// 切り替えた場合、`*` のような全許可を意味する特殊タグは用意しないため、タグを1件も
 /// 追加していない状態では検索対象が0件になる（意図した挙動）。
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "camelCase")]
-enum ExtensionFilterMode {
+pub(crate) enum ExtensionFilterMode {
     Blacklist,
     Whitelist,
 }
@@ -396,14 +396,22 @@ struct FolderEntry {
     include_folders: bool,
     #[serde(default = "default_extension_filter_mode")]
     extension_filter_mode: ExtensionFilterMode,
+    // ブラックリスト用・ホワイトリスト用を独立したフィールドとして保持する
+    // （モード切替時に互いの入力内容を消さないため。詳細は「検索フォルダごとの
+    // 詳細設定」節を参照）。v0.8.0 時点の単一 `extensions` フィールドから移行する
+    // 既存データは、複雑な引き継ぎ処理を行わずどちらも空にリセットする
+    // （フィールド名変更により旧キー `extensions` は deserialize 時に単純に
+    // 無視され、`#[serde(default)]` で両方とも空リストになる）。
     #[serde(default)]
-    extensions: Vec<String>,
+    blacklist_extensions: Vec<String>,
+    #[serde(default)]
+    whitelist_extensions: Vec<String>,
 }
 
 impl FolderEntry {
     /// 新規フォルダ登録用のコンストラクタ。詳細設定は上記デフォルト値（3階層・
-    /// フォルダ非対象・ブラックリスト空）で初期化する。`add_folder`／
-    /// `add_search_folder_from_paste` の両方から使う。
+    /// フォルダ非対象・ブラックリスト空・ホワイトリスト空）で初期化する。
+    /// `add_folder`／`add_search_folder_from_paste` の両方から使う。
     fn new(path: String) -> Self {
         Self {
             path,
@@ -411,7 +419,8 @@ impl FolderEntry {
             max_depth: default_folder_max_depth(),
             include_folders: false,
             extension_filter_mode: default_extension_filter_mode(),
-            extensions: Vec::new(),
+            blacklist_extensions: Vec::new(),
+            whitelist_extensions: Vec::new(),
         }
     }
 }
@@ -473,6 +482,21 @@ fn toggle_folder(app: AppHandle, path: String) -> Result<Vec<FolderEntry>, Strin
     Ok(folders)
 }
 
+/// 拡張子タグ配列を正規化する（前後の空白除去・先頭の `.` 除去・小文字化・重複除去）。
+/// ブラックリスト・ホワイトリストの双方、かつ「検索フォルダの詳細設定」「/recent の
+/// 表示対象設定」の両機能で同じ正規化ルールを適用するため共通化している
+/// （`recent_files.rs` からも `crate::normalize_extensions` として呼ぶ）。
+pub(crate) fn normalize_extensions(extensions: Vec<String>) -> Vec<String> {
+    let mut normalized_extensions: Vec<String> = Vec::new();
+    for ext in extensions {
+        let normalized = ext.trim().trim_start_matches('.').to_lowercase();
+        if !normalized.is_empty() && !normalized_extensions.contains(&normalized) {
+            normalized_extensions.push(normalized);
+        }
+    }
+    normalized_extensions
+}
+
 /// 検索フォルダごとの詳細設定（検索階層数・フォルダ自体の検索対象可否・拡張子
 /// フィルタリング）をまとめて保存する。設定ダイアログの「保存」ボタン押下時にのみ
 /// 呼ばれ、フォームの4項目を一括で反映する（個別の `set_*` コマンドには分割しない）。
@@ -484,19 +508,15 @@ fn set_folder_settings(
     max_depth: u32,
     include_folders: bool,
     extension_filter_mode: ExtensionFilterMode,
-    extensions: Vec<String>,
+    blacklist_extensions: Vec<String>,
+    whitelist_extensions: Vec<String>,
 ) -> Result<Vec<FolderEntry>, String> {
     if !(1..=20).contains(&max_depth) {
         return Err("検索階層数は1以上20以下の整数を指定してください".to_string());
     }
 
-    let mut normalized_extensions: Vec<String> = Vec::new();
-    for ext in extensions {
-        let normalized = ext.trim().trim_start_matches('.').to_lowercase();
-        if !normalized.is_empty() && !normalized_extensions.contains(&normalized) {
-            normalized_extensions.push(normalized);
-        }
-    }
+    let normalized_blacklist = normalize_extensions(blacklist_extensions);
+    let normalized_whitelist = normalize_extensions(whitelist_extensions);
 
     let mut folders = load_folders(&app);
     let Some(f) = folders.iter_mut().find(|f| f.path == path) else {
@@ -505,7 +525,8 @@ fn set_folder_settings(
     f.max_depth = max_depth;
     f.include_folders = include_folders;
     f.extension_filter_mode = extension_filter_mode;
-    f.extensions = normalized_extensions;
+    f.blacklist_extensions = normalized_blacklist;
+    f.whitelist_extensions = normalized_whitelist;
     save_folders(&app, &folders)?;
     Ok(folders)
 }
@@ -514,8 +535,10 @@ fn set_folder_settings(
 /// 限定して呼ぶこと）。ブラックリストは空リストの場合に全許可、ホワイトリストは
 /// `*` 相当の特殊タグを持たないため空リストの場合は全拒否になる。拡張子を持たない
 /// ファイルは、ブラックリストのどのタグにも一致し得ないため許可、ホワイトリストの
-/// どのタグにも一致し得ないため拒否となる。
-fn passes_extension_filter(
+/// どのタグにも一致し得ないため拒否となる。ファイル検索（`search_files`）・
+/// `/recent`（`recent_files::get_recent_files`）の両方から共有する（`recent_files.rs`
+/// からは `crate::passes_extension_filter` として呼ぶ）。
+pub(crate) fn passes_extension_filter(
     path: &Path,
     mode: &ExtensionFilterMode,
     extensions: &[String],
@@ -690,6 +713,17 @@ struct AppSettings {
     recent_max_age_days: u32,
     #[serde(default = "default_recent_max_results")]
     recent_max_results: u32,
+    // `/recent` の「表示対象設定」。ファイル検索の `FolderEntry` はフォルダごとの設定だが、
+    // こちらは /recent 機能全体で共有する単一のグローバル設定のため、AppSettings に
+    // 直接持たせる（データ構造上分離。詳細は「/recent の表示対象設定」節を参照）。
+    #[serde(default)]
+    recent_include_folders: bool,
+    #[serde(default = "default_extension_filter_mode")]
+    recent_extension_filter_mode: ExtensionFilterMode,
+    #[serde(default)]
+    recent_blacklist_extensions: Vec<String>,
+    #[serde(default)]
+    recent_whitelist_extensions: Vec<String>,
     #[serde(default = "default_true")]
     path_paste_enabled: bool,
 }
@@ -717,6 +751,10 @@ impl Default for AppSettings {
             recent_keyword: DEFAULT_RECENT_KEYWORD.to_string(),
             recent_max_age_days: DEFAULT_RECENT_MAX_AGE_DAYS,
             recent_max_results: DEFAULT_RECENT_MAX_RESULTS,
+            recent_include_folders: false,
+            recent_extension_filter_mode: default_extension_filter_mode(),
+            recent_blacklist_extensions: Vec::new(),
+            recent_whitelist_extensions: Vec::new(),
             path_paste_enabled: true,
         }
     }
@@ -925,6 +963,28 @@ fn set_recent_max_results(app: AppHandle, max_results: u32) -> Result<AppSetting
     Ok(settings)
 }
 
+/// `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を
+/// まとめて保存する。ファイル検索の `set_folder_settings` と同じ「一括保存」パターン
+/// だが、対象がフォルダ単位ではなく `/recent` 機能全体の単一設定である点が異なる
+/// （`FolderEntry` とは独立したグローバル設定。詳細は「/recent の表示対象設定」節を参照）。
+/// 拡張子タグの正規化は `normalize_extensions` を共有する。
+#[tauri::command]
+fn set_recent_display_settings(
+    app: AppHandle,
+    include_folders: bool,
+    extension_filter_mode: ExtensionFilterMode,
+    blacklist_extensions: Vec<String>,
+    whitelist_extensions: Vec<String>,
+) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.recent_include_folders = include_folders;
+    settings.recent_extension_filter_mode = extension_filter_mode;
+    settings.recent_blacklist_extensions = normalize_extensions(blacklist_extensions);
+    settings.recent_whitelist_extensions = normalize_extensions(whitelist_extensions);
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
 #[tauri::command]
 fn set_path_paste_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
@@ -938,13 +998,28 @@ fn get_recent_files(app: AppHandle) -> Result<Vec<recent_files::RecentFile>, Str
     let settings = load_app_settings(&app);
     let max_results = settings.recent_max_results as usize;
     let max_age_days = settings.recent_max_age_days as i64;
+    let include_folders = settings.recent_include_folders;
+    let extension_filter_mode = settings.recent_extension_filter_mode;
+    // 「表示対象設定」節の通り、拡張子フィルタリングはブラックリスト/ホワイトリストを
+    // 独立管理しているため、現在のモードに対応する側のみを選んで渡す
+    // （`search_files` の `active_extensions` 選択と同じパターン）。
+    let extensions = match extension_filter_mode {
+        ExtensionFilterMode::Blacklist => settings.recent_blacklist_extensions.clone(),
+        ExtensionFilterMode::Whitelist => settings.recent_whitelist_extensions.clone(),
+    };
     // レジストリ・.lnk/.url パース等、原因調査中の異常終了の疑いがある処理を
     // catch_unwind で保護する。1件の異常なエントリでアプリ全体を巻き込まないため
     // （dev ビルドは panic = "unwind" のため有効。release ビルドは
     // `[profile.release] panic = "abort"` のため catch_unwind は効かず、
     // このガードはあくまで開発時の安全対策であることに注意）。
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        recent_files::get_recent_files(max_results, max_age_days)
+        recent_files::get_recent_files(
+            max_results,
+            max_age_days,
+            include_folders,
+            extension_filter_mode,
+            &extensions,
+        )
     }))
     .map_err(|payload| {
         let message = panic_payload_message(payload.as_ref());
@@ -1401,11 +1476,15 @@ fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
                 continue;
             }
             // 拡張子フィルタリングはファイルのみに適用する（フォルダは対象外）。
+            let active_extensions = match dir.extension_filter_mode {
+                ExtensionFilterMode::Blacklist => &dir.blacklist_extensions,
+                ExtensionFilterMode::Whitelist => &dir.whitelist_extensions,
+            };
             if is_file
                 && !passes_extension_filter(
                     entry.path(),
                     &dir.extension_filter_mode,
-                    &dir.extensions,
+                    active_extensions,
                 )
             {
                 continue;
@@ -1945,6 +2024,7 @@ fn main() {
             set_recent_keyword,
             set_recent_max_age_days,
             set_recent_max_results,
+            set_recent_display_settings,
             get_recent_files,
             set_ocr_enabled,
             ocr_from_clipboard,

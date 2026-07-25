@@ -2,6 +2,8 @@ import { useState } from "react";
 import { FolderDetailSettings, FolderEntry } from "../types";
 import { FeatureToggle } from "./FeatureToggle";
 import { FolderDetailSettingsModal } from "./FolderDetailSettingsModal";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsIndent } from "./SettingsIndent";
 
 export function FileSearchSettings({
   enabled,
@@ -12,8 +14,6 @@ export function FileSearchSettings({
   onRemoveFolder,
   onOpenFolder,
   onSaveFolderSettings,
-  folderSettingsError,
-  onResetFolderSettingsError,
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
@@ -25,41 +25,48 @@ export function FileSearchSettings({
   onSaveFolderSettings: (
     path: string,
     detail: FolderDetailSettings
-  ) => Promise<boolean>;
-  folderSettingsError: string | null;
-  onResetFolderSettingsError: () => void;
+  ) => Promise<string | null>;
 }) {
   const [pendingRemovePath, setPendingRemovePath] = useState<string | null>(
     null
   );
   const [detailTarget, setDetailTarget] = useState<FolderEntry | null>(null);
 
-  const handleSaveFolderDetail = async (detail: FolderDetailSettings) => {
-    if (!detailTarget) return;
-    const success = await onSaveFolderSettings(detailTarget.path, detail);
-    if (success) setDetailTarget(null);
+  const handleSaveFolderDetail = async (
+    detail: FolderDetailSettings
+  ): Promise<string | null> => {
+    if (!detailTarget) return null;
+    const err = await onSaveFolderSettings(detailTarget.path, detail);
+    if (!err) setDetailTarget(null);
+    return err;
   };
 
   return (
-    <div className="relative flex flex-col h-full">
+    <div className="relative flex flex-col h-full gap-4">
       <FeatureToggle
         label="ファイル検索"
         description="検索ボックスの入力でフォルダ内のファイルを検索します。"
         checked={enabled}
         onChange={onToggle}
       />
-      <div className="mt-4 pt-3 border-t border-gray-200/60 flex-1 flex flex-col min-h-0">
-        <div className="text-xs text-gray-400 mb-2">検索フォルダ</div>
-        <div className="flex-1 overflow-y-auto -mx-4">
+      <SettingsIndent className="flex-1 flex flex-col min-h-0">
+        <SettingsGroup
+          title="検索フォルダ"
+          className="mt-8 flex-1 flex flex-col min-h-0"
+          contentClassName="mt-3 flex-1 flex flex-col min-h-0 gap-2"
+        >
+        {/* 行が画面幅いっぱいに広がると、フォルダ名（左端）と操作アイコン（右端）が
+            離れすぎて対応が取りにくくなるため、一覧に最大幅を設定して抑える */}
+        <div className="flex-1 overflow-y-auto max-w-md">
           {folders.length === 0 && (
-            <div className="px-4 py-3 text-sm text-gray-400">
+            <div className="py-3 text-sm text-gray-400">
               フォルダが登録されていません
             </div>
           )}
           {folders.map((f) => (
             <div
               key={f.path}
-              className="flex items-center px-4 py-2 gap-3"
+              className="flex items-center py-2 gap-3"
             >
               <input
                 type="checkbox"
@@ -77,10 +84,7 @@ export function FileSearchSettings({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  onResetFolderSettingsError();
-                  setDetailTarget(f);
-                }}
+                onClick={() => setDetailTarget(f)}
                 className="flex-shrink-0 p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
                 title="詳細設定"
               >
@@ -129,11 +133,12 @@ export function FileSearchSettings({
         <button
           type="button"
           onClick={onAddFolder}
-          className="mt-2 text-sm text-blue-600 hover:text-blue-700 text-left"
+          className="text-sm text-blue-600 hover:text-blue-700 text-left"
         >
           ＋ フォルダを追加
         </button>
-      </div>
+        </SettingsGroup>
+      </SettingsIndent>
 
       {pendingRemovePath && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
@@ -175,7 +180,6 @@ export function FileSearchSettings({
           folder={detailTarget}
           onCancel={() => setDetailTarget(null)}
           onSave={handleSaveFolderDetail}
-          error={folderSettingsError}
         />
       )}
     </div>

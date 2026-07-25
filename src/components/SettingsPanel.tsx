@@ -4,8 +4,8 @@ import {
   AppSettings,
   FolderDetailSettings,
   FolderEntry,
+  RecentDisplaySettings,
   SystemCommandAction,
-  SystemCommandKeywordErrors,
 } from "../types";
 import { GeneralSettings } from "./GeneralSettings";
 import { FileSearchSettings } from "./FileSearchSettings";
@@ -45,7 +45,6 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
 
 export function SettingsPanel({
   appSettings,
-  hotkeyError,
   onSaveHotkey,
   onSetFileSearchEnabled,
   onSetCalcEnabled,
@@ -54,17 +53,15 @@ export function SettingsPanel({
   onSetUrlConvertKeepSpaceEncoded,
   onSetSystemCommandEnabled,
   onSetSystemCommandKeyword,
-  systemCommandKeywordErrors,
   onSetWebSearchEnabled,
   onSetClipboardEnabled,
   onSetClipboardPrefix,
   onSetClipboardMaxItems,
-  clipboardSettingsError,
   onSetRecentFilesEnabled,
   onSetRecentKeyword,
   onSetRecentMaxAgeDays,
   onSetRecentMaxResults,
-  recentSettingsError,
+  onSaveRecentDisplaySettings,
   onSetOcrEnabled,
   onSetCheckUpdateOnStartup,
   onSetPathPasteEnabled,
@@ -74,13 +71,10 @@ export function SettingsPanel({
   onRemoveFolder,
   onOpenFolder,
   onSaveFolderSettings,
-  folderSettingsError,
-  onResetFolderSettingsError,
   onClose,
 }: {
   appSettings: AppSettings;
-  hotkeyError: string | null;
-  onSaveHotkey: (accelerator: string) => void;
+  onSaveHotkey: (accelerator: string) => Promise<string | null>;
   onSetFileSearchEnabled: (checked: boolean) => void;
   onSetCalcEnabled: (checked: boolean) => void;
   onSetCopyWithComma: (checked: boolean) => void;
@@ -90,18 +84,18 @@ export function SettingsPanel({
   onSetSystemCommandKeyword: (
     command: SystemCommandAction,
     keyword: string
-  ) => void;
-  systemCommandKeywordErrors: SystemCommandKeywordErrors;
+  ) => Promise<string | null>;
   onSetWebSearchEnabled: (checked: boolean) => void;
   onSetClipboardEnabled: (checked: boolean) => void;
-  onSetClipboardPrefix: (prefix: string) => void;
-  onSetClipboardMaxItems: (maxItems: number) => void;
-  clipboardSettingsError: string | null;
+  onSetClipboardPrefix: (prefix: string) => Promise<string | null>;
+  onSetClipboardMaxItems: (maxItems: number) => Promise<string | null>;
   onSetRecentFilesEnabled: (checked: boolean) => void;
-  onSetRecentKeyword: (keyword: string) => void;
-  onSetRecentMaxAgeDays: (days: number) => void;
-  onSetRecentMaxResults: (maxResults: number) => void;
-  recentSettingsError: string | null;
+  onSetRecentKeyword: (keyword: string) => Promise<string | null>;
+  onSetRecentMaxAgeDays: (days: number) => Promise<string | null>;
+  onSetRecentMaxResults: (maxResults: number) => Promise<string | null>;
+  onSaveRecentDisplaySettings: (
+    detail: RecentDisplaySettings
+  ) => Promise<string | null>;
   onSetOcrEnabled: (checked: boolean) => void;
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
   onSetPathPasteEnabled: (checked: boolean) => void;
@@ -113,9 +107,7 @@ export function SettingsPanel({
   onSaveFolderSettings: (
     path: string,
     detail: FolderDetailSettings
-  ) => Promise<boolean>;
-  folderSettingsError: string | null;
-  onResetFolderSettingsError: () => void;
+  ) => Promise<string | null>;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -176,7 +168,6 @@ export function SettingsPanel({
           {tab === "general" && (
             <GeneralSettings
               hotkey={appSettings.hotkey}
-              error={hotkeyError}
               onSave={onSaveHotkey}
               checkUpdateOnStartup={appSettings.checkUpdateOnStartup}
               onToggleCheckUpdateOnStartup={onSetCheckUpdateOnStartup}
@@ -192,8 +183,6 @@ export function SettingsPanel({
               onRemoveFolder={onRemoveFolder}
               onOpenFolder={onOpenFolder}
               onSaveFolderSettings={onSaveFolderSettings}
-              folderSettingsError={folderSettingsError}
-              onResetFolderSettingsError={onResetFolderSettingsError}
             />
           )}
           {tab === "pathPaste" && (
@@ -222,7 +211,6 @@ export function SettingsPanel({
               restartKeyword={appSettings.restartKeyword}
               sleepKeyword={appSettings.sleepKeyword}
               onChangeKeyword={onSetSystemCommandKeyword}
-              errors={systemCommandKeywordErrors}
             />
           )}
           {tab === "webSearch" && (
@@ -239,7 +227,6 @@ export function SettingsPanel({
               onChangePrefix={onSetClipboardPrefix}
               maxItems={appSettings.clipboardMaxItems}
               onChangeMaxItems={onSetClipboardMaxItems}
-              error={clipboardSettingsError}
             />
           )}
           {tab === "recent" && (
@@ -252,7 +239,11 @@ export function SettingsPanel({
               onChangeMaxAgeDays={onSetRecentMaxAgeDays}
               maxResults={appSettings.recentMaxResults}
               onChangeMaxResults={onSetRecentMaxResults}
-              error={recentSettingsError}
+              includeFolders={appSettings.recentIncludeFolders}
+              extensionFilterMode={appSettings.recentExtensionFilterMode}
+              blacklistExtensions={appSettings.recentBlacklistExtensions}
+              whitelistExtensions={appSettings.recentWhitelistExtensions}
+              onSaveDisplaySettings={onSaveRecentDisplaySettings}
             />
           )}
           {tab === "ocr" && (
