@@ -1,9 +1,35 @@
 import { useState } from "react";
 import { FolderDetailSettings, FolderEntry } from "../types";
+import { useTruncatedPath } from "../hooks/useTruncatedPath";
 import { FeatureToggle } from "./FeatureToggle";
 import { FolderDetailSettingsModal } from "./FolderDetailSettingsModal";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsIndent } from "./SettingsIndent";
+
+// フックは呼び出し元の関数コンポーネント単位でしか使えないため（Rules of Hooks）、
+// folders.map() のコールバック内で直接 useTruncatedPath は呼べない。1行ぶんの
+// パス表示だけを担うこのコンポーネントに切り出すことで、行ごとに独立したフックの
+// 呼び出しを可能にしている。
+function FolderPathButton({
+  path,
+  onOpen,
+}: {
+  path: string;
+  onOpen: (path: string) => void;
+}) {
+  const { ref, display } = useTruncatedPath<HTMLButtonElement>(path);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={() => onOpen(path)}
+      className="flex-1 min-w-0 truncate text-sm text-gray-700 text-left cursor-pointer hover:underline"
+      title={path}
+    >
+      {display}
+    </button>
+  );
+}
 
 export function FileSearchSettings({
   enabled,
@@ -74,14 +100,7 @@ export function FileSearchSettings({
                 onChange={() => onToggleFolder(f.path)}
                 className="flex-shrink-0"
               />
-              <button
-                type="button"
-                onClick={() => onOpenFolder(f.path)}
-                className="flex-1 min-w-0 truncate text-sm text-gray-700 text-left cursor-pointer hover:underline"
-                title={f.path}
-              >
-                {f.path}
-              </button>
+              <FolderPathButton path={f.path} onOpen={onOpenFolder} />
               <button
                 type="button"
                 onClick={() => setDetailTarget(f)}
