@@ -32,6 +32,11 @@ export default function App() {
   const clipboardPaneWidthRef = useRef(DEFAULT_CLIPBOARD_PANE_WIDTH);
   const storeRef = useRef<Store | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // フォーカスアウト時自動非表示の判定用（後述のフォーカス監視 useEffect は依存配列が
+  // 空で一度しかマウントされないため、showSettings state を直接参照すると初回値の
+  // 古いクロージャのままになる。毎レンダーで最新値を書き込むこの ref を代わりに参照する）
+  const showSettingsRef = useRef(showSettings);
+  showSettingsRef.current = showSettings;
 
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
@@ -430,6 +435,13 @@ export default function App() {
   // WebView2 はウィンドウ内のクリック（設定パネルへの切り替えによる DOM 入れ替えや
   // ドラッグ開始操作など）でも一時的にフォーカスを失う通知を送ることがあるため、
   // 即時に hide() せず、一定時間後も本当にフォーカスが戻っていない場合のみ非表示にする。
+  //
+  // 設定画面表示中はこの自動非表示自体を適用しない（REQUIREMENTS.md「キー操作」＞
+  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。判定は
+  // showSettingsRef（毎レンダーで最新の showSettings を書き込む ref）で行う。
+  // openSettings/closeSettings はいずれも単一の showSettings state を介するため、
+  // 開閉の経路（歯車アイコン・Ctrl+S・Esc・設定パネルの閉じるボタン）を個別に
+  // フックする必要はなく、この ref を見るだけで全経路に自動的に追従する。
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let blurTimer: ReturnType<typeof setTimeout> | undefined;
@@ -452,17 +464,16 @@ export default function App() {
             const stillFocused = await getCurrentWindow()
               .isFocused()
               .catch(() => false);
-            if (!stillFocused) {
-              const store = storeRef.current;
-              if (store) {
-                await store.set(
-                  "clipboardPaneWidth",
-                  clipboardPaneWidthRef.current
-                );
-                await store.save();
-              }
-              hideWindow();
+            if (stillFocused || showSettingsRef.current) return;
+            const store = storeRef.current;
+            if (store) {
+              await store.set(
+                "clipboardPaneWidth",
+                clipboardPaneWidthRef.current
+              );
+              await store.save();
             }
+            hideWindow();
           }, 150);
         }
       })
