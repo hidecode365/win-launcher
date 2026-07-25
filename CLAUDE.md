@@ -152,7 +152,7 @@ win-launcher/
 | `tauri-plugin-shell` | ファイル起動・Web検索の URL をデフォルトブラウザで開く（`open()`） |
 | `tauri-plugin-autostart` | Windows スタートアップ登録 |
 | `tauri-plugin-store` | 検索フォルダ・各機能 ON/OFF・ホットキー設定・ウィンドウサイズ・ファイル起動の frecency 履歴の永続化（`settings.json`）。frecency 履歴・ウィンドウサイズは Rust コマンドを介さず、フロントエンドが JS パッケージ `@tauri-apps/plugin-store` で直接読み書きする |
-| `tauri-plugin-dialog` | フォルダ選択ダイアログ |
+| `tauri-plugin-dialog` | フォルダ選択ダイアログ。**必ず Rust 側の Tauri コマンド（`pick_folder`）として実装し、`FileDialogBuilder::set_parent` で WinLauncher のウィンドウを親に指定すること。** フロントエンドの JS API（`@tauri-apps/plugin-dialog` の `open()`/`save()`/`message()` 等）には親ウィンドウを指定する手段がなく、`alwaysOnTop: true` のウィンドウの背後にダイアログが回り込んでしまう不具合になる（実際に発生し修正済み）。本プロジェクトでは `@tauri-apps/plugin-dialog` は npm 依存にも加えておらず、フロントエンドから直接ダイアログ系 JS API を呼ぶ経路は存在しない |
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
 | `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
 | `tauri-plugin-updater` | 自動アップデート（GitHub Releases + `latest.json` の確認・ダウンロード・インストール） |
@@ -668,7 +668,7 @@ const closeWindow = useCallback(
 | `calculate(expr)` | 数式を評価し結果の文字列を返す（評価不能なら `null`） |
 | `copy_to_clipboard(text)` | テキストをクリップボードへコピーする |
 | `get_folders()` | 登録済み検索フォルダ一覧を返す |
-| `pick_folder()` | フォルダ選択ダイアログを開き、選択パスを返す |
+| `pick_folder()` | フォルダ選択ダイアログを開き、選択パスを返す。呼び出し元の `WebviewWindow` を `set_parent` で親に指定し、WinLauncher ウィンドウの背後に回らないようにしている |
 | `add_folder(path)` | 検索フォルダを追加する |
 | `remove_folder(path)` | 検索フォルダを削除する |
 | `toggle_folder(path)` | 検索フォルダの有効/無効を切り替える |

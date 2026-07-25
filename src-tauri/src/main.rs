@@ -447,9 +447,11 @@ fn get_folders(app: AppHandle) -> Vec<FolderEntry> {
 }
 
 #[tauri::command]
-fn pick_folder(app: AppHandle) -> Option<String> {
-    app.dialog()
+async fn pick_folder(window: tauri::WebviewWindow) -> Option<String> {
+    window
+        .dialog()
         .file()
+        .set_parent(&window)
         .blocking_pick_folder()
         .map(|p| p.to_string())
 }
