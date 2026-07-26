@@ -1117,14 +1117,27 @@ export function useSearch(
             )
         );
       } else {
-        // ピン止め：新規ピンは常にピン止めブロックの末尾（order 最大）に追加
-        // される実装のため、移動先の行番号は追加前の件数として確定的に分かるが、
+        // ピン止め：ピン止めブロックが実際に画面へ表示される場合（pinnedVisible。
+        // 検索ボックスが空で、clipboardMode・recentMode いずれでもない場合のみ true）
+        // のみ、この行は新規ピンとして常にブロック末尾（order 最大）へ追加され、
+        // "pinned:<path>" kind の行として rows に現れる。
+        // pinnedVisible が false の場合（検索ボックスに文字が入力されている通常の
+        // ファイル検索結果、または /recent モードなど）は、ピン止めブロック自体が
+        // 表示されないため行は移動せず、これまで通り "file:<path>" kind の行の
+        // ままその場に留まる（REQUIREMENTS.md「検索ボックスに文字が入力されている
+        // ときの表示」「/recent からのピン止め」を参照）。/recent 専用の分岐を
+        // 個別に設けず、既存の pinnedVisible をそのまま再利用することで、通常検索・
+        // /recent のどちらで「ピン止めブロックが見えない状態でのピン止め」が
+        // 起きても同じロジックで正しく選択が維持される。
         // 実際に rows へ反映されるのは set_favorites・fetchPinnedFiles の
-        // IPC往復後になる。selected への直接書き込みは行わず、対象の識別子
-        // （"pinned:<path>"）を intent に積むだけにする（rows が再構築され
-        // 次第、intent 解決用 useLayoutEffect が選択する）。
+        // IPC往復後になるため、selected への直接書き込みは行わず、対象の識別子を
+        // intent に積むだけにする（rows が再構築され次第、intent 解決用
+        // useLayoutEffect が選択する）。
+        const targetKey = pinnedVisible
+          ? `pinned:${file.path}`
+          : `file:${file.path}`;
         updateIntent(
-          { type: "key", key: `pinned:${file.path}`, expiresAt: Date.now() + SELECT_INTENT_TIMEOUT_MS },
+          { type: "key", key: targetKey, expiresAt: Date.now() + SELECT_INTENT_TIMEOUT_MS },
           "pin-add"
         );
         const pinnedNodes = current.filter(
@@ -1152,7 +1165,7 @@ export function useSearch(
         })
         .catch(console.error);
     },
-    [fetchPinnedFiles, updateIntent]
+    [fetchPinnedFiles, updateIntent, pinnedVisible]
   );
 
   // ピン止めブロックのドラッグ&ドロップによる並び替え。ドロップ確定時に order を

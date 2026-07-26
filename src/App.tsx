@@ -273,11 +273,13 @@ export default function App() {
     search.confirmShortcut,
   ]);
 
-  // ピンアイコンは通常のファイル検索結果の行にのみ表示する。/recent は同じ results
-  // state・同じ ResultList の行レンダリングを共有しているため（recentResults が
-  // results へコピーされる）、recentMode かどうかで明示的に区別する必要がある
-  // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節「ピンアイコンの表示範囲」参照）。
-  const pinIconVisible = settings.appSettings.pinEnabled && !search.recentMode;
+  // ピンアイコンはファイル検索結果の行、および /recent（最近使ったファイル一覧）の
+  // 行の両方に表示する。/recent は同じ results state・同じ ResultList の "file" kind
+  // 行レンダリングを共有しており（recentResults が results へコピーされる）、
+  // useSearch.ts の rows 構築ロジックも由来を区別せず row.pinned を埋め込むため、
+  // recentMode による特例分岐はここでは不要（REQUIREMENTS.md「ピン止め・お気に入り・
+  // メモ機能」節「ピンアイコン」「/recent からのピン止め」を参照）。
+  const pinIconVisible = settings.appSettings.pinEnabled;
   // Web検索行は rows に含まれない（rows・並び順の正本は useSearch.ts。詳細は
   // CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。baseLength は「Web検索行を
   // 除いた、現在アクティブな一覧の件数」を表す値で、通常モードでは rows の並び順が

@@ -304,7 +304,17 @@ win-launcher/
   3. `StatusFooter` に渡す `isPathPasteCandidateSelected`／`isCalcSelected`／`isUrlConvertSelected`／`isFileSelected` の各判定式
   4. `ResultList.tsx` 内の `pathPasteOffset`／`calcIndex`／`calcOffset`／`urlConvertOffset`（`data-index`／`onMouseEnter` に使う絶対インデックス）
 - ピン止めブロックの各行は通常のファイル検索結果行と同じアクション体系（Enter起動・Shift+Enterで格納フォルダを開く）を引き継ぐため、`handleKeyDown` では `selectedPinnedFile ?? selectedFile` という形で「ピン止めブロックの選択」と「通常のファイル検索結果の選択」を1つの `effectiveFile` に統合してから分岐している（Shift+Enter・`openContainingFolder` の呼び出し元を分岐ごとに複製しないため）
-- ピンアイコンの表示可否（`pinIconVisible`）は `appSettings.pinEnabled && !recentMode` で判定する。`/recent` は `recentResults` が `useSearch` 内で `results` state へコピーされ、`ResultList.tsx` の同じ `results.map` 描画ブロックを共有しているため、`recentMode` を明示的に除外しないとピンアイコンが `/recent` の行にも表示されてしまう（要件上、ピンアイコンはファイル検索結果の行にのみ表示する）
+- ピンアイコンの表示可否（`pinIconVisible`）は `appSettings.pinEnabled` のみで判定する（段階1.5で `/recent` にもピン止めを解禁したため、`recentMode` による除外は撤去済み。詳細は次項「`/recent` からのピン止め（段階1.5）」を参照）
+
+#### `/recent` からのピン止め（段階1.5）
+
+段階1（通常のファイル検索結果のみ）では `pinIconVisible` に `&& !recentMode` を加え、`/recent` の行にはピンアイコンを表示しない実装になっていた。これは REQUIREMENTS.md 側の仕様漏れによるものであり、REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節「/recent からのピン止め」「最近使ったファイル一覧（/recent）」節「ピン止め」を新設したうえで、この除外を撤去した（段階1.5）。
+
+- **rows 構築ロジック自体は元から由来を区別していなかった**：`useSearch.ts` の `rows` は `results`（`recentMode` 中は `recentResults` がコピーされたもの）を単純にループして `kind: "file"` の行を組み立てるだけで、ファイルの由来（通常のファイル検索結果か `/recent` か）を一切見ていない。`row.pinned: isPinned(file.path)` も同様に由来を問わず算出される。そのため今回の変更は **`App.tsx` の `pinIconVisible` から `&& !search.recentMode` を削除しただけ**で、`ResultList.tsx`・`useSearch.ts` の `rows` 構築・`togglePin` 本体の分岐追加は不要だった。「表示ルール・トグル挙動を通常の検索結果行と完全に同一にする」という要件は、そもそも実装が両者を区別していなかったことでほぼ自動的に満たされた
+- **保存するパスの名寄せをしない方針**：`/recent` の行は取得時点で解決済みのローカル実パス（`RecentFile.path`）を持ち、通常のファイル検索結果は検索フォルダ配下の実ファイルパス（ショートカット自体が検索対象になっている場合は `.lnk` のパス）を持つ。`togglePin` は呼び出し元による違いを一切意識せず、常に `file.path` をそのまま `FavoriteNode.value` に保存する。結果として同一の実体ファイルを指していても `/recent` 由来と通常検索由来とでパス文字列が異なれば別エントリとして登録される。これは意図した仕様であり（REQUIREMENTS.md「/recent からのピン止め」節を参照）、名寄せ・正規化のロジックは実装しない（`isPinned` の判定もパス文字列の完全一致のみで、大文字小文字の吸収等は行わない）
+- **選択維持のために必要だった唯一の実質的な修正**：`togglePin` の「新規ピン止め」分岐は、従来 `pinnedVisible` の値に関わらず常にキー `pinned:<path>` を intent にセットしていた（＝保存後にピン止めブロック内の行として現れる前提）。しかし `pinnedVisible`（ピン止めブロックが実際に表示されるか）は `query === "" && !clipboardMode && !recentMode` が条件のため、`/recent` は常に非空クエリを前提とするモードである以上 `pinnedVisible` は常に `false` になる。この状態で新規ピン止めすると、行は「pinned」kind には変わらず「file」kind のまま同じ位置に留まるにもかかわらず、intent は存在しないキーを探し続け、1秒のタイムアウト後に `{type:"top"}` へフォールバックして選択が先頭に飛んでしまう（＝リグレッション）。修正は `pinnedVisible` の値でターゲットキーを `pinned:<path>` / `file:<path>` に出し分けるだけで、`recentMode` を直接参照する分岐は追加していない（`pinnedVisible` は既に `recentMode` を包含する既存の合成条件のため、これを再利用するだけで `/recent` 固有の分岐なしに正しく動作する）。この修正は同時に、通常のファイル検索結果を非空クエリで表示中に新規ピン止めした場合の同種のリグレッション（従来から潜在していたが、`/recent` の実装まで顕在化していなかった）も合わせて解消した
+  - ピン止め解除の分岐は元々キー `file:<path>` を対象にしており、解除後は常に「file」kind に戻ることを前提にしていたため、`pinnedVisible` の真偽に関わらずそのまま正しく動作していた（変更不要）
+- **今後の指針**：`/recent` に対して★（お気に入り）・ノート（メモ）等の同種の行アクションを追加する場合も、`rows` 構築ロジック・行アクションのハンドラ側では `recentMode` を理由にした除外分岐を新設しないこと。表示可否を切り替える必要がある場合は、既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を機械的に再利用し、`recentMode` 単体を条件式に個別に書き足さない（今回 `pinIconVisible` から `&& !recentMode` を削除するだけで済んだこと自体が、rows ベースの設計が由来を区別しない形で既に一般化されていたことの証左）
 
 #### 実装後に発見された不具合と修正（知見）
 
