@@ -276,6 +276,16 @@ export default function App() {
   // 常にファイル検索結果より前、計算結果・URLエンコード/デコード結果よりも前の
   // 先頭を占有する（ローカルパスは数式計算・URL変換の判定条件と構造上両立しないため、
   // 実際に同時発生することはない。詳細は ResultList・REQUIREMENTS.md を参照）。
+  // ピン止めブロックは常にインデックス0から占有する（表示中のみ）。パス貼り付け候補・
+  // 計算結果・URLエンコード/デコード結果・ファイル検索結果は、既存の優先順序
+  // （REQUIREMENTS.md「基本動作」節）を保ったまま、ピン止めブロックの件数分だけ後ろへ
+  // オフセットされる（詳細は「ピン止め・お気に入り・メモ機能」節を参照）。
+  const pinnedLength = search.pinnedVisible ? search.pinnedFiles.length : 0;
+  // ピンアイコンは通常のファイル検索結果の行にのみ表示する。/recent は同じ results
+  // state・同じ ResultList の行レンダリングを共有しているため（recentResults が
+  // results へコピーされる）、recentMode かどうかで明示的に区別する必要がある
+  // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節「ピンアイコンの表示範囲」参照）。
+  const pinIconVisible = settings.appSettings.pinEnabled && !search.recentMode;
   const pathPasteLength = search.pathPasteCandidate
     ? search.pathPasteCandidate.isDir
       ? 2
@@ -291,7 +301,11 @@ export default function App() {
         ? search.wizardStep === "folderSelect"
           ? search.wizardFolders.length
           : 0
-        : search.results.length + pathPasteLength + calcLength + urlConvertLength;
+        : pinnedLength +
+          search.results.length +
+          pathPasteLength +
+          calcLength +
+          urlConvertLength;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
@@ -330,21 +344,35 @@ export default function App() {
           search.setSelected((s) => Math.max(s - 1, 0));
           break;
         case "Enter": {
+          // ピン止めブロックの行は常にインデックス0〜pinnedLength-1を占有する。
+          // ピン止めブロックの各行は、通常のファイル検索結果の行と同じアクション体系
+          // （Enter起動・Shift+Enterで格納フォルダを開く）をすべて引き継ぐ
+          // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
+          const selectedPinnedFile =
+            pinnedLength > 0 && search.selected < pinnedLength
+              ? search.pinnedFiles[search.selected]
+              : undefined;
           // 選択中の項目がファイル検索結果／最近使ったファイル一覧のいずれかの
           // 実ファイル（パス貼り付け候補・計算結果・URLエンコード/デコード結果・
           // Web検索行を除く）を指している場合のみ有効なインデックス。負の値・範囲外の
           // 場合は search.results[...] が undefined になり、以下の分岐が自然に無効化される。
           const selectedFile =
             search.results[
-              search.selected - pathPasteLength - calcLength - urlConvertLength
+              search.selected -
+                pinnedLength -
+                pathPasteLength -
+                calcLength -
+                urlConvertLength
             ];
+          const effectiveFile = selectedPinnedFile ?? selectedFile;
           if (e.shiftKey) {
             // Shift+Enter は格納フォルダを開く操作専用。ファイル検索結果・最近使った
-            // ファイル一覧以外（パス貼り付け候補・計算結果・URLエンコード/デコード結果・
-            // システムコマンド候補・クリップボード履歴・プレフィックスコマンド候補・
-            // Web検索行）はファイルパスを持たないため、selectedFile が存在する場合のみ実行する。
-            if (selectedFile) {
-              search.openContainingFolder(selectedFile.path);
+            // ファイル一覧・ピン止めブロック以外（パス貼り付け候補・計算結果・
+            // URLエンコード/デコード結果・システムコマンド候補・クリップボード履歴・
+            // プレフィックスコマンド候補・Web検索行）はファイルパスを持たないため、
+            // effectiveFile が存在する場合のみ実行する。
+            if (effectiveFile) {
+              search.openContainingFolder(effectiveFile.path);
             }
             break;
           }
@@ -362,26 +390,30 @@ export default function App() {
                 search.prefixCommandCandidates[search.selected]
               );
             }
+          } else if (selectedPinnedFile) {
+            search.launchFile(selectedPinnedFile.path);
           } else if (
             search.pathPasteCandidate &&
-            search.selected < pathPasteLength
+            search.selected - pinnedLength >= 0 &&
+            search.selected - pinnedLength < pathPasteLength
           ) {
-            if (search.selected === 0) {
+            const localIndex = search.selected - pinnedLength;
+            if (localIndex === 0) {
               search.startShortcutWizard();
             } else if (
-              search.selected === 1 &&
+              localIndex === 1 &&
               search.pathPasteCandidate.isDir
             ) {
               search.addSearchFolderFromPaste();
             }
           } else if (
             search.calcResult !== null &&
-            search.selected === pathPasteLength
+            search.selected === pinnedLength + pathPasteLength
           ) {
             search.copyResult(search.calcResult);
           } else if (
             search.urlConvertResult !== null &&
-            search.selected === pathPasteLength + calcLength
+            search.selected === pinnedLength + pathPasteLength + calcLength
           ) {
             search.copyUrlConvertResult(search.urlConvertResult.text);
           } else if (selectedFile) {
@@ -425,6 +457,8 @@ export default function App() {
       search.pathPasteCandidate,
       search.startShortcutWizard,
       search.addSearchFolderFromPaste,
+      pinnedLength,
+      search.pinnedFiles,
     ]
   );
 
@@ -511,6 +545,7 @@ export default function App() {
         onSetOcrEnabled={settings.setOcrEnabled}
         onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
         onSetPathPasteEnabled={settings.setPathPasteEnabled}
+        onSetPinEnabled={settings.setPinEnabled}
         folders={settings.folders}
         onAddFolder={settings.addFolder}
         onToggleFolder={settings.toggleFolder}
@@ -604,6 +639,13 @@ export default function App() {
           />
         ) : (
           <ResultList
+            pinnedVisible={search.pinnedVisible}
+            pinnedFiles={search.pinnedFiles}
+            pinnedExistence={search.pinnedExistence}
+            pinIconVisible={pinIconVisible}
+            isPinned={search.isPinned}
+            onTogglePin={search.togglePin}
+            onReorderPinned={search.reorderPinned}
             pathPasteCandidate={search.pathPasteCandidate}
             calcResult={search.calcResult}
             prefixCommandMode={search.prefixCommandMode}
@@ -637,19 +679,26 @@ export default function App() {
           }
           isPathPasteCandidateSelected={
             search.pathPasteCandidate !== null &&
-            search.selected < pathPasteLength
+            search.selected - pinnedLength >= 0 &&
+            search.selected - pinnedLength < pathPasteLength
           }
           isCalcSelected={
-            search.calcResult !== null && search.selected === pathPasteLength
+            search.calcResult !== null &&
+            search.selected === pinnedLength + pathPasteLength
           }
           prefixCommandMode={search.prefixCommandMode}
           isUrlConvertSelected={
             search.urlConvertResult !== null &&
-            search.selected === pathPasteLength + calcLength
+            search.selected === pinnedLength + pathPasteLength + calcLength
           }
           isFileSelected={
+            (pinnedLength > 0 && search.selected < pinnedLength) ||
             search.results[
-              search.selected - pathPasteLength - calcLength - urlConvertLength
+              search.selected -
+                pinnedLength -
+                pathPasteLength -
+                calcLength -
+                urlConvertLength
             ] !== undefined
           }
         />

@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -647,6 +647,190 @@ fn create_shortcut(
     Ok(())
 }
 
+// ==================== ピン止め・お気に入り・メモ機能 ====================
+//
+// ピン止め・お気に入り・メモの3機能を、単一のツリー構造で管理する `FavoriteNode` として
+// 定義する。`children` を持つ入れ子構造ではなく `parentId` を持つフラットな配列
+// （隣接リスト方式）とすることで、既存の `FolderEntry`（folders: FolderEntry[]）と
+// 同じく `Vec<T>` として素直に扱え、Rust側に再帰的な型定義を導入する必要がない
+// （詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
+// 今回実装するのは「ピン止め」のみで、「お気に入り」「メモ」は予約フォルダ（器）のみを
+// 生成し、機能は実装しない。
+
+const FAVORITES_STORE_KEY: &str = "favorites";
+
+// ルート直下に生成する3つの予約フォルダの固定ID。表示名（`name`。ユーザーが変更可能）
+// ではなく固定IDで参照することで、参照時に名前で検索する必要をなくす。
+const PINNED_FOLDER_ID: &str = "__pinned__";
+const FAVORITES_FOLDER_ID: &str = "__favorites__";
+const MEMO_FOLDER_ID: &str = "__memo__";
+
+/// `FavoriteNode.type` の値。`clipboard`・`command` は型定義のみ用意し、今回は
+/// 生成・使用しない（将来のお気に入り・メモ機能実装時に使う）。
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+enum FavoriteNodeType {
+    Folder,
+    #[default]
+    File,
+    Clipboard,
+    Command,
+}
+
+/// ピン止め・お気に入り・メモの共通ノード。`children` を持たないフラットな配列
+/// （隣接リスト方式）のまま `Vec<FavoriteNode>` として settings.json に永続化する。
+/// 将来 `clipboard`/`command` 型のフィールドを追加する際の後方互換のため、
+/// 全フィールドに `#[serde(default)]` を付与している。
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FavoriteNode {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    parent_id: String,
+    #[serde(default, rename = "type")]
+    node_type: FavoriteNodeType,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    value: String,
+    #[serde(default)]
+    order: u32,
+}
+
+fn load_favorites(app: &AppHandle) -> Vec<FavoriteNode> {
+    let Ok(store) = app.store(SETTINGS_STORE) else {
+        return Vec::new();
+    };
+    store
+        .get(FAVORITES_STORE_KEY)
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+fn save_favorites(app: &AppHandle, favorites: &[FavoriteNode]) -> Result<(), String> {
+    let store = app.store(SETTINGS_STORE).map_err(|e| e.to_string())?;
+    store.set(FAVORITES_STORE_KEY, serde_json::json!(favorites));
+    store.save().map_err(|e| e.to_string())
+}
+
+/// 予約フォルダ（固定ID・固定名・folder型・ルート直下）の正しい定義。
+fn reserved_folder_definitions() -> [FavoriteNode; 3] {
+    [
+        FavoriteNode {
+            id: PINNED_FOLDER_ID.to_string(),
+            parent_id: String::new(),
+            node_type: FavoriteNodeType::Folder,
+            name: "ピン止め".to_string(),
+            value: String::new(),
+            order: 0,
+        },
+        FavoriteNode {
+            id: FAVORITES_FOLDER_ID.to_string(),
+            parent_id: String::new(),
+            node_type: FavoriteNodeType::Folder,
+            name: "お気に入り".to_string(),
+            value: String::new(),
+            order: 1,
+        },
+        FavoriteNode {
+            id: MEMO_FOLDER_ID.to_string(),
+            parent_id: String::new(),
+            node_type: FavoriteNodeType::Folder,
+            name: "メモ".to_string(),
+            value: String::new(),
+            order: 2,
+        },
+    ]
+}
+
+/// `favorites` 内に3つの予約フォルダが正しい状態（固定ID・固定名・folder型・
+/// ルート直下）で存在することを保証する。存在しなければ末尾に追加し、既存でも
+/// 内容が改変されていれば（ユーザーによる削除・リネーム・移動はできない仕様のため）
+/// 正しい値へ上書きする。フロントエンドはUI上でこれらのノードを編集不可にするが、
+/// この関数はその制約が破られた場合にもRust側で確実に是正するための防御である。
+/// 変更が発生した場合のみ `true` を返す（呼び出し側の保存要否判定に使う）。
+fn enforce_reserved_folders(favorites: &mut Vec<FavoriteNode>) -> bool {
+    let mut changed = false;
+    for reserved in reserved_folder_definitions() {
+        match favorites.iter_mut().find(|f| f.id == reserved.id) {
+            Some(existing) => {
+                if existing.parent_id != reserved.parent_id
+                    || existing.node_type != reserved.node_type
+                    || existing.name != reserved.name
+                    || existing.value != reserved.value
+                {
+                    *existing = reserved;
+                    changed = true;
+                }
+            }
+            None => {
+                favorites.push(reserved);
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+/// アプリ起動時（`setup`）に一度呼び、予約フォルダが存在しなければ生成する
+/// （新規ユーザー・既存ユーザーの初回起動のいずれも対象）。
+fn ensure_reserved_folders(app: &AppHandle) {
+    let mut favorites = load_favorites(app);
+    if enforce_reserved_folders(&mut favorites) {
+        let _ = save_favorites(app, &favorites);
+    }
+}
+
+#[tauri::command]
+fn get_favorites(app: AppHandle) -> Vec<FavoriteNode> {
+    load_favorites(&app)
+}
+
+/// 書き込み頻度が低いため、部分更新ではなく配列全量の置き換えとする（ピン止めの
+/// 追加・解除・並び替えのいずれも、フロントエンドが手元の配列を更新したうえで
+/// この1コマンドを呼ぶ）。予約フォルダは、送信された内容に関わらずRust側で強制的に
+/// 正しい状態へ是正してから保存する（`enforce_reserved_folders`。ユーザーによる
+/// 削除・リネーム・移動ができない制約を、UI側の制限だけでなくRust側でも防御する）。
+#[tauri::command]
+fn set_favorites(app: AppHandle, favorites: Vec<FavoriteNode>) -> Result<Vec<FavoriteNode>, String> {
+    let mut favorites = favorites;
+    enforce_reserved_folders(&mut favorites);
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
+/// ピン止めブロック表示用に、「ピン止め」予約フォルダ直下（`file` 型）のノードだけを
+/// `order` 順に抽出し、ファイル検索結果と同じ `FileEntry`（シェルアイコン付き）へ
+/// 変換して返す。件数上限は設けない（`MAX_SEARCH_RESULTS` とは独立させる）。
+#[tauri::command]
+fn get_pinned_files(app: AppHandle) -> Vec<FileEntry> {
+    let mut pinned: Vec<FavoriteNode> = load_favorites(&app)
+        .into_iter()
+        .filter(|f| f.parent_id == PINNED_FOLDER_ID && f.node_type == FavoriteNodeType::File)
+        .collect();
+    pinned.sort_by_key(|f| f.order);
+    pinned
+        .into_iter()
+        .map(|f| {
+            let icon = shell_icon::get_icon_data_url(&f.value);
+            FileEntry {
+                name: f.name,
+                path: f.value,
+                icon,
+            }
+        })
+        .collect()
+}
+
+/// ピン止めブロックの実体確認用。渡されたパス配列と同じ順序・同じ長さで、各パスが
+/// 実在するかどうかの真偽値配列を返す。呼び出し元（フロントエンド）は、ピン止め
+/// ブロックの表示時とウィンドウのフォーカス復帰時にこのコマンドを呼ぶ想定。
+#[tauri::command]
+fn check_paths_exist(paths: Vec<String>) -> Vec<bool> {
+    paths.iter().map(|p| Path::new(p).exists()).collect()
+}
+
 // 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで
 // 保存された settings.json（このフィールドを持たない）の読み込み時に
 // deserialize が失敗し、AppSettings 全体が Default::default() にフォールバックして
@@ -728,6 +912,8 @@ struct AppSettings {
     recent_whitelist_extensions: Vec<String>,
     #[serde(default = "default_true")]
     path_paste_enabled: bool,
+    #[serde(default = "default_true")]
+    pin_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -758,6 +944,7 @@ impl Default for AppSettings {
             recent_blacklist_extensions: Vec::new(),
             recent_whitelist_extensions: Vec::new(),
             path_paste_enabled: true,
+            pin_enabled: true,
         }
     }
 }
@@ -991,6 +1178,14 @@ fn set_recent_display_settings(
 fn set_path_paste_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.path_paste_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_pin_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.pin_enabled = enabled;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -1442,8 +1637,14 @@ fn paste_clipboard_image(id: String, cache: tauri::State<ClipboardImageCache>) -
     write_image_to_clipboard(width, height, img.as_raw())
 }
 
+/// `exclude_paths` はピン止め済みファイルのパス一覧（「ピン止め・お気に入り・メモ機能」
+/// 節を参照）。呼び出し元（フロントエンド）はクエリが空のときのみこの引数へピン止め
+/// 済みパスを渡し、それ以外（クエリに文字が入力されている場合）は空配列を渡す。
+/// この使い分けにより、クエリが空のときだけピン止めブロックとの重複表示を避け、
+/// クエリ入力中はピン止め済みファイルも通常の関連度順のまま表示される
+/// （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
 #[tauri::command]
-fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
+fn search_files(app: AppHandle, query: String, exclude_paths: Vec<String>) -> Vec<FileEntry> {
     let enabled_dirs: Vec<FolderEntry> = load_folders(&app)
         .into_iter()
         .filter(|f| f.enabled)
@@ -1454,6 +1655,7 @@ fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
         return results;
     }
 
+    let exclude_set: HashSet<String> = exclude_paths.into_iter().collect();
     let query_lower = query.to_lowercase();
 
     'outer: for dir in &enabled_dirs {
@@ -1494,6 +1696,12 @@ fn search_files(app: AppHandle, query: String) -> Vec<FileEntry> {
             let name = entry.file_name().to_string_lossy().to_string();
             if query_lower.is_empty() || name.to_lowercase().contains(&query_lower) {
                 let path = entry.path().to_string_lossy().to_string();
+                // ピン止め済みパスの除外（呼び出し元がクエリ空時のみ渡す。詳細は
+                // 関数doc・「ピン止め・お気に入り・メモ機能」節を参照）。アイコン取得
+                // （比較的コストのある処理）より前に判定し、除外対象では行わない。
+                if exclude_set.contains(&path) {
+                    continue;
+                }
                 let icon = shell_icon::get_icon_data_url(&path);
                 results.push(FileEntry { name, path, icon });
                 if results.len() >= MAX_SEARCH_RESULTS {
@@ -1906,6 +2114,10 @@ fn main() {
             };
             app.global_shortcut().register(shortcut)?;
 
+            // ピン止め・お気に入り・メモの3予約フォルダが存在しなければ生成する
+            // （新規ユーザー・既存ユーザーの初回起動のいずれも対象）。
+            ensure_reserved_folders(app.handle());
+
             // クリップボード変更の監視。画像はバイナリのまま Rust 側メモリにキャッシュし、
             // フロントエンドには ID とサムネイルのみを渡す（詳細はキャッシュ・関数のコメント参照）
             app.manage(ClipboardImageCache::new());
@@ -2037,7 +2249,12 @@ fn main() {
             read_pasted_hdrop_path,
             judge_pasted_path,
             add_search_folder_from_paste,
-            create_shortcut
+            create_shortcut,
+            set_pin_enabled,
+            get_favorites,
+            set_favorites,
+            get_pinned_files,
+            check_paths_exist
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

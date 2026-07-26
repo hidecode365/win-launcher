@@ -17,6 +17,7 @@ import { ClipboardSettings } from "./ClipboardSettings";
 import { RecentFilesSettings } from "./RecentFilesSettings";
 import { OcrSettings } from "./OcrSettings";
 import { AboutSettings } from "./AboutSettings";
+import { Tooltip } from "./Tooltip";
 
 type SettingsTab =
   | "general"
@@ -65,6 +66,7 @@ export function SettingsPanel({
   onSetOcrEnabled,
   onSetCheckUpdateOnStartup,
   onSetPathPasteEnabled,
+  onSetPinEnabled,
   folders,
   onAddFolder,
   onToggleFolder,
@@ -99,6 +101,7 @@ export function SettingsPanel({
   onSetOcrEnabled: (checked: boolean) => void;
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
   onSetPathPasteEnabled: (checked: boolean) => void;
+  onSetPinEnabled: (checked: boolean) => void;
   folders: FolderEntry[];
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
@@ -123,26 +126,30 @@ export function SettingsPanel({
         data-tauri-drag-region="deep"
         className="flex items-center px-4 py-3 border-b border-gray-200/60"
       >
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1 mr-2 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 flex-shrink-0"
-          title="戻る"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {/* 設定パネルの左上（px-4 の直後）に位置し、既定の左側表示では
+            画面外にはみ出すため side="right" を指定する（詳細は CLAUDE.md
+            「ピン止め・お気に入り・メモ機能」節を参照）。 */}
+        <Tooltip label="戻る" side="right" className="mr-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+        </Tooltip>
         <span className="text-base font-medium text-gray-800">設定</span>
       </div>
 
@@ -171,6 +178,8 @@ export function SettingsPanel({
               onSave={onSaveHotkey}
               checkUpdateOnStartup={appSettings.checkUpdateOnStartup}
               onToggleCheckUpdateOnStartup={onSetCheckUpdateOnStartup}
+              pinEnabled={appSettings.pinEnabled}
+              onTogglePinEnabled={onSetPinEnabled}
             />
           )}
           {tab === "fileSearch" && (

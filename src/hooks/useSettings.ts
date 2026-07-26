@@ -248,6 +248,13 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  const setPinEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_pin_enabled", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
   const addFolder = useCallback(async () => {
     const path = await invoke<string | null>("pick_folder").catch(() => null);
     if (!path) return;
@@ -326,6 +333,7 @@ export function useSettings(showSettings: boolean) {
     setOcrEnabled,
     setCheckUpdateOnStartup,
     setPathPasteEnabled,
+    setPinEnabled,
     addFolder,
     toggleFolder,
     removeFolder,

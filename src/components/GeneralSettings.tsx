@@ -62,11 +62,15 @@ export function GeneralSettings({
   onSave,
   checkUpdateOnStartup,
   onToggleCheckUpdateOnStartup,
+  pinEnabled,
+  onTogglePinEnabled,
 }: {
   hotkey: string;
   onSave: (accelerator: string) => Promise<string | null>;
   checkUpdateOnStartup: boolean;
   onToggleCheckUpdateOnStartup: (checked: boolean) => void;
+  pinEnabled: boolean;
+  onTogglePinEnabled: (checked: boolean) => void;
 }) {
   const [mods, setMods] = useState<ModifierState>(() => parseAccelerator(hotkey).mods);
   const [mainKey, setMainKey] = useState<string>(() => parseAccelerator(hotkey).mainKey);
@@ -150,6 +154,15 @@ export function GeneralSettings({
           description="アプリ起動時に新しいバージョンがないか自動で確認します。"
           checked={checkUpdateOnStartup}
           onChange={onToggleCheckUpdateOnStartup}
+        />
+      </div>
+
+      <div className="pt-3 border-t border-gray-200/60">
+        <FeatureToggle
+          label="ピン止め機能"
+          description="検索結果のファイルをピン止めし、検索ボックスが空のとき一覧の最上部に常に表示します。"
+          checked={pinEnabled}
+          onChange={onTogglePinEnabled}
         />
       </div>
 

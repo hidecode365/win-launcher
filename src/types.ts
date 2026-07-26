@@ -47,6 +47,27 @@ export interface FolderEntry extends FolderDetailSettings {
   enabled: boolean;
 }
 
+// ピン止め・お気に入り・メモの3機能を単一のツリー構造で管理する共通ノード。
+// `children` を持つ入れ子構造ではなく `parentId` を持つフラットな配列（隣接リスト方式）
+// として扱う（詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節、
+// CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。`clipboard`・`command` は
+// 型定義のみで今回は生成・使用しない。
+export type FavoriteNodeType = "folder" | "file" | "clipboard" | "command";
+
+export interface FavoriteNode {
+  id: string;
+  parentId: string;
+  type: FavoriteNodeType;
+  name: string;
+  value: string;
+  order: number;
+}
+
+// ルート直下に生成される3つの予約フォルダの固定ID。Rust側 main.rs の
+// PINNED_FOLDER_ID 等の定数と値を一致させること（値そのものを変更する場合は
+// 両方を同時に更新する）。
+export const PINNED_FOLDER_ID = "__pinned__";
+
 // /recent の「表示対象設定」の入力値。保存ボタン押下時に `set_recent_display_settings`
 // へまとめて渡す。`FolderDetailSettings` から `maxDepth`（/recent には検索階層の概念が
 // ない）を除いた形で、フォルダ単位ではなく /recent 機能全体で共有する単一の設定として
@@ -88,6 +109,7 @@ export interface AppSettings {
   recentBlacklistExtensions: string[];
   recentWhitelistExtensions: string[];
   pathPasteEnabled: boolean;
+  pinEnabled: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -116,6 +138,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   recentBlacklistExtensions: [],
   recentWhitelistExtensions: [],
   pathPasteEnabled: true,
+  pinEnabled: true,
 };
 
 // Rust の `check_for_update` コマンドの戻り値。

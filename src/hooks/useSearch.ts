@@ -11,13 +11,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-shell";
 import type { Store } from "@tauri-apps/plugin-store";
 import { hideWindow } from "../lib/window";
-import { formatWithCommas } from "../lib/format";
+import { formatWithCommas, makeId } from "../lib/format";
 import {
   AppSettings,
+  FavoriteNode,
   FileEntry,
   FolderEntry,
   FrecencyMap,
   PastedPathInfo,
+  PINNED_FOLDER_ID,
   PrefixCommand,
   RecentFile,
   SystemCommand,
@@ -520,6 +522,116 @@ export function useSearch(
     : null;
   const recentMode = recentFilterText !== null;
 
+  // ピン止めブロックの表示条件（検索ボックスが空、機能ON、他の排他モードでない）。
+  // calcMode/prefixCommandMode は入力文字種上クエリが空の間は構造的に成立しない
+  // （isCalcExpression は空文字を false、buildPrefixCommandCandidates は "/" で
+  // 始まらないクエリを [] にする）ため、ここで明示的に除外する必要はない。
+  const pinnedVisible =
+    appSettings.pinEnabled && query === "" && !clipboardMode && !recentMode;
+
+  // ピン止め・お気に入り・メモの生ノード配列（隣接リスト方式。詳細は
+  // REQUIREMENTS.md/CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
+  // frecency と同様、useCallback の古いクロージャに残った state を参照してしまうのを
+  // 避けるため useRef の鏡（favoritesRef）を併用する。アプリ起動時に一度だけ取得する
+  // （frecency のように App.tsx 経由の Store ではなく、Rust コマンド経由で直接取得する。
+  // 「フロントエンド直接操作は採用しない」方針のため）。
+  const [favorites, setFavoritesState] = useState<FavoriteNode[]>([]);
+  const favoritesRef = useRef<FavoriteNode[]>([]);
+
+  useEffect(() => {
+    invoke<FavoriteNode[]>("get_favorites")
+      .then((data) => {
+        favoritesRef.current = data;
+        setFavoritesState(data);
+      })
+      .catch(console.error);
+  }, []);
+
+  // ピン止め済みパスの集合。search_files の除外引数（クエリが空のときのみ渡す）と、
+  // 通常のファイル検索結果行のピンアイコンの塗りつぶし判定の両方に使う。
+  const pinnedPathSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favorites) {
+      if (f.parentId === PINNED_FOLDER_ID && f.type === "file") {
+        set.add(f.value);
+      }
+    }
+    return set;
+  }, [favorites]);
+
+  const isPinned = useCallback(
+    (path: string) => pinnedPathSet.has(path),
+    [pinnedPathSet]
+  );
+
+  // ピン止めブロック表示用（シェルアイコン付き、order 順ソート済み）。favorites とは
+  // 別に、表示専用のPULL取得として持つ（アイコン取得は Rust 側で行う必要があるため）。
+  const [pinnedFiles, setPinnedFiles] = useState<FileEntry[]>([]);
+  // ピン止めした各ファイル・フォルダの実体有無（パス→真偽値）。
+  const [pinnedExistence, setPinnedExistence] = useState<Record<string, boolean>>({});
+
+  // 選択状態をパスに紐づけて復元する仕組み。移動先が操作時点で確定できない
+  // ピン止め解除（移動先が frecency ランキング次第で非同期にしか分からない）
+  // 向けに、行番号ではなく操作対象のファイルパスを覚えておき、一覧の再構築後に
+  // そのパスが今何行目にあるかを探し直して選択し直す。移動先が操作時点で確定
+  // している場合（ピン止め追加・並び替え）は、この非同期の仕組みは使わず
+  // 同期的に setSelectedRaw を呼ぶ（suppressNextSelectReset を参照。詳細・
+  // 分離した経緯は CLAUDE.md「選択状態の維持」節を参照）。
+  const pendingSelectPathRef = useRef<string | null>(null);
+  const pendingSelectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+
+  // pendingSelectPathRef が担っていた2つの役割のうち、「移動先が操作時点で
+  // 確定しているケース（ピン止め追加・並び替え）」向けに、以下の1点だけを
+  // 満たす専用フラグ。「非同期の照合・タイムアウトによるフォールバック」は
+  // 行わず、あくまで直後のメイン検索effect（#8）・search_files 完了時（#9）の
+  // 強制リセットを1回分だけ抑止する（詳細・分離した経緯は CLAUDE.md
+  // 「選択状態の維持」節を参照）。
+  //
+  // このフラグは「メイン検索effectが1回走る間」ではなく「その1回のeffect実行が
+  // 開始した search_files のIPC往復が完了するまで」生存させる必要がある
+  // （#8 は同期的にすぐ到達するが、#9 は非同期の応答を待って初めて到達するため）。
+  // そのため #8 の時点ではフラグを読むだけでクリアせず、search_files を実際に
+  // 呼び出す直前でスナップショットを取ってからクリアし（以降のクエリ変更等、
+  // 無関係な次回のeffect実行にフラグが漏れ出さないようにするため）、そのスナップ
+  // ショットを #9 の判定に使う。fileSearchEnabled が false で search_files 自体を
+  // 呼ばない場合も、同じ理由でその場でクリアする（クリアし忘れるとフラグが
+  // 立ちっぱなしになり、以後の正当なリセットまで抑止してしまう）。
+  const suppressNextSelectResetRef = useRef(false);
+
+  const suppressNextSelectReset = useCallback(() => {
+    suppressNextSelectResetRef.current = true;
+  }, []);
+
+  const requestSelectRestore = useCallback((path: string) => {
+    if (pendingSelectTimeoutRef.current !== null) {
+      clearTimeout(pendingSelectTimeoutRef.current);
+    }
+    pendingSelectPathRef.current = path;
+    // 一覧の再取得（search_files／get_pinned_files のIPC往復）は通常
+    // 数十ms程度で完了する想定。ピン止め解除したファイルが通常一覧の上位
+    // MAX_SEARCH_RESULTS（50件）に入らない場合など、一定時間探しても
+    // 見つからないケースがあるため、タイムアウトで復元をあきらめ、
+    // 明示的に1行目へフォールバックする（エラーにはしない）。
+    pendingSelectTimeoutRef.current = setTimeout(() => {
+      console.debug(
+        `[selectRestore] timed out, could not find path (path="${path}"). Falling back to index 0.`
+      );
+      pendingSelectPathRef.current = null;
+      pendingSelectTimeoutRef.current = null;
+      setSelectedRaw(0);
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pendingSelectTimeoutRef.current !== null) {
+        clearTimeout(pendingSelectTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // recentMode の間、現在アクティブな取得を上書きしないよう世代 ID で保護しつつ
   // get_recent_files を呼び直す（クリップボード履歴と異なりプッシュ通知がなく、
   // 明示的に取得し直さない限りウィンドウ非表示中に開いた/削除したファイルが
@@ -551,6 +663,41 @@ export function useSearch(
     fetchRecentFiles("mode-enter");
   }, [recentMode, fetchRecentFiles]);
 
+  // ピン止めブロックのデータ（アイコン付きファイル一覧）と実体有無を取得する。
+  // get_pinned_files → check_paths_exist の順に呼び、両方の結果を同一の世代 ID
+  // （"pinned" キー）で保護する。存在確認のタイミングは REQUIREMENTS.md
+  // 「ピン止め・お気に入り・メモ機能」節の通り、ブロック表示時とフォーカス復帰時の
+  // 2箇所（このコールバックがその両方から呼ばれる。呼び出し箇所は下記2つの useEffect
+  // を参照）。
+  const fetchPinnedFiles = useCallback((source: string) => {
+    const callId = beginAsyncCall("pinned");
+    invoke<FileEntry[]>("get_pinned_files")
+      .then((files) => {
+        if (!isLatestAsyncCall("pinned", callId)) return;
+        setPinnedFiles(files);
+        return invoke<boolean[]>("check_paths_exist", {
+          paths: files.map((f) => f.path),
+        }).then((existsList) => {
+          if (!isLatestAsyncCall("pinned", callId)) return;
+          const map: Record<string, boolean> = {};
+          files.forEach((f, i) => {
+            map[f.path] = existsList[i] ?? true;
+          });
+          setPinnedExistence(map);
+        });
+      })
+      .catch((err) => {
+        console.error(`[pinned] fetch failed (source=${source}):`, err);
+      });
+  }, [beginAsyncCall, isLatestAsyncCall]);
+
+  // ピン止めブロックが表示状態になったタイミング（false → true の遷移）で取得する
+  // （/recent の mode-enter と同じ考え方。「表示のたび」に該当する）。
+  useEffect(() => {
+    if (!pinnedVisible) return;
+    fetchPinnedFiles("mode-enter");
+  }, [pinnedVisible, fetchPinnedFiles]);
+
   // pull型モード（get_recent_files 等、プッシュ通知を持たない取得）のうち、フォーカス
   // 回復時に再取得が必要なものをキーで宣言するテーブル。クリップボード履歴は OS の
   // クリップボード変更通知を常時受信しているため表示中の内容が非表示中も自動で
@@ -571,6 +718,10 @@ export function useSearch(
     recent: {
       active: recentMode,
       refetch: () => fetchRecentFiles("focus-regain"),
+    },
+    pinned: {
+      active: pinnedVisible,
+      refetch: () => fetchPinnedFiles("focus-regain"),
     },
   };
 
@@ -710,7 +861,24 @@ export function useSearch(
       return;
     }
 
-    setSelectedRaw(0);
+    // ピン止め解除直後は、パスに紐づけた選択復元（pendingSelectPathRef、
+    // requestSelectRestore を参照）が完了するまで、ここで1行目へ強制的に
+    // リセットしない（復元前に一瞬1行目が見えてしまうちらつきを避けるため）。
+    // 復元対象が見つからなかった場合の1行目へのフォールバックは、
+    // requestSelectRestore 側のタイムアウトが明示的に行う。
+    //
+    // ピン止め追加・並び替え直後は、移動先が操作時点で確定しているため
+    // pendingSelectPathRef は使わず、setSelectedRaw を同期的に呼んだ側が
+    // suppressNextSelectResetRef を立てている。ここではまだフラグを消費
+    // （クリア）せず、読むだけに留める（#9 の search_files 完了時点まで
+    // 抑止を継続させる必要があるため。詳細は suppressNextSelectResetRef
+    // 自体の宣言コメントを参照）。
+    if (
+      pendingSelectPathRef.current === null &&
+      !suppressNextSelectResetRef.current
+    ) {
+      setSelectedRaw(0);
+    }
 
     if (appSettings.calcEnabled && isCalcExpression(query)) {
       invoke<string | null>("calculate", { expr: query })
@@ -748,10 +916,25 @@ export function useSearch(
       // （asyncCallIdRef の "search" キー）による使い捨てチェックは維持しているため、
       // 連続してクエリが変わった場合に古い呼び出しの結果が後から上書きしてしまうことはない）。
       const callId = beginAsyncCall("search");
+      // ピン止め済みパスの除外は、ピン止めブロックが実際に画面上へ表示されている
+      // 場合（pinnedVisible。pinEnabled が OFF の場合や、クエリに文字が入力されている
+      // 場合は false になる）のときのみ行う。query === "" だけで判定すると
+      // pinEnabled が OFF でも除外がかかり続け、ピン止めしていたファイルが通常の
+      // 検索結果からも消えてしまう不具合になっていたため、pinnedVisible を使う
+      // （この効果に到達する時点で clipboardMode/recentMode/prefixCommandMode/
+      // pathPasteWizardMode はいずれも既に false のため、pinnedVisible は実質的に
+      // 「pinEnabled && query === ""」と同値になる）。
+      const excludePaths = pinnedVisible ? Array.from(pinnedPathSet) : [];
       console.debug(
-        `[search] search_files start (query="${query}", callId=${callId}, closeRefreshTick=${closeRefreshTick})`
+        `[search] search_files start (query="${query}", callId=${callId}, closeRefreshTick=${closeRefreshTick}, excludeCount=${excludePaths.length})`
       );
-      invoke<FileEntry[]>("search_files", { query })
+      // ここでスナップショットを取ってから即座にクリアする。#8 では
+      // まだ読むだけだったフラグをここで一度きり消費することで、以降の
+      // 無関係な次回のeffect実行（次のキー入力等）にフラグが漏れ出さない
+      // ようにする（詳細は suppressNextSelectResetRef 自体の宣言コメントを参照）。
+      const suppressReset = suppressNextSelectResetRef.current;
+      suppressNextSelectResetRef.current = false;
+      invoke<FileEntry[]>("search_files", { query, excludePaths })
         .then((files) => {
           if (!isLatestAsyncCall("search", callId)) {
             console.debug(
@@ -763,11 +946,22 @@ export function useSearch(
             `[search] search_files resolved (callId=${callId}, count=${files.length})`
           );
           setResults(sortByFrecency(files, frecency));
-          setSelectedRaw(0);
+          // ピン止め解除直後などで選択復元待ちの場合、または直前で
+          // suppressReset を観測した場合（ピン止め追加・並び替え直後）は
+          // ここで1行目へ戻さない（前者の復元は results の変化を検知する
+          // 専用エフェクトが行う。後者は呼び出し元が既に同期的に正しい
+          // インデックスを設定済みのため、何もしなくてよい）。
+          if (pendingSelectPathRef.current === null && !suppressReset) {
+            setSelectedRaw(0);
+          }
         })
         .catch(console.error);
     } else {
       setResults([]);
+      // search_files を呼ばないためフラグを消費する機会がここにしかない。
+      // クリアし忘れるとフラグが立ちっぱなしになり、以後の正当なリセットまで
+      // 抑止してしまう。
+      suppressNextSelectResetRef.current = false;
     }
   }, [
     query,
@@ -779,9 +973,82 @@ export function useSearch(
     pathPasteWizardMode,
     recentMode,
     recentResults,
+    pinnedVisible,
+    pinnedPathSet,
     closeRefreshTick,
     beginAsyncCall,
     isLatestAsyncCall,
+  ]);
+
+  // 選択復元の実行部分。pendingSelectPathRef にパスが積まれている間、
+  // pinnedFiles／results（＝一覧の再構築に関わる state）が変化するたびに
+  // 再実行され、そのパスが今どちらの一覧の何行目にあるかを探す。
+  // - ピン止めブロック（pinnedFiles）側で見つかった場合：ブロックは常にインデックス0
+  //   から占有するため、そのままそのインデックスを選択する
+  // - 通常のファイル検索結果（results）側で見つかった場合：ResultList.tsx／App.tsx
+  //   と同じ「ピン止めブロック→パス貼り付け候補→計算結果→URLエンコード/デコード結果→
+  //   ファイル検索結果」の順のオフセットを加算した絶対インデックスを選択する
+  //   （このオフセット計算式は App.tsx の baseLength 算出と同一のものを、ここでも
+  //   独立に計算している。両者がずれると復元先の行がずれるため、どちらかを変更した
+  //   場合はもう一方も同期して直すこと）
+  // どちらにも見つからない場合は何もしない（ref を保持したまま次の変化を待つか、
+  // requestSelectRestore のタイムアウトが最終的に諦めて1行目へフォールバックする）。
+  useEffect(() => {
+    const path = pendingSelectPathRef.current;
+    if (path === null) return;
+
+    console.debug(
+      `[selectRestore] attempting to resolve path="${path}" ` +
+        `(pinnedVisible=${pinnedVisible}, pinnedFiles=${JSON.stringify(
+          pinnedFiles.map((f) => f.path)
+        )}, resultsCount=${results.length})`
+    );
+
+    if (pinnedVisible) {
+      const pinnedIndex = pinnedFiles.findIndex((f) => f.path === path);
+      if (pinnedIndex !== -1) {
+        console.debug(`[selectRestore] found in pinnedFiles at index ${pinnedIndex}`);
+        setSelectedRaw(pinnedIndex);
+        pendingSelectPathRef.current = null;
+        if (pendingSelectTimeoutRef.current !== null) {
+          clearTimeout(pendingSelectTimeoutRef.current);
+          pendingSelectTimeoutRef.current = null;
+        }
+        return;
+      }
+    }
+
+    const resultsIndex = results.findIndex((f) => f.path === path);
+    if (resultsIndex !== -1) {
+      console.debug(`[selectRestore] found in results at index ${resultsIndex}`);
+      const pinnedLength = pinnedVisible ? pinnedFiles.length : 0;
+      const pathPasteLength = pathPasteCandidate
+        ? pathPasteCandidate.isDir
+          ? 2
+          : 1
+        : 0;
+      const calcLength = calcResult !== null ? 1 : 0;
+      const urlConvertLength = urlConvertResult !== null ? 1 : 0;
+      setSelectedRaw(
+        pinnedLength +
+          pathPasteLength +
+          calcLength +
+          urlConvertLength +
+          resultsIndex
+      );
+      pendingSelectPathRef.current = null;
+      if (pendingSelectTimeoutRef.current !== null) {
+        clearTimeout(pendingSelectTimeoutRef.current);
+        pendingSelectTimeoutRef.current = null;
+      }
+    }
+  }, [
+    pinnedFiles,
+    results,
+    pinnedVisible,
+    pathPasteCandidate,
+    calcResult,
+    urlConvertResult,
   ]);
 
   // 起動回数・最終起動時刻を更新し、settings.json の "frecency" キーへ即時永続化する。
@@ -821,6 +1088,126 @@ export function useSearch(
       await store.save();
     }
   }, []);
+
+  // ピン止めの追加・解除。書き込み頻度が低いため、部分更新ではなく favorites 配列
+  // 全量を組み立てて set_favorites に渡す（B-1 の方針）。成功後、Rust から返る
+  // 保存済み配列を新しい真実の状態として反映したうえで、アイコン付き表示用一覧
+  // （pinnedFiles）を取り直す。
+  const togglePin = useCallback(
+    (file: FileEntry) => {
+      const current = favoritesRef.current;
+      const alreadyPinned = current.some(
+        (f) =>
+          f.parentId === PINNED_FOLDER_ID &&
+          f.type === "file" &&
+          f.value === file.path
+      );
+      let updated: FavoriteNode[];
+      if (alreadyPinned) {
+        // ピン止め解除：移動先（通常のファイル検索結果内の何行目に来るか）は
+        // frecency ランキングに依存し、この時点では確定できない。search_files
+        // の結果が返るのを待って選択を復元する非同期の仕組みに乗せる
+        // （requestSelectRestore・選択復元用の useEffect を参照）。
+        requestSelectRestore(file.path);
+        updated = current.filter(
+          (f) =>
+            !(
+              f.parentId === PINNED_FOLDER_ID &&
+              f.type === "file" &&
+              f.value === file.path
+            )
+        );
+      } else {
+        // ピン止め：新規ピンは常にピン止めブロックの末尾（order 最大）に追加
+        // される実装のため、移動先の行番号は追加前の件数として確定的に分かる
+        // （並び替えと同じ理由で、非同期の照合を伴う選択復元機構
+        // （requestSelectRestore）を経由する必要がない。ただし、この
+        // set_favorites 完了後にメイン検索effectが再実行され1行目へリセット
+        // されてしまうのを防ぐため、suppressNextSelectReset で1回分だけ
+        // 抑止する。詳細は CLAUDE.md「選択状態の維持」節を参照）。
+        const pinnedNodes = current.filter(
+          (f) => f.parentId === PINNED_FOLDER_ID && f.type === "file"
+        );
+        const maxOrder = pinnedNodes.reduce(
+          (max, f) => Math.max(max, f.order),
+          -1
+        );
+        setSelectedRaw(pinnedNodes.length);
+        suppressNextSelectReset();
+        const newNode: FavoriteNode = {
+          id: makeId(),
+          parentId: PINNED_FOLDER_ID,
+          type: "file",
+          name: file.name,
+          value: file.path,
+          order: maxOrder + 1,
+        };
+        updated = [...current, newNode];
+      }
+      invoke<FavoriteNode[]>("set_favorites", { favorites: updated })
+        .then((saved) => {
+          favoritesRef.current = saved;
+          setFavoritesState(saved);
+          fetchPinnedFiles("toggle-pin");
+        })
+        .catch(console.error);
+    },
+    [fetchPinnedFiles, requestSelectRestore, suppressNextSelectReset]
+  );
+
+  // ピン止めブロックのドラッグ&ドロップによる並び替え。ドロップ確定時に order を
+  // 振り直した favorites 配列全量を set_favorites へ渡す。表示側（pinnedFiles）は
+  // 保存結果を待たず楽観的に並び替えて即座に反映する（体感速度を優先。保存自体は
+  // fire-and-forget で発火する）。
+  //
+  // 並び替えはドロップした時点で新しい順序・移動先のインデックス（toIndex）が
+  // 両方とも確定しているため、非同期の照合を伴う選択復元機構
+  // （requestSelectRestore）を経由せず、ここで直接選択インデックスを設定する。
+  // ピン止めブロックは常にインデックス0から占有する（ResultList.tsx の
+  // pinnedOffset と同じ前提）ため、オフセット加算は不要で toIndex がそのまま
+  // 選択すべき絶対インデックスになる。ただし、この後の set_favorites 完了で
+  // pinnedPathSet の参照が変わりメイン検索effectが再実行されると1行目へ
+  // リセットされてしまうため、suppressNextSelectReset で1回分だけ抑止する
+  // （詳細は CLAUDE.md「選択状態の維持」節を参照）。
+  const reorderPinned = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= pinnedFiles.length ||
+        toIndex >= pinnedFiles.length
+      ) {
+        return;
+      }
+
+      const reordered = [...pinnedFiles];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+      setPinnedFiles(reordered);
+      setSelectedRaw(toIndex);
+      suppressNextSelectReset();
+
+      const pathOrder = new Map(reordered.map((f, i) => [f.path, i]));
+      const updatedFavorites = favoritesRef.current.map((f) => {
+        if (
+          f.parentId === PINNED_FOLDER_ID &&
+          f.type === "file" &&
+          pathOrder.has(f.value)
+        ) {
+          return { ...f, order: pathOrder.get(f.value)! };
+        }
+        return f;
+      });
+      invoke<FavoriteNode[]>("set_favorites", { favorites: updatedFavorites })
+        .then((saved) => {
+          favoritesRef.current = saved;
+          setFavoritesState(saved);
+        })
+        .catch(console.error);
+    },
+    [pinnedFiles, suppressNextSelectReset]
+  );
 
   // launch_file / open_containing_folder はいずれもファイルやフォルダを OS の既定
   // アプリ（Explorer 含む）で開く。起動されたアプリの前面表示や起動の遅さに
@@ -949,6 +1336,7 @@ export function useSearch(
     selectPrefixCommand,
     clipboardFilterText,
     clipboardMode,
+    recentMode,
     urlConvertResult,
     pendingCommand,
     requestSystemCommand,
@@ -974,5 +1362,11 @@ export function useSearch(
     selectWizardFolder,
     confirmShortcut,
     wizardBack,
+    pinnedVisible,
+    pinnedFiles,
+    pinnedExistence,
+    isPinned,
+    togglePin,
+    reorderPinned,
   };
 }
