@@ -459,9 +459,140 @@ win-launcher/
   - ピン止め解除は引き続き `requestSelectRestore`（識別子照合＋タイムアウトフォールバック）をそのまま使う。変更していない
 - **既知の限界（暫定対応であることの明示）**：この修正は v0.10.0 に向けた最小修正であり、恒久対応ではない。ごく短い時間（`set_favorites` のIPC往復中、体感では数十ms程度）に限り、ユーザーが即座に次の操作（クエリ入力等）を行うと、その正当なリセットが誤って1回だけ抑止される理論上の競合が残っている（逆に、フラグを毎回確実にクリアする設計にしているため、抑止が永続して以後ずっと効かなくなることはない）。結果一覧を構成する行の種類・オフセット計算が随所に分散している現在の構造そのものに起因する問題であり、根本的な解消は結果行のフラット配列化（`ResultRow` の Union 型による一元管理）へのリファクタリングを待つ
 
+**【追記・R-1 フェーズDで置き換え済み】** 上記の `pendingSelectPathRef`／`suppressNextSelectResetRef` という2本立ての ref は、フェーズDで単一の `pendingSelectKeyRef`（識別子＝`ResultRow["key"]` を保持し、`rows.findIndex` で解決する）に統合され、コード上には存在しない。本節（「移動先が操作時点で確定している場合は同期的に設定する」「『リセットの抑止』と『非同期での選択復元』を分離する」の2節）は、**その置き換えに至った経緯・教訓の記録として意図的に残している**（同種の設計判断を将来行う際の参考にするため）。新しい設計の詳細は「結果行のフラット配列化（R-1）」節のフェーズDを参照。ここで述べた「既知の限界」（IPC往復中の割り込みで正当なリセットが1回だけ誤って抑止される競合）は、フェーズD後も**同じ性質のまま残っている**（識別子ベースになったことで抑止対象を取り違えなくはなったが、抑止そのものを解消したわけではない。詳細はフェーズDの記載を参照）。
+
 ##### 参考：`pathPasteCandidate` と `recentMode` の関係（既に対応済み・追加対応不要）
 
 上記の調査に付随して、「`recentMode` の分岐が `pathPasteCandidate` をクリアしていないのではないか」という懸念が一時的に挙がったが、確認の結果、`useSearch.ts` のメイン検索effect内の `recentMode` 分岐は `clipboardMode`／`prefixCommandMode` の各分岐と同様に `setPathPasteCandidate(null)` を呼んでおり、既に対応済みだった。`pathPasteWizardMode` の分岐のみ、ウィザード中に機能1/機能2のアクションが `pathPasteCandidate` を引き続き参照する必要があるため、意図的にクリアしていない（この1点のみが例外である旨は当該分岐のコメントに明記済み）。今後同種の懸念が再燃した場合は、まず該当箇所のコードを直接確認すること。
+
+#### 結果行のフラット配列化（R-1）
+
+「選択状態の維持」節・「`suppressNextSelectResetRef`」節で述べた不具合の根本原因は、通常モード（`clipboardMode`／`pathPasteWizardMode` を除く。この2つは既に単一配列への素朴な添字で成立しており対象外）の結果一覧が、行の種類ごとにバラバラの state（`pinnedFiles`／`pathPasteCandidate`／`calcResult`／`urlConvertResult`／`results`）として管理され、それらを1つの選択インデックス空間に対応付けるための同じオフセット計算（`pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength`）が `App.tsx`（`baseLength` 算出・`handleKeyDown`・`StatusFooter` への各 `is*Selected` props）・`ResultList.tsx`（`pinnedOffset` 以下の各 `data-index`/`onMouseEnter`）・`useSearch.ts`（選択復元用 `useEffect`）の3箇所に独立して再実装されていたことにある。新しい行の種類を追加するたびに3箇所すべての同期が必要で、実際に同期漏れに起因する選択リセット不具合を生んだ。
+
+これを解消するため、通常モードの結果一覧を単一のフラット配列 `rows: ResultRow[]`（`src/hooks/useSearch.ts`、`src/types.ts` の判別可能 Union）として再構成する。**行の並び順の正本は `useSearch.ts` の `rows` である**。今後この並び順を変更する場合は `rows` の構築ロジックのみを直し、他の箇所（`App.tsx`/`ResultList.tsx`）はそれを参照するだけにする。
+
+移行は段階的に行い、以下のフェーズに分ける（本節はフェーズD-2の完了時点の記録。以降のフェーズを実施したら本節を更新すること）。
+
+- **フェーズA（完了）**：`rows` の `useMemo` を新設する。純粋な計算の追加のみで、既存の `results`・各種 `Length` 変数・フックの外部インターフェースは変更しない。描画・操作のいずれからも参照しないため、ユーザーから見える挙動の変化はゼロ
+- **フェーズB（完了）**：`ResultList.tsx` の通常モード（`prefixCommandMode` を除く）の描画を `rows.map(...)` ＋ `row.kind` の switch へ書き換える。行の種類ごとの個別 JSX ブロックはそのまま switch の各 case へ移植し（className・DOM構造は一切変更していない）、`pinnedOffset`/`pathPasteOffset`/`calcIndex`/`calcOffset`/`urlConvertOffset` の個別算出は撤去した
+  - この時点では `App.tsx` を変更しない制約のもと作業したため、`ResultList.tsx` は既存 props（`pinnedVisible`/`pinnedFiles`/`pinnedExistence`/`pathPasteCandidate`/`calcResult`/`urlConvertResult`/`results`/`isPinned`）から `useSearch.ts` の `rows` 構築と全く同じ順序・同じ判定式でローカルに `rows` を組み立てる、一時的な重複状態だった（フェーズB-2で解消済み。次項）
+- **フェーズB-2（完了）**：フェーズBで生じた `rows` 構築ロジックの重複（`useSearch.ts` と `ResultList.tsx` の2箇所）を解消した。`App.tsx` が `search.rows` を `ResultList` の `rows` props として直接渡すように変更し、`ResultList.tsx` 側のローカル `rows` 構築（`useMemo`）は削除。これに伴い `ResultList.tsx` の props から `pinnedVisible`/`pinnedFiles`/`pinnedExistence`/`isPinned`/`pathPasteCandidate`/`calcResult`/`urlConvertResult`（7個）を削除した（いずれも `rows` の各行が既に埋め込み済みの情報のため、`ResultList.tsx` 内で他に使われていないことを確認した上で削除）。`results`（`rows.length === 0` かつ `query` 非空時の「見つかりませんでした」判定に必要）と `pinIconVisible`（表示設定。行データではないため）は残した。`rows: ResultRow[]` を構築する箇所は `useSearch.ts` の1箇所のみになった
+- **フェーズC（完了）**：`App.tsx` から `pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` を全廃し、`handleKeyDown`（Enter・Shift+Enter の対象特定）を `const selectedRow = search.rows[search.selected] ?? null;` ＋ `switch (selectedRow.kind)` ベースの判定へ書き換えた。`StatusFooter` も `isPathPasteCandidateSelected`/`isCalcSelected`/`isUrlConvertSelected`/`isFileSelected`（4個の bool props）を廃止し、単一の `selectedRowKind: ResultRow["kind"] | null` props に統合した（表示されるキーヒントの文言は一切変更していない）
+  - `baseLength` は名前・意味を変えずに残した。**理由**：`ResultList.tsx`（`prefixCommandMode` 分岐で `baseLength` を使って Web検索行の位置を決めている）を今回のフェーズでは変更しない制約のため、`baseLength` プロパティそのものは今後も必要。ただし内部の算出式は「`pinnedLength + results.length + pathPasteLength + calcLength + urlConvertLength` の合算」から「通常モードでは `search.rows.length` を直接使う」形に単純化した（`clipboardMode`/`prefixCommandMode`/`pathPasteWizardMode` の各分岐の算出式自体は変更していない）。**「`baseLength` という名前を残したこと」自体は削除対象に含めていた変数名と重なるが、意味が変わった（オフセットの合算ではなく `rows.length` の直接参照）ため、フェーズCの主旨である「オフセット計算の全廃」とは矛盾しない**
+  - 選択復元用 `useEffect`（`useSearch.ts`）・`suppressNextSelectResetRef` は今回変更していない。そこで使われている `pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` は `useSearch.ts` 内のローカル変数であり、`App.tsx` 側の同名変数とは無関係（別ファイル・別スコープ）のため、今回の `App.tsx` 側の削除による影響は受けない（フェーズD で対応予定）
+  - Web検索行の特例（`rows` に含まれない行を `selected === baseLength` で判定する処理）は `handleKeyDown` の Enter 分岐内、`selectedRow` を使った switch より前の1箇所（`if (webSearchVisible && search.selected === baseLength) { ... }`）に集約されている（元々1箇所だったため、今回の書き換えでも分散させていない）
+- **フェーズD（完了）**：選択復元を識別子ベースの `rows.findIndex` に統合し、R-1 の核（フェーズA〜D）を完了させた。
+  - 旧 `pendingSelectPathRef`（ファイルパスのみ保持）と `suppressNextSelectResetRef`（識別情報を持たない一度きりのブールフラグ）の2本立てを廃止し、単一の `pendingSelectKeyRef: useRef<string | null>`（`ResultRow["key"]` と同じ形式の識別子。例: `"pinned:<path>"`/`"file:<path>"`）に統合した
+  - 解決ロジックは `rows` を依存配列に持つ1本の `useEffect`（`rows` の `useMemo` の直後に配置。フックの定義順として `rows` より後である必要がある）に一本化し、`rows.findIndex((row) => row.key === key)` で対象行を探す。旧実装が持っていた「`pinnedFiles` 側を先に見て、見つからなければ `results` 側をオフセット計算込みで見る」という2段階のロジック・`pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` のローカル計算はすべて撤去した（`rows` 自体が既に正しい並び順を表現しているため、`findIndex` 一発で足りる）
+  - 移動先が操作時点で確定的に分かる場合（ピン止め追加・並び替え）は、引き続き `setSelectedRaw` で即座に楽観的反映を行う。ただし旧 `suppressNextSelectReset()`（フラグを立てるだけ）の代わりに、同じ `requestSelectRestore(key)` を呼んで対象の識別子を登録する（ピン止め追加は `` `pinned:${file.path}` ``、並び替えは移動した行の `` `pinned:${moved.path}` ``）。これにより「同期的に確定している場合」と「非同期でしか確定しない場合（ピン止め解除、`` `file:${file.path}` ``）」が同じ1つの識別子ベースの仕組みに統合され、専用の抑止フラグを別途持つ必要がなくなった
+  - メイン検索effectの「クエリ変更時に1行目へ戻す」リセットガードは、`pendingSelectKeyRef.current === null` の1条件だけで判定できるようになった（旧: `pendingSelectPathRef.current === null && !suppressNextSelectResetRef.current` の2条件・`search_files` 呼び出し直前のスナップショット取得＋クリアという分岐が必要だった）
+  - **`findIndex` が `-1` を返す場合（対象行が見つからない）のふるまいは変更していない**：何もせず、`rows` の次の変化を待つか、`requestSelectRestore` のタイムアウト（1秒）が最終的に諦めて1行目へフォールバックする。旧実装（`pinnedFiles`/`results` それぞれで見つからなければ何もしない）と同じ「見つかるまで待つ、ダメなら1秒でフォールバック」という挙動をそのまま踏襲している
+  - **既知の限界は変わらず残っている**：`suppressNextSelectResetRef` 時代に文書化されていた「`set_favorites` のIPC往復中に別の操作（クエリ入力等）が割り込むと、正当なリセットが誤って抑止される」という競合は、識別子ベースになった後も**同じ性質のまま残る**（`pendingSelectKeyRef` が非nullの間はどんな理由でのリセットも一律に抑止するため）。改善した点は「抑止対象を取り違えなくなったこと」（旧: ブールフラグのため、どの操作のための抑止かを区別できなかった）であり、「抑止のタイミングが割り込みに対して脆弱である」こと自体の解消はスコープ外（詳細は「移動先が操作時点で確定している場合は同期的に設定する」節・「『リセットの抑止』と『非同期での選択復元』を分離する」節の追記を参照）
+  - `/recent`（`recentMode`）のフォーカス復帰時再取得は `recentResults` が変わるたび無条件に1行目へリセットする既存の実装のままで、本フェーズでは変更していない（この経路は `pendingSelectKeyRef`/`requestSelectRestore` を一切使っておらず、フェーズDの対象外）。ピン止めブロックのフォーカス復帰時再取得（`fetchPinnedFiles`）も同様に、選択状態を明示的に復元も リセットもしない（`pinnedFiles` の変化はメイン検索effectの依存配列に入っておらず、`pendingSelectKeyRef` が非nullでない限り何も起きない）。この2つの不一致は既知の状態として記録するに留め、今回は是正しない
+- **フェーズD-2（完了）**：フェーズDで実機リグレッションが発生したため、選択の決定方法自体を intent ベースへ作り直した。詳細は次項「選択は intent ベースの導出値であり、書き込み可能な state ではない」を参照
+- **フェーズD-3（完了）**：D-2の事前調査で見落とされていた `recentMode` 専用の強制リセットeffectを撤去し、全モード共通の「intentは変更せず resolveSelected が同じキーを探し直す」挙動に統一した。詳細は「選択は intent ベースの導出値であり、書き込み可能な state ではない」節末尾の追記を参照
+- **フェーズE（未着手）**：Web検索行（`webSearchVisible`）の扱いを検討する。`prefixCommandMode` の候補一覧・通常モードの `rows` の両方に共通して末尾へ追加される横断的な行のため、`ResultRow` に含めるか、`rows` とは別に扱い続けるかを含めて設計する
+- **フェーズF（任意）**：`prefixCommandMode`（プレフィックスコマンド候補一覧）も同じ `ResultRow` の枠組みに統合するかを検討する。現状は `prefixCommandCandidates: PrefixCommand[]` という別の単純な配列で十分に機能しており、統合の必要性が生じた場合にのみ着手する
+
+#### Web検索行のbaseLength特例（R-1フェーズE見送りの経緯）
+
+Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含まれておらず、`App.tsx` 側で `baseLength`（= `rows.length`）への+1という特例で扱われている（`selected === baseLength` の判定、`handleKeyDown` での switch 手前での分岐等）。
+
+これは R-1 のフェーズC の時点で意図的に見送った設計判断であり、バグではない。理由：Web検索行は `prefixCommandMode` の候補一覧と通常モードの一覧の両方に共通して末尾へ付く横断的な行であり、「通常モードのみ」という R-1 のスコープに単純には収まらないため。
+
+将来この行が原因の不具合（選択がずれる、行が消える等）が疑われた場合は、まずこの+1特例の算出箇所（`App.tsx` 内の `baseLength`・`handleKeyDown` のWeb検索行分岐）を確認すること。`rows`/`resolveSelected` の仕組みには含まれていないため、`rows` 側の調査をしても見つからない。
+
+対応する場合は R-1 フェーズE（Web検索行を `rows` に正式統合し、この特例を解消する）として着手する。現時点では優先度が低く保留中。
+
+#### 選択は intent ベースの導出値であり、書き込み可能な state ではない（フェーズD-2）
+
+**フェーズDのリグレッションと根本原因**：フェーズDでは `pendingSelectPathRef`（ファイルパスのみ保持）と `suppressNextSelectResetRef`（一度きりのブールフラグ）を廃止し、`pendingSelectKeyRef`（識別子を保持する ref）＋ `rows.findIndex` による復元に統一した。しかし実機で次のリグレッションが確認された：ピン止め追加・D&D並び替え直後、一瞬正しい行が選択された直後に先頭行へ戻ってしまう（ログ上は `[selectRestore] resolved key="pinned:..." at index=6` の直後に `search_files` の解決が完了し、選択が先頭へ戻っていた）。
+
+原因：選択の復元が成功した時点で `pendingSelectKeyRef` が `null` に戻り、その後遅れて到着する `search_files` 解決時のリセット処理（`pendingSelectKeyRef.current === null` を条件に `selected` を0にする）を、もはや抑止できなくなっていた。**根本原因は、`selected` が「複数の非同期処理がそれぞれ書き込める state」であったこと。** ピン止め操作・D&D・検索結果の解決が、それぞれ独立に `selected` へ書き込む経路を持つ限り、一発の抑止フラグで特定の書き込みだけを抑止しても書き込みの経路自体は残り続け、別のタイミング・別の非同期処理の組み合わせで同種の競合が再発する。フェーズDの識別子ベース化は「復元の照合方法」を改善しただけで、「書き込み経路が複数存在する」という構造上の問題そのものには手を付けていなかった。
+
+**この設計での解決**：`selected` という書き込み可能な state を廃止し、「ユーザーが選びたい」という意図を表す `intent` と、現在の行一覧（`rows`、または `clipboardMode` 中は `clipboardSelectionItems`）から `resolveSelected` で毎回導出する値にした。
+
+```ts
+type SelectIntent =
+  | { type: "top" }
+  | { type: "key"; key: string; expiresAt?: number };
+
+interface SelectableItem {
+  key: string;
+}
+
+function resolveSelected(
+  intent: SelectIntent,
+  items: SelectableItem[],
+  fallback: number
+): number {
+  if (intent.type === "top") return 0;
+  const index = items.findIndex((item) => item.key === intent.key);
+  return index === -1 ? fallback : index;
+}
+```
+
+`resolveSelected` が「見つからない場合」に `fallback`（直前に導出できた選択インデックス）をそのまま返す点が要：「見つからない」は「1行目へリセットする理由」ではなく「今探している対象がまだ rows に反映されていないだけ」を意味するため、見つかるかタイムアウトするまで現在の表示をそのまま維持する。
+
+**書き込み経路を1本に絞る**：`selected` への書き込みは、`intent`/`rows`/`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになった。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、フェーズDで見られたような「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
+
+**intent を {type:'top'} へリセットする2つの専用トリガー**（いずれも `pinnedPathSet`/`frecency`/`recentResults` を依存配列に含めない。含めるとピン止め操作の副作用でこの reset effect が発火し、フェーズDと同じ競合が intent 経由で再発するため）：
+- クエリ・設定（`appSettings`/`settingsVersion`）・`closeRefreshTick`（ウィンドウを閉じた直後の強制再取得）の変化 → `updateIntent({type:'top'}, "query-or-settings-change")`
+- `recentMode` 中の `recentResults` の変化（フォーカス復帰時の再取得を含む。既存の「/recent は毎回リセット」という挙動をそのまま踏襲）→ `updateIntent({type:'top'}, "recent-results-change")`
+
+**intent を更新している全箇所**（すべて `updateIntent(next, source)` という同一のラッパー経由。ログの `source` でどの経路から更新されたか追える）：
+1. 上記の2つの reset トリガー
+2. `selectRowByKeyboard(key)`：↑↓キーによる通常モード／`clipboardMode` の選択（`expiresAt` なし。即座に解決できるため）
+3. `selectRowFromHover(key, x, y)`：マウスホバーによる同上（抑止ロジックは旧 `selectFromHover` と同一）
+4. `togglePin` 追加分岐：`{type:'key', key:`pinned:${path}`, expiresAt: now+1000}`
+5. `togglePin` 解除分岐：`{type:'key', key:`file:${path}`, expiresAt: now+1000}`
+6. `reorderPinned`：`{type:'key', key:`pinned:${moved.path}`, expiresAt: now+1000}`
+7. タイムアウト効果（`intent.expiresAt` を過ぎても対象が見つからない場合）：`{type:'top'}`
+
+**適用範囲は「通常モード（rows）」と「clipboardMode（clipboardSelectionItems）」のみ**。`prefixCommandMode`／`pathPasteWizardMode`／Web検索行の +1 特例は、今回これらに非同期の書き込み競合を追加する具体的な予定が無いため、現状の生インデックス書き込み（`setSelected`／`selectFromHover`。フェーズDと同じ、変更していない）のまま維持する。`clipboardMode` を対象に含めた理由：クリップボード履歴は既に OS のクリップボード変更通知（非同期の外部更新）を持ち、今後お気に入り／メモ機能でノート登録という非同期IPC書き込みが加わる予定があり、今回のリグレッションと同型の「非同期書き込み × 非同期外部更新」という構造を抱えることになるため、先んじて intent 化した。
+
+`clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした（`useClipboard` の新しい引数として追加）。
+
+**`findIndex` が `-1` を返す場合のふるまいは変更していない**：フェーズDと同じく、何もせず `rows`/`clipboardSelectionItems` の次の変化を待つか、`expiresAt` のタイムアウト（1秒）が最終的に諦めて `{type:'top'}` へフォールバックする。
+
+**既知の限界（フェーズD時代から性質は変わらない）**：`intent.type === 'key'` の間はどんな理由でのリセットも一律に抑止される（reset トリガーの条件自体が `intent` を経由せず直接 `pinnedPathSet` 等を見ているわけではないため）。ごく短い時間（`set_favorites` のIPC往復中）にユーザーが次の操作を行った場合の挙動は、新しい `intent` がすぐさま古い `intent` を上書きするため、通常は問題にならない。ただし理論上、新しい操作が「同じ対象への操作」でない限りは新しい `intent` に置き換わるため、フェーズDで文書化されていたのと同種の競合そのものは、書き込み経路の構造的な分離によって解消された（reset トリガーが pin 操作の副作用では発火しなくなったため）。
+
+**再発防止の指針（今後 selected 関連のコードに触れる際に必ず踏まえること）**：
+- **`selected` に相当する値を新設する場合、書き込み可能な state にしないこと。** 「ユーザーの意図（intent）」と「現在の候補一覧」から導出する設計を優先する。書き込み可能な state にすると、書き込み経路が増えるたびに「どちらが勝つか」という競合の火種が増える
+- **「次の1回だけ何かを抑止する」という時間依存の一度きりフラグ（旧 `suppressNextSelectResetRef` のようなもの）を新設しないこと。** 抑止したい理由が「復元待ち」であるなら、それは常に「復元したい対象の識別子（intent）を保持しているかどうか」だけで判定できるはずであり、識別情報を持たない別のブールフラグを追加で持たせる必要はない
+- **reset トリガー（何かが変わったら intent を top に戻す）の依存配列には、"ユーザーが新しい文脈に入ったことを示す値" だけを含め、"その文脈内での操作の副作用として変化する値"（`pinnedPathSet`/`frecency`/`recentResults` 等）を含めないこと。** 混在させると、副作用側の変化が reset トリガーを誤発火させ、intent による復元を上書きしてしまう
+- 選択中の行の種類の判定は、常に `rows[selected].kind` で行い、`pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` のような個別のオフセット変数を新設しないこと
+- 新しい行の種類（★お気に入り・メモ等）を追加する場合も、まず `ResultRow` に新しい `kind` を追加して `rows` の構築ロジック（`useSearch.ts` の1箇所）に組み込み、`App.tsx`/`ResultList.tsx` 側は `rows[selected].kind` の switch に case を1つ追加するだけで対応できる状態を維持する
+
+**フェーズD-3の追記：`recentMode` に残っていた専用リセットトリガーの撤去**
+
+D-2実装時点では、`intent` を `{type:'top'}` へ戻すトリガーが実は2本存在していた：(1) `query`/`settingsVersion`/`appSettings`/`closeRefreshTick` の変化を検知する汎用トリガー（全モード共通）と、(2) `recentMode` 専用の「`recentResults` が変化するたび無条件にトリガーする」effect（`[recentMode, recentResults]` に依存）。(2) は D-2 の対象範囲（「通常モード＋clipboardMode」の intent 化）に含まれていなかったため、古い設計（フェーズD以前からの「`/recent` はフォーカス復帰のたびに毎回1行目へ戻す」という挙動）がそのまま見落とされて残っていた。
+
+D-2完了後の事前調査（D-3着手前）で、この (2) の存在と、それが原因で `recentMode` だけが「他3モード（通常のファイル検索・`clipboardMode`・ピン止めブロック）と異なり、フォーカス復帰のたびに選択が強制的にリセットされる」という非対称な挙動になっていることが判明した。REQUIREMENTS.md には「フォーカス復帰のたびに選択をリセットする」という仕様は存在せず、この非対称性は仕様ではなく実装上の見落としと判断し、(2) を撤去した。
+
+撤去後、`recentMode` の選択は他3モードと全く同じ経路——(1) の汎用トリガー（`recentMode` への新規突入・離脱は必ず `query` の変化を伴うため、突入時に選択が先頭になる動作はこれで担保される）と、`resolveSelected` の fallback 挙動（見つかれば識別子で追従、見つからなければ現在の選択を維持）——だけに統一された。`recentResults` が変化しても（フォーカス復帰時の再取得を含め）、`intent` 自体は変更されない。
+
+**今後の指針（再発防止）**：新機能・新モードを追加する際、「このモードのデータが変化したら選択をリセットしたい」という要求が生じても、そのモード専用の強制リセットeffectを新設しないこと。選択のリセットは常に (1) の汎用トリガー（`query`/`settingsVersion`/`appSettings`/`closeRefreshTick` という「ユーザーが新しい文脈に入ったことを示す値」の変化）だけに一本化し、それ以外のデータ変化（一覧の再取得・並び替え等）は `resolveSelected` の fallback 挙動に委ねること。モード固有の特別な reset トリガーは、今回のように「他のフェーズの対象範囲から漏れて見落とされる」「モード間で非対称な体感を生む」という問題を再発させる。
+
+`ResultRow` の各バリアント（`kind: "pinned" | "pathPasteShortcut" | "pathPasteAddFolder" | "calc" | "urlConvert" | "file"`）は、`rows` の並び順（ピン止めブロック→パス貼り付け候補（機能2→機能1の順）→計算結果→URLエンコード/デコード結果→ファイル検索結果）にそのまま対応する。`key` フィールドはファイルパス等に種別ごとの接頭辞（`pinned:`/`file:` 等）を付けたもので、他種別のキーと衝突しない安定した識別子として持たせている（行番号は使わない。行の追加・削除で他の行の React key が変わらないようにするため）。
+
+`pinned`（ピン止めブロック）の `exists`／`file`（ファイル検索結果）の `pinned` は、`rows` 構築時に一度だけ計算して各行に埋め込む（`exists: pinnedExistence[file.path] ?? true`、`pinned: isPinned(file.path)`）。`ResultList.tsx` 側の描画はこの埋め込み済みの値（`row.exists`/`row.pinned`）を使い、行ごとに個別で再計算しない（`pinIconVisible` によるアイコン自体の表示可否は行データではなく表示設定のため、描画側で `pinIconVisible && row.pinned` のように別途掛け合わせる）。
+
+#### 結果行の DOM 構造（`<div role="button">`）と区切り線を使わない方針（X-10 / X-11）
+
+`ResultList.tsx` の `rows.map` が描画する6種類の行（`pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlConvert`/`file`）は、行のルート要素を `<button>` ではなく **`<div role="button">`** で実装している。
+
+- **理由**：v0.10.0 でピン止め機能を実装した際、行の `<button>` の中に `PinToggleButton`（ピン止めトグル用の別の `<button>`）を入れ子にしたため、React が `validateDOMNesting`（`<button>` cannot appear as a descendant of `<button>`）の警告を出す状態になっていた。今後この行に★（お気に入り）ボタン・ノート（メモ）アイコンを追加していく計画があり、行内の操作ボタンが増える前提の構造にする必要があるため、行そのものを「内部に操作用の `<button>` を複数個持てる」構造（`<div role="button">` ＋子要素として本物の `<button>` を複数持てる）に直した
+  - `role="button"` は、この要素がクリックで実行される操作であることをアクセシビリティツリー上に示すためのもの。ただし `tabIndex` は付与していない（キーボード操作は行そのものにフォーカスを当てる設計ではなく、検索ボックス側の document レベル `keydown` リスナー・↑↓キーによる選択インデックス管理で完結しているため。フォーカス移動を伴うキーボード操作の対象にする設計ではない）
+  - `type="button"` 属性は行の要素には元々付与されていなかった（`div` になった今も不要）。`PinToggleButton` 自身の `<button type="button">` は変更していない（そのまま実在する `<button>` として維持しており、入れ子構造ではなくなったため `type="button"`・クリックの `stopPropagation()` ともに従来通り機能する）
+  - `<button>` → `<div>` の変更に伴う見た目の補正は不要だった。本プロジェクトは `@tailwind base`（Preflight）を有効にしており、Preflight が `button` 要素に対して `border-width: 0`・`background-color: transparent`・`font-family: inherit` 等を既定で適用するため、これらの行の `<button>` は元々ブラウザ既定の見た目（枠線・背景色・ボタン風フォント）を一切持っていなかった。カーソル形状についても、ブラウザは `<button>` に既定で `cursor: pointer` を与えない（`<a href>` とは異なる）ため、`<div>`化してもカーソル形状は変化しない。レイアウトに関わる `display`/`text-align`/`width` 等はいずれも `className`（`flex items-center` `text-left` `w-full` 等）で明示済みのため、タグ変更による差分は生じない
+- **今後の指針**：**結果行のルート要素は `<div role="button">` であり、行の内部に操作ボタン（ピン止めトグル、将来のお気に入り★ボタン・メモのノートアイコン等）を複数個置く前提の構造である。** 行に新しい操作ボタンを追加する場合、行のルート要素を `<button>` に戻さないこと（内部の操作ボタンとの入れ子が再発する）
+- **結果行に区切り線（`border-b`/`border-t` 等）は使わない。** v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlConvert` の5種類には `border-b border-gray-100` が付いていたが、色が薄すぎて実際にはほぼ視認できず、`file` 行だけ付いていないという不揃いな状態になっていた（「見えない装飾をどの行に付けるか」の判断コストだけが発生し続ける状態）。視認できない装飾を残す実益がないため、5種類すべてから削除し、`file` 行と統一した。行の高さは1pxずつ詰まるが、見た目上の変化としては許容する。**今後、結果行に区切りを表現したくなった場合も `border-b`/`border-t` のような境界線ではなく、既存の選択中/非選択の背景色差・hover 背景色のみで表現すること**（設定画面の「縦ラインによる区切りは使わない」方針と同様、結果行についても「区切り線を使わない」を明文化する）
+- **他モードの調査結果（今回は変更していない。判断はユーザー側で行う）**：
+  - `prefixCommandMode`（`ResultList.tsx` の `prefixCommandCandidates.map`）：`border-b`/`border-t` なし。行の `<button>` の子要素はアイコン（`svg`）とテキストのみで、ボタンの入れ子は存在しない
+  - `clipboardMode`（`ClipboardPanel.tsx` の `entries.map`）：`border-b`/`border-t` なし。行の `<button>` の子要素は画像/アイコンとテキストのみで、ボタンの入れ子は存在しない。なお詳細パネル側（右カラム、選択中エントリのメタ情報表示）には `border-t border-gray-200/60` があるが、これは一覧の行区切りではなく本文とメタ情報（コピー日時・文字数等）を区切るフッター境界線であり、本節が扱う「行の区切り線」とは性質が異なる
+  - `pathPasteWizardMode`（`PathPasteWizard.tsx` の `folders.map`、フォルダ選択ステップ）：`border-b`/`border-t` なし。行の `<button>` の子要素はアイコンとテキストのみで、ボタンの入れ子は存在しない
+  - `WebSearchRow.tsx`（`prefixCommandMode`・通常モードいずれの一覧の末尾にも共通して追加される行。触ってはいけない箇所のため今回は変更していない）：`border-t border-gray-100` が付いている（今回削除した5種類と同じ薄い色）。ボタンの入れ子は存在しない。この行についても同種の「視認できない区切り線」問題が存在する可能性がある
 
 ### 検索フォルダごとの詳細設定（Rust / フロントエンド）
 

@@ -28,7 +28,13 @@ export function useClipboard(
     clearQuery?: "full" | "prefixOnly";
     prefix?: string;
     cleanup?: () => void | Promise<void>;
-  }) => Promise<void>
+  }) => Promise<void>,
+  // R-1 フェーズD-2: useSearch.ts の intent ベースの選択解決（rows.findIndex 相当）を
+  // clipboardMode にも適用するため、clipboardEntries が変化するたびその識別子
+  // （id）一覧を useSearch 側へ push する（useSearch は useClipboard の戻り値に
+  // 依存できない構成のため、逆方向に push する形にしている。詳細は useSearch.ts の
+  // SelectIntent 型のコメントを参照）。
+  syncClipboardSelectionItems: (items: { key: string }[]) => void
 ) {
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>(
     []
@@ -43,6 +49,10 @@ export function useClipboard(
       (e) => e.type === "text" && e.text.toLowerCase().includes(filter)
     );
   }, [clipboardMode, clipboardFilterText, clipboardHistory]);
+
+  useEffect(() => {
+    syncClipboardSelectionItems(clipboardEntries.map((e) => ({ key: e.id })));
+  }, [clipboardEntries, syncClipboardSelectionItems]);
 
   // クリップボードの内容を記録し、重複排除・最大件数のトリムをしたうえで
   // settings.json の "clipboardHistory"（テキストのみ）へ永続化する。

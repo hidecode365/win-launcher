@@ -17,7 +17,7 @@ export function WebSearchRow({
     <button
       type="button"
       data-index={index}
-      className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-t border-gray-100 ${
+      className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
         active ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
       }`}
       onClick={onClick}

@@ -48,7 +48,8 @@ export default function App() {
     search.clipboardMode,
     search.clipboardFilterText,
     storeRef,
-    search.closeWindow
+    search.closeWindow,
+    search.syncClipboardSelectionItems
   );
 
   useEffect(() => {
@@ -272,27 +273,20 @@ export default function App() {
     search.confirmShortcut,
   ]);
 
-  // パス貼り付けの候補行（ショートカット配置→(フォルダのみ)検索フォルダに追加）は
-  // 常にファイル検索結果より前、計算結果・URLエンコード/デコード結果よりも前の
-  // 先頭を占有する（ローカルパスは数式計算・URL変換の判定条件と構造上両立しないため、
-  // 実際に同時発生することはない。詳細は ResultList・REQUIREMENTS.md を参照）。
-  // ピン止めブロックは常にインデックス0から占有する（表示中のみ）。パス貼り付け候補・
-  // 計算結果・URLエンコード/デコード結果・ファイル検索結果は、既存の優先順序
-  // （REQUIREMENTS.md「基本動作」節）を保ったまま、ピン止めブロックの件数分だけ後ろへ
-  // オフセットされる（詳細は「ピン止め・お気に入り・メモ機能」節を参照）。
-  const pinnedLength = search.pinnedVisible ? search.pinnedFiles.length : 0;
   // ピンアイコンは通常のファイル検索結果の行にのみ表示する。/recent は同じ results
   // state・同じ ResultList の行レンダリングを共有しているため（recentResults が
   // results へコピーされる）、recentMode かどうかで明示的に区別する必要がある
   // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節「ピンアイコンの表示範囲」参照）。
   const pinIconVisible = settings.appSettings.pinEnabled && !search.recentMode;
-  const pathPasteLength = search.pathPasteCandidate
-    ? search.pathPasteCandidate.isDir
-      ? 2
-      : 1
-    : 0;
-  const calcLength = search.calcResult !== null ? 1 : 0;
-  const urlConvertLength = search.urlConvertResult !== null ? 1 : 0;
+  // Web検索行は rows に含まれない（rows・並び順の正本は useSearch.ts。詳細は
+  // CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。baseLength は「Web検索行を
+  // 除いた、現在アクティブな一覧の件数」を表す値で、通常モードでは rows の並び順が
+  // 既存の優先順序をそのまま体現しているため search.rows.length がそのままこの件数に
+  // なる（かつて個別に持っていた pinnedLength/pathPasteLength/calcLength/
+  // urlConvertLength とその合算は不要になり撤去した）。clipboardMode・
+  // prefixCommandMode・pathPasteWizardMode は rows を使わない別系統の一覧のため、
+  // 従来通りそれぞれの件数をそのまま使う（ResultList.tsx は今回変更していないため、
+  // baseLength という名前・意味は props としてそのまま渡し続ける必要がある）。
   const baseLength = search.clipboardMode
     ? clipboard.clipboardEntries.length
     : search.prefixCommandMode
@@ -301,17 +295,71 @@ export default function App() {
         ? search.wizardStep === "folderSelect"
           ? search.wizardFolders.length
           : 0
-        : pinnedLength +
-          search.results.length +
-          pathPasteLength +
-          calcLength +
-          urlConvertLength;
+        : search.rows.length;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
     !search.clipboardMode &&
     !search.pathPasteWizardMode;
   const listLength = baseLength + (webSearchVisible ? 1 : 0);
+
+  // 通常モードで現在選択中の行（rows[selected]）。rows に該当する行がない場合
+  // （rows が空、selected が Web検索行の位置・範囲外等）は null。StatusFooter の
+  // キーヒント表示・handleKeyDown の Enter/Shift+Enter 分岐の両方で、この行の
+  // kind を見て判定する（詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。
+  const selectedRow = search.rows[search.selected] ?? null;
+
+  // R-1 フェーズD-2: ↑↓キーによる選択は、通常モード（rows）・clipboardMode
+  // （clipboard.clipboardEntries）については intent の更新のみで表現する
+  // （selected への直接書き込みは行わない。詳細は useSearch.ts の SelectIntent
+  // 型のコメントを参照）。「次に選ぶべき行が何番目か」自体は既存の
+  // listLength/selected を使った計算のまま変更していない。その番号が指す対象の
+  // 識別子（key）を求めてから intent を更新する、という2段階にしているだけ。
+  // prefixCommandMode・Web検索行の位置（selected === baseLength）は intent 化の
+  // 対象外のため、従来通り生インデックスを直接書き込む
+  // （選択管理そのものは今回変更していない）。
+  const moveSelection = useCallback(
+    (direction: 1 | -1) => {
+      const nextIndex =
+        direction === 1
+          ? Math.min(search.selected + 1, listLength - 1)
+          : Math.max(search.selected - 1, 0);
+
+      if (search.prefixCommandMode) {
+        search.setSelected(nextIndex);
+        return;
+      }
+      if (search.clipboardMode) {
+        const entry = clipboard.clipboardEntries[nextIndex];
+        if (entry) {
+          search.selectRowByKeyboard(entry.id);
+        }
+        return;
+      }
+      if (webSearchVisible && nextIndex === baseLength) {
+        // Web検索行は rows に含まれない（フェーズEの対象）。今回は現状の
+        // 生インデックス書き込みのまま維持する。
+        search.setSelected(nextIndex);
+        return;
+      }
+      const row = search.rows[nextIndex];
+      if (row) {
+        search.selectRowByKeyboard(row.key);
+      }
+    },
+    [
+      search.selected,
+      listLength,
+      search.prefixCommandMode,
+      search.setSelected,
+      search.clipboardMode,
+      clipboard.clipboardEntries,
+      search.selectRowByKeyboard,
+      webSearchVisible,
+      baseLength,
+      search.rows,
+    ]
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -337,42 +385,25 @@ export default function App() {
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          search.setSelected((s) => Math.min(s + 1, listLength - 1));
+          moveSelection(1);
           break;
         case "ArrowUp":
           e.preventDefault();
-          search.setSelected((s) => Math.max(s - 1, 0));
+          moveSelection(-1);
           break;
         case "Enter": {
-          // ピン止めブロックの行は常にインデックス0〜pinnedLength-1を占有する。
-          // ピン止めブロックの各行は、通常のファイル検索結果の行と同じアクション体系
-          // （Enter起動・Shift+Enterで格納フォルダを開く）をすべて引き継ぐ
-          // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
-          const selectedPinnedFile =
-            pinnedLength > 0 && search.selected < pinnedLength
-              ? search.pinnedFiles[search.selected]
-              : undefined;
-          // 選択中の項目がファイル検索結果／最近使ったファイル一覧のいずれかの
-          // 実ファイル（パス貼り付け候補・計算結果・URLエンコード/デコード結果・
-          // Web検索行を除く）を指している場合のみ有効なインデックス。負の値・範囲外の
-          // 場合は search.results[...] が undefined になり、以下の分岐が自然に無効化される。
-          const selectedFile =
-            search.results[
-              search.selected -
-                pinnedLength -
-                pathPasteLength -
-                calcLength -
-                urlConvertLength
-            ];
-          const effectiveFile = selectedPinnedFile ?? selectedFile;
           if (e.shiftKey) {
-            // Shift+Enter は格納フォルダを開く操作専用。ファイル検索結果・最近使った
-            // ファイル一覧・ピン止めブロック以外（パス貼り付け候補・計算結果・
-            // URLエンコード/デコード結果・システムコマンド候補・クリップボード履歴・
-            // プレフィックスコマンド候補・Web検索行）はファイルパスを持たないため、
-            // effectiveFile が存在する場合のみ実行する。
-            if (effectiveFile) {
-              search.openContainingFolder(effectiveFile.path);
+            // Shift+Enter は格納フォルダを開く操作専用。ピン止めブロック・
+            // ファイル検索結果（rows の kind "pinned"/"file"）以外（パス貼り付け
+            // 候補・計算結果・URLエンコード/デコード結果・システムコマンド候補・
+            // クリップボード履歴・プレフィックスコマンド候補・Web検索行）は
+            // ファイルパスを持たないため、該当する場合のみ実行する
+            // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
+            if (
+              selectedRow &&
+              (selectedRow.kind === "pinned" || selectedRow.kind === "file")
+            ) {
+              search.openContainingFolder(selectedRow.file.path);
             }
             break;
           }
@@ -390,34 +421,25 @@ export default function App() {
                 search.prefixCommandCandidates[search.selected]
               );
             }
-          } else if (selectedPinnedFile) {
-            search.launchFile(selectedPinnedFile.path);
-          } else if (
-            search.pathPasteCandidate &&
-            search.selected - pinnedLength >= 0 &&
-            search.selected - pinnedLength < pathPasteLength
-          ) {
-            const localIndex = search.selected - pinnedLength;
-            if (localIndex === 0) {
-              search.startShortcutWizard();
-            } else if (
-              localIndex === 1 &&
-              search.pathPasteCandidate.isDir
-            ) {
-              search.addSearchFolderFromPaste();
+          } else if (selectedRow) {
+            switch (selectedRow.kind) {
+              case "pinned":
+              case "file":
+                search.launchFile(selectedRow.file.path);
+                break;
+              case "pathPasteShortcut":
+                search.startShortcutWizard();
+                break;
+              case "pathPasteAddFolder":
+                search.addSearchFolderFromPaste();
+                break;
+              case "calc":
+                search.copyResult(selectedRow.result);
+                break;
+              case "urlConvert":
+                search.copyUrlConvertResult(selectedRow.result.text);
+                break;
             }
-          } else if (
-            search.calcResult !== null &&
-            search.selected === pinnedLength + pathPasteLength
-          ) {
-            search.copyResult(search.calcResult);
-          } else if (
-            search.urlConvertResult !== null &&
-            search.selected === pinnedLength + pathPasteLength + calcLength
-          ) {
-            search.copyUrlConvertResult(search.urlConvertResult.text);
-          } else if (selectedFile) {
-            search.launchFile(selectedFile.path);
           }
           break;
         }
@@ -430,8 +452,7 @@ export default function App() {
       search.pendingCommand,
       search.confirmSystemCommand,
       search.cancelSystemCommand,
-      listLength,
-      search.setSelected,
+      moveSelection,
       webSearchVisible,
       search.selected,
       baseLength,
@@ -440,25 +461,17 @@ export default function App() {
       search.clipboardMode,
       clipboard.clipboardEntries,
       clipboard.selectClipboardEntry,
-      calcLength,
-      search.calcResult,
       search.copyResult,
       search.prefixCommandMode,
       search.prefixCommandCandidates,
       search.selectPrefixCommand,
-      search.urlConvertResult,
       search.copyUrlConvertResult,
-      urlConvertLength,
-      search.results,
+      selectedRow,
       search.launchFile,
       search.openContainingFolder,
-      pathPasteLength,
       search.pathPasteWizardMode,
-      search.pathPasteCandidate,
       search.startShortcutWizard,
       search.addSearchFolderFromPaste,
-      pinnedLength,
-      search.pinnedFiles,
     ]
   );
 
@@ -622,7 +635,17 @@ export default function App() {
           <ClipboardPanel
             entries={clipboard.clipboardEntries}
             selected={search.selected}
-            onSelect={search.selectFromHover}
+            onSelect={(index, clientX, clientY) => {
+              // R-1 フェーズD-2: clipboardMode の選択も intent の更新のみで
+              // 表現する。ClipboardPanel.tsx 自体は変更せず、渡ってくる生
+              // インデックスをここで対象エントリの id（key）に変換してから
+              // search.selectRowFromHover へ渡す（詳細は useSearch.ts の
+              // SelectIntent 型のコメントを参照）。
+              const entry = clipboard.clipboardEntries[index];
+              if (entry) {
+                search.selectRowFromHover(entry.id, clientX, clientY);
+              }
+            }}
             onSelectEntry={clipboard.selectClipboardEntry}
             initialLeftWidth={clipboardPaneWidth}
             onWidthChange={handlePaneWidthChange}
@@ -639,24 +662,19 @@ export default function App() {
           />
         ) : (
           <ResultList
-            pinnedVisible={search.pinnedVisible}
-            pinnedFiles={search.pinnedFiles}
-            pinnedExistence={search.pinnedExistence}
+            rows={search.rows}
             pinIconVisible={pinIconVisible}
-            isPinned={search.isPinned}
             onTogglePin={search.togglePin}
             onReorderPinned={search.reorderPinned}
-            pathPasteCandidate={search.pathPasteCandidate}
-            calcResult={search.calcResult}
             prefixCommandMode={search.prefixCommandMode}
             prefixCommandCandidates={search.prefixCommandCandidates}
             results={search.results}
-            urlConvertResult={search.urlConvertResult}
             query={search.query}
             selected={search.selected}
             baseLength={baseLength}
             webSearchVisible={webSearchVisible}
             onSelect={search.selectFromHover}
+            onSelectRowByKey={search.selectRowFromHover}
             onAddSearchFolder={search.addSearchFolderFromPaste}
             onStartShortcutWizard={search.startShortcutWizard}
             onCopyResult={search.copyResult}
@@ -677,30 +695,8 @@ export default function App() {
           pathPasteWizardStep={
             search.pathPasteWizardMode ? search.wizardStep : null
           }
-          isPathPasteCandidateSelected={
-            search.pathPasteCandidate !== null &&
-            search.selected - pinnedLength >= 0 &&
-            search.selected - pinnedLength < pathPasteLength
-          }
-          isCalcSelected={
-            search.calcResult !== null &&
-            search.selected === pinnedLength + pathPasteLength
-          }
           prefixCommandMode={search.prefixCommandMode}
-          isUrlConvertSelected={
-            search.urlConvertResult !== null &&
-            search.selected === pinnedLength + pathPasteLength + calcLength
-          }
-          isFileSelected={
-            (pinnedLength > 0 && search.selected < pinnedLength) ||
-            search.results[
-              search.selected -
-                pinnedLength -
-                pathPasteLength -
-                calcLength -
-                urlConvertLength
-            ] !== undefined
-          }
+          selectedRowKind={selectedRow?.kind ?? null}
         />
       )}
     </div>

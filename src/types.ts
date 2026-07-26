@@ -219,3 +219,22 @@ export type ClipboardChangedPayload =
       height: number;
       timestamp: number;
     };
+
+// R-1: 通常モード（clipboardMode／pathPasteWizardMode を除く。詳細は CLAUDE.md
+// 「結果行のフラット配列化（R-1）」節を参照）の結果一覧を、1つのフラット配列として
+// 表現する判別可能 Union。行の並び順の正本は `src/hooks/useSearch.ts` の `rows` で
+// あり、pinnedLength/pathPasteLength/calcLength/urlConvertLength によるオフセット
+// 計算（App.tsx・ResultList.tsx・選択復元用 useEffect の3箇所に分散していたもの）は
+// 段階的にこの rows へ統合していく。
+//
+// `key` は React の key に使う安定した識別子（行番号は使わない。ファイルパス等が
+// 由来のため、種別ごとに接頭辞を付けて他種別のキーと衝突しないようにしている）。
+// Web検索行（webSearchVisible）はこの Union には含めない（複数モードにまたがって
+// 末尾に追加される特殊な行のため、フェーズEで別途扱う）。
+export type ResultRow =
+  | { kind: "pinned"; key: string; file: FileEntry; exists: boolean }
+  | { kind: "pathPasteShortcut"; key: string; candidate: PastedPathInfo }
+  | { kind: "pathPasteAddFolder"; key: string; candidate: PastedPathInfo }
+  | { kind: "calc"; key: string; result: string }
+  | { kind: "urlConvert"; key: string; result: UrlConvertResult }
+  | { kind: "file"; key: string; file: FileEntry; pinned: boolean };

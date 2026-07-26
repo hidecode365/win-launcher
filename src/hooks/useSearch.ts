@@ -2,6 +2,7 @@ import {
   MutableRefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -22,6 +23,7 @@ import {
   PINNED_FOLDER_ID,
   PrefixCommand,
   RecentFile,
+  ResultRow,
   SystemCommand,
   UrlConvertResult,
 } from "../types";
@@ -268,6 +270,68 @@ function sortPrefixCommandsByFrecency(
   });
 }
 
+// R-1 フェーズD-2: 選択（selected）は書き込み可能な state ではなく、「ユーザーが
+// 選びたい」という意図（intent）と、現在の行一覧から毎回導出する値にする。
+//
+// 【フェーズDのリグレッションと根本原因】フェーズDでは pendingSelectKeyRef（識別子
+// を保持する ref）と suppressNextSelectResetRef を廃止し、識別子ベースの復元
+// （rows.findIndex）に統一したが、実機で次のリグレッションが発生した：ピン止め
+// 追加・D&D並び替え直後、一瞬正しい行が選択された直後に先頭行へ戻ってしまう。
+// 原因は、選択の復元が成功した時点で pendingSelectKeyRef が null に戻り、その後
+// 遅れて到着する search_files 解決時のリセット処理（`pendingSelectKeyRef.current
+// === null` を条件に selected を 0 にする）を、もはや抑止できなくなったこと。
+// 根本原因は、selected が「複数の非同期処理がそれぞれ書き込める state」で
+// あったこと。ピン止め操作・D&D・検索結果の解決が、それぞれ独立に selected へ
+// 書き込む経路を持つ限り、一発の抑止フラグで特定の書き込みだけを抑止しても、
+// 書き込みの経路自体は残り続け、別のタイミング・別の非同期処理の組み合わせで
+// 同種の競合が再発する。
+//
+// 【この設計での解決】selected への書き込み経路を「導出結果を反映する1箇所」
+// だけに絞る。すべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は
+// intent を更新するだけにとどめ、selected 自体は intent と現在の行一覧から
+// resolveSelected で毎回計算する。書き込み経路が構造的に1本になるため、
+// 「複数の非同期処理が競合する」という根本原因自体が成立しなくなる。
+//
+// 【適用範囲】この intent ベースの導出は「通常モード（rows）」と「clipboardMode
+// （clipboardSelectionItems）」にのみ適用する。理由：clipboardMode は既に
+// クリップボード変更のプッシュ型リスナー（非同期の外部更新）を持ち、今後
+// お気に入り／メモ機能でノート登録という非同期IPC書き込みが加わる予定があり、
+// 今回のリグレッションと同型の「非同期書き込み × 非同期外部更新」という構造を
+// 抱えることになるため、先んじて intent 化しておく。prefixCommandMode／
+// pathPasteWizardMode／Web検索行の+1特例には、こうした非同期書き込みを追加する
+// 具体的な予定が無いため、現状の生インデックス書き込み（setSelected／
+// selectFromHover）のまま維持する（詳細は CLAUDE.md「選択状態の維持」節を参照）。
+type SelectIntent =
+  | { type: "top" }
+  | { type: "key"; key: string; expiresAt?: number };
+
+// resolveSelected が受け取る「選択対象になりうる一覧」の共通形。ResultRow も
+// クリップボードエントリから変換したオブジェクトも、この形さえ満たせば対象にできる。
+interface SelectableItem {
+  key: string;
+}
+
+// 純粋関数：intent と現在の行一覧から選択インデックスを導出する。
+// - intent.type === "top" のときは常に 0
+// - intent.type === "key" のとき、items 内に一致する key があればそのインデックス。
+//   無ければ fallback（＝直前に導出できた選択インデックス）をそのまま返す
+//   （「見つからない」は「1行目へリセットする理由」ではなく「今探している対象が
+//   まだ rows に反映されていないだけ」を意味するため、見つかるかタイムアウトする
+//   まで現在の表示をそのまま維持する）
+function resolveSelected(
+  intent: SelectIntent,
+  items: SelectableItem[],
+  fallback: number
+): number {
+  if (intent.type === "top") return 0;
+  const index = items.findIndex((item) => item.key === intent.key);
+  return index === -1 ? fallback : index;
+}
+
+// 復元待ち（intent.type === "key" かつ expiresAt 付き）が一定時間 rows/
+// clipboardSelectionItems 上で解決しない場合にあきらめるまでの猶予（ms）。
+const SELECT_INTENT_TIMEOUT_MS = 1000;
+
 export function useSearch(
   appSettings: AppSettings,
   settingsVersion: number,
@@ -512,6 +576,61 @@ export function useSearch(
     []
   );
 
+  // R-1 フェーズD-2: 通常モード（rows）／clipboardMode（clipboardSelectionItems）
+  // の選択は intent の更新のみで表現する。selected 自体への直接書き込みは行わない
+  // （導出は rows/clipboardSelectionItems の直後で定義する useLayoutEffect が
+  // 一括して行う。詳細は本ファイル冒頭の SelectIntent 型・resolveSelected の
+  // コメントを参照）。
+  const [intent, setIntentState] = useState<SelectIntent>({ type: "top" });
+
+  const updateIntent = useCallback((next: SelectIntent, source: string) => {
+    console.debug(
+      `[selectIntent] updated (source=${source}, type=${next.type}` +
+        (next.type === "key"
+          ? `, key="${next.key}", expiresAt=${
+              next.expiresAt !== undefined ? "yes" : "no"
+            }`
+          : "") +
+        `)`
+    );
+    setIntentState(next);
+  }, []);
+
+  // clipboardMode 中の選択対象一覧。useClipboard.ts が clipboardEntries の変化を
+  // 検知して syncClipboardSelectionItems（return オブジェクトを参照）経由で
+  // 反映する（useSearch は useClipboard の戻り値に依存できない構成のため、
+  // 逆方向＝useClipboard 側から push してもらう形にしている）。
+  const [clipboardSelectionItems, setClipboardSelectionItems] = useState<
+    SelectableItem[]
+  >([]);
+
+  // キーボード（↑↓）による通常モード／clipboardMode の選択。ホバー抑止の基準時刻を
+  // 更新してから intent を更新する（生インデックス版の setSelected と同じ前処理）。
+  const selectRowByKeyboard = useCallback((key: string) => {
+    lastKeyboardNavAtRef.current = Date.now();
+    updateIntent({ type: "key", key }, "keyboard");
+  }, [updateIntent]);
+
+  // マウスホバーによる通常モード／clipboardMode の選択。抑止判定（直近のキーボード
+  // 操作からの経過時間、カーソル静止判定）は生インデックス版の selectFromHover と同一。
+  const selectRowFromHover = useCallback(
+    (key: string, clientX: number, clientY: number) => {
+      if (Date.now() - lastKeyboardNavAtRef.current < HOVER_SUPPRESS_AFTER_KEYBOARD_MS) {
+        return;
+      }
+      const last = lastMousePosRef.current;
+      const cursorStationary =
+        last !== null &&
+        Math.abs(last.x - clientX) < 1 &&
+        Math.abs(last.y - clientY) < 1;
+      if (cursorStationary) {
+        return;
+      }
+      updateIntent({ type: "key", key }, "hover");
+    },
+    [updateIntent]
+  );
+
   const calcMode = appSettings.calcEnabled && isCalcExpression(query);
   const clipboardFilterText = appSettings.clipboardEnabled
     ? clipboardModeFilter(query, appSettings.clipboardPrefix)
@@ -569,68 +688,6 @@ export function useSearch(
   const [pinnedFiles, setPinnedFiles] = useState<FileEntry[]>([]);
   // ピン止めした各ファイル・フォルダの実体有無（パス→真偽値）。
   const [pinnedExistence, setPinnedExistence] = useState<Record<string, boolean>>({});
-
-  // 選択状態をパスに紐づけて復元する仕組み。移動先が操作時点で確定できない
-  // ピン止め解除（移動先が frecency ランキング次第で非同期にしか分からない）
-  // 向けに、行番号ではなく操作対象のファイルパスを覚えておき、一覧の再構築後に
-  // そのパスが今何行目にあるかを探し直して選択し直す。移動先が操作時点で確定
-  // している場合（ピン止め追加・並び替え）は、この非同期の仕組みは使わず
-  // 同期的に setSelectedRaw を呼ぶ（suppressNextSelectReset を参照。詳細・
-  // 分離した経緯は CLAUDE.md「選択状態の維持」節を参照）。
-  const pendingSelectPathRef = useRef<string | null>(null);
-  const pendingSelectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
-
-  // pendingSelectPathRef が担っていた2つの役割のうち、「移動先が操作時点で
-  // 確定しているケース（ピン止め追加・並び替え）」向けに、以下の1点だけを
-  // 満たす専用フラグ。「非同期の照合・タイムアウトによるフォールバック」は
-  // 行わず、あくまで直後のメイン検索effect（#8）・search_files 完了時（#9）の
-  // 強制リセットを1回分だけ抑止する（詳細・分離した経緯は CLAUDE.md
-  // 「選択状態の維持」節を参照）。
-  //
-  // このフラグは「メイン検索effectが1回走る間」ではなく「その1回のeffect実行が
-  // 開始した search_files のIPC往復が完了するまで」生存させる必要がある
-  // （#8 は同期的にすぐ到達するが、#9 は非同期の応答を待って初めて到達するため）。
-  // そのため #8 の時点ではフラグを読むだけでクリアせず、search_files を実際に
-  // 呼び出す直前でスナップショットを取ってからクリアし（以降のクエリ変更等、
-  // 無関係な次回のeffect実行にフラグが漏れ出さないようにするため）、そのスナップ
-  // ショットを #9 の判定に使う。fileSearchEnabled が false で search_files 自体を
-  // 呼ばない場合も、同じ理由でその場でクリアする（クリアし忘れるとフラグが
-  // 立ちっぱなしになり、以後の正当なリセットまで抑止してしまう）。
-  const suppressNextSelectResetRef = useRef(false);
-
-  const suppressNextSelectReset = useCallback(() => {
-    suppressNextSelectResetRef.current = true;
-  }, []);
-
-  const requestSelectRestore = useCallback((path: string) => {
-    if (pendingSelectTimeoutRef.current !== null) {
-      clearTimeout(pendingSelectTimeoutRef.current);
-    }
-    pendingSelectPathRef.current = path;
-    // 一覧の再取得（search_files／get_pinned_files のIPC往復）は通常
-    // 数十ms程度で完了する想定。ピン止め解除したファイルが通常一覧の上位
-    // MAX_SEARCH_RESULTS（50件）に入らない場合など、一定時間探しても
-    // 見つからないケースがあるため、タイムアウトで復元をあきらめ、
-    // 明示的に1行目へフォールバックする（エラーにはしない）。
-    pendingSelectTimeoutRef.current = setTimeout(() => {
-      console.debug(
-        `[selectRestore] timed out, could not find path (path="${path}"). Falling back to index 0.`
-      );
-      pendingSelectPathRef.current = null;
-      pendingSelectTimeoutRef.current = null;
-      setSelectedRaw(0);
-    }, 1000);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (pendingSelectTimeoutRef.current !== null) {
-        clearTimeout(pendingSelectTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // recentMode の間、現在アクティブな取得を上書きしないよう世代 ID で保護しつつ
   // get_recent_files を呼び直す（クリップボード履歴と異なりプッシュ通知がなく、
@@ -819,13 +876,53 @@ export function useSearch(
     query,
   ]);
 
+  // R-1 フェーズD-2: intent を {type:'top'} へ更新する専用トリガーその1。
+  // クエリ・設定・「ウィンドウを閉じた直後の強制再取得」（closeRefreshTick）の
+  // いずれかが変化した場合にのみ発火する（＝ユーザーが新しい検索文脈に入った、
+  // または明示的に設定を変更した場合）。
+  //
+  // 【フェーズDのリグレッションを踏まえた設計上の要点】この効果の依存配列に
+  // pinnedPathSet／frecency／recentResults を含めていないことが重要。これらは
+  // ピン止め操作・ファイル起動・/recent の再取得の「副作用」として変化する値で
+  // あり、ユーザーが新しい検索文脈に入ったわけではない。もしこれらも依存配列に
+  // 含めると、ピン止め操作で pinnedPathSet が変化するたびにこの効果が発火して
+  // intent を {type:'top'} へ強制的に巻き戻してしまい、フェーズDと同じ
+  // リグレッション（ピン止め直後に選択が先頭へ戻る）が intent 経由で再発する。
+  // 「ユーザー起因の文脈変化」と「その文脈変化に伴う副作用としての再取得」を
+  // 依存配列のレベルで構造的に分離することで、一発の抑止フラグに頼らずに
+  // competing writes の問題そのものを起こらなくしている。
+  useEffect(() => {
+    updateIntent({ type: "top" }, "query-or-settings-change");
+  }, [query, settingsVersion, appSettings, closeRefreshTick, updateIntent]);
+
+  // R-1 フェーズD-3: /recent（recentMode）専用の「recentResults が変化する
+  // たび無条件に intent を top へ戻す」effect は撤去した。これは D-2 の対象
+  // 範囲（通常モード＋clipboardMode）に含まれず、旧設計の残骸として見落と
+  // されていたもの（詳細は CLAUDE.md「選択状態の維持」節の D-3 を参照）。
+  // REQUIREMENTS.md に「フォーカス復帰のたびに選択をリセットする」という
+  // 仕様は存在せず、通常のファイル検索・clipboardMode・ピン止めブロックは
+  // いずれもフォーカス復帰時に intent を変えず、resolveSelected が同じキーを
+  // rows/clipboardSelectionItems 上で探し直すだけで選択を維持している。
+  // recentMode もこれらと同じ経路（rows の一部として resolveSelected が
+  // 解決する）に統一し、専用の強制リセットは行わない。
+  //
+  // クエリ変更で recentMode に新規突入する場合の「先頭を選ぶ」動作は、
+  // 上の専用トリガーその1（query の変化を検知する effect）がそのまま担う
+  // （recentMode への突入・離脱は必ず query の変化を伴うため）。
+
   // calcMode（数式らしい入力）とファイル検索は排他にせず、両方を独立して実行する。
   // 計算結果は urlConvertResult と同様にファイル検索結果とは別枠の固定表示領域として
   // 共存表示するため（詳細は ResultList を参照）、ここでは setResults([]) による
   // ファイル検索結果のクリアは行わない。
+  //
+  // 選択（selected）のリセットは、通常モード／clipboardMode／recentMode に
+  // ついてはもうここでは行わない（上記の専用トリガー＝query/settings/
+  // closeRefreshTick の変化を検知する effect が intent を通じて行うため）。
+  // prefixCommandMode／pathPasteWizardMode は intent を使わない旧来の生
+  // インデックス書き込みのままなので、そちらのみ引き続きこの effect 内で
+  // setSelectedRaw(0) を呼ぶ（詳細は SelectIntent 型のコメントを参照）。
   useEffect(() => {
     if (clipboardMode) {
-      setSelectedRaw(0);
       setResults([]);
       setCalcResult(null);
       setPathPasteCandidate(null);
@@ -854,30 +951,10 @@ export function useSearch(
       // ことで、この useEffect 自体がウィンドウ非表示後にしか再実行されなくなり、
       // 個別のガードは不要になった（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
       console.debug(`[recent] applying recentResults to results (count=${recentResults.length})`);
-      setSelectedRaw(0);
       setResults(recentResults);
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
-    }
-
-    // ピン止め解除直後は、パスに紐づけた選択復元（pendingSelectPathRef、
-    // requestSelectRestore を参照）が完了するまで、ここで1行目へ強制的に
-    // リセットしない（復元前に一瞬1行目が見えてしまうちらつきを避けるため）。
-    // 復元対象が見つからなかった場合の1行目へのフォールバックは、
-    // requestSelectRestore 側のタイムアウトが明示的に行う。
-    //
-    // ピン止め追加・並び替え直後は、移動先が操作時点で確定しているため
-    // pendingSelectPathRef は使わず、setSelectedRaw を同期的に呼んだ側が
-    // suppressNextSelectResetRef を立てている。ここではまだフラグを消費
-    // （クリア）せず、読むだけに留める（#9 の search_files 完了時点まで
-    // 抑止を継続させる必要があるため。詳細は suppressNextSelectResetRef
-    // 自体の宣言コメントを参照）。
-    if (
-      pendingSelectPathRef.current === null &&
-      !suppressNextSelectResetRef.current
-    ) {
-      setSelectedRaw(0);
     }
 
     if (appSettings.calcEnabled && isCalcExpression(query)) {
@@ -928,12 +1005,6 @@ export function useSearch(
       console.debug(
         `[search] search_files start (query="${query}", callId=${callId}, closeRefreshTick=${closeRefreshTick}, excludeCount=${excludePaths.length})`
       );
-      // ここでスナップショットを取ってから即座にクリアする。#8 では
-      // まだ読むだけだったフラグをここで一度きり消費することで、以降の
-      // 無関係な次回のeffect実行（次のキー入力等）にフラグが漏れ出さない
-      // ようにする（詳細は suppressNextSelectResetRef 自体の宣言コメントを参照）。
-      const suppressReset = suppressNextSelectResetRef.current;
-      suppressNextSelectResetRef.current = false;
       invoke<FileEntry[]>("search_files", { query, excludePaths })
         .then((files) => {
           if (!isLatestAsyncCall("search", callId)) {
@@ -946,22 +1017,14 @@ export function useSearch(
             `[search] search_files resolved (callId=${callId}, count=${files.length})`
           );
           setResults(sortByFrecency(files, frecency));
-          // ピン止め解除直後などで選択復元待ちの場合、または直前で
-          // suppressReset を観測した場合（ピン止め追加・並び替え直後）は
-          // ここで1行目へ戻さない（前者の復元は results の変化を検知する
-          // 専用エフェクトが行う。後者は呼び出し元が既に同期的に正しい
-          // インデックスを設定済みのため、何もしなくてよい）。
-          if (pendingSelectPathRef.current === null && !suppressReset) {
-            setSelectedRaw(0);
-          }
+          // 選択（selected）はここでは一切触らない。通常モードでは results の
+          // 変化を検知した rows の再構築 → intent 解決用 useLayoutEffect が
+          // 選択を再計算するため、search_files の解決自体が選択に直接
+          // 書き込む必要はない（詳細は SelectIntent 型のコメントを参照）。
         })
         .catch(console.error);
     } else {
       setResults([]);
-      // search_files を呼ばないためフラグを消費する機会がここにしかない。
-      // クリアし忘れるとフラグが立ちっぱなしになり、以後の正当なリセットまで
-      // 抑止してしまう。
-      suppressNextSelectResetRef.current = false;
     }
   }, [
     query,
@@ -978,77 +1041,6 @@ export function useSearch(
     closeRefreshTick,
     beginAsyncCall,
     isLatestAsyncCall,
-  ]);
-
-  // 選択復元の実行部分。pendingSelectPathRef にパスが積まれている間、
-  // pinnedFiles／results（＝一覧の再構築に関わる state）が変化するたびに
-  // 再実行され、そのパスが今どちらの一覧の何行目にあるかを探す。
-  // - ピン止めブロック（pinnedFiles）側で見つかった場合：ブロックは常にインデックス0
-  //   から占有するため、そのままそのインデックスを選択する
-  // - 通常のファイル検索結果（results）側で見つかった場合：ResultList.tsx／App.tsx
-  //   と同じ「ピン止めブロック→パス貼り付け候補→計算結果→URLエンコード/デコード結果→
-  //   ファイル検索結果」の順のオフセットを加算した絶対インデックスを選択する
-  //   （このオフセット計算式は App.tsx の baseLength 算出と同一のものを、ここでも
-  //   独立に計算している。両者がずれると復元先の行がずれるため、どちらかを変更した
-  //   場合はもう一方も同期して直すこと）
-  // どちらにも見つからない場合は何もしない（ref を保持したまま次の変化を待つか、
-  // requestSelectRestore のタイムアウトが最終的に諦めて1行目へフォールバックする）。
-  useEffect(() => {
-    const path = pendingSelectPathRef.current;
-    if (path === null) return;
-
-    console.debug(
-      `[selectRestore] attempting to resolve path="${path}" ` +
-        `(pinnedVisible=${pinnedVisible}, pinnedFiles=${JSON.stringify(
-          pinnedFiles.map((f) => f.path)
-        )}, resultsCount=${results.length})`
-    );
-
-    if (pinnedVisible) {
-      const pinnedIndex = pinnedFiles.findIndex((f) => f.path === path);
-      if (pinnedIndex !== -1) {
-        console.debug(`[selectRestore] found in pinnedFiles at index ${pinnedIndex}`);
-        setSelectedRaw(pinnedIndex);
-        pendingSelectPathRef.current = null;
-        if (pendingSelectTimeoutRef.current !== null) {
-          clearTimeout(pendingSelectTimeoutRef.current);
-          pendingSelectTimeoutRef.current = null;
-        }
-        return;
-      }
-    }
-
-    const resultsIndex = results.findIndex((f) => f.path === path);
-    if (resultsIndex !== -1) {
-      console.debug(`[selectRestore] found in results at index ${resultsIndex}`);
-      const pinnedLength = pinnedVisible ? pinnedFiles.length : 0;
-      const pathPasteLength = pathPasteCandidate
-        ? pathPasteCandidate.isDir
-          ? 2
-          : 1
-        : 0;
-      const calcLength = calcResult !== null ? 1 : 0;
-      const urlConvertLength = urlConvertResult !== null ? 1 : 0;
-      setSelectedRaw(
-        pinnedLength +
-          pathPasteLength +
-          calcLength +
-          urlConvertLength +
-          resultsIndex
-      );
-      pendingSelectPathRef.current = null;
-      if (pendingSelectTimeoutRef.current !== null) {
-        clearTimeout(pendingSelectTimeoutRef.current);
-        pendingSelectTimeoutRef.current = null;
-      }
-    }
-  }, [
-    pinnedFiles,
-    results,
-    pinnedVisible,
-    pathPasteCandidate,
-    calcResult,
-    urlConvertResult,
   ]);
 
   // 起動回数・最終起動時刻を更新し、settings.json の "frecency" キーへ即時永続化する。
@@ -1104,11 +1096,18 @@ export function useSearch(
       );
       let updated: FavoriteNode[];
       if (alreadyPinned) {
-        // ピン止め解除：移動先（通常のファイル検索結果内の何行目に来るか）は
-        // frecency ランキングに依存し、この時点では確定できない。search_files
-        // の結果が返るのを待って選択を復元する非同期の仕組みに乗せる
-        // （requestSelectRestore・選択復元用の useEffect を参照）。
-        requestSelectRestore(file.path);
+        // ピン止め解除：解除後は "file" kind の行として rows に現れる。移動先
+        // （通常のファイル検索結果内の何行目に来るか）は frecency ランキング
+        // 次第で非同期にしか分からないため、対象の識別子（"file:<path>"）を
+        // intent に積むだけにとどめ、rows が再構築されて見つかった時点で
+        // 選択が自動的に解決される（intent 解決用 useLayoutEffect を参照）。
+        // expiresAt を付けているのは、対象ファイルが検索結果の表示上限
+        // （MAX_SEARCH_RESULTS）に入らない等、rows 上に一切現れない可能性が
+        // あるため（一定時間で諦めて {type:'top'} にフォールバックする）。
+        updateIntent(
+          { type: "key", key: `file:${file.path}`, expiresAt: Date.now() + SELECT_INTENT_TIMEOUT_MS },
+          "pin-remove"
+        );
         updated = current.filter(
           (f) =>
             !(
@@ -1119,12 +1118,15 @@ export function useSearch(
         );
       } else {
         // ピン止め：新規ピンは常にピン止めブロックの末尾（order 最大）に追加
-        // される実装のため、移動先の行番号は追加前の件数として確定的に分かる
-        // （並び替えと同じ理由で、非同期の照合を伴う選択復元機構
-        // （requestSelectRestore）を経由する必要がない。ただし、この
-        // set_favorites 完了後にメイン検索effectが再実行され1行目へリセット
-        // されてしまうのを防ぐため、suppressNextSelectReset で1回分だけ
-        // 抑止する。詳細は CLAUDE.md「選択状態の維持」節を参照）。
+        // される実装のため、移動先の行番号は追加前の件数として確定的に分かるが、
+        // 実際に rows へ反映されるのは set_favorites・fetchPinnedFiles の
+        // IPC往復後になる。selected への直接書き込みは行わず、対象の識別子
+        // （"pinned:<path>"）を intent に積むだけにする（rows が再構築され
+        // 次第、intent 解決用 useLayoutEffect が選択する）。
+        updateIntent(
+          { type: "key", key: `pinned:${file.path}`, expiresAt: Date.now() + SELECT_INTENT_TIMEOUT_MS },
+          "pin-add"
+        );
         const pinnedNodes = current.filter(
           (f) => f.parentId === PINNED_FOLDER_ID && f.type === "file"
         );
@@ -1132,8 +1134,6 @@ export function useSearch(
           (max, f) => Math.max(max, f.order),
           -1
         );
-        setSelectedRaw(pinnedNodes.length);
-        suppressNextSelectReset();
         const newNode: FavoriteNode = {
           id: makeId(),
           parentId: PINNED_FOLDER_ID,
@@ -1152,7 +1152,7 @@ export function useSearch(
         })
         .catch(console.error);
     },
-    [fetchPinnedFiles, requestSelectRestore, suppressNextSelectReset]
+    [fetchPinnedFiles, updateIntent]
   );
 
   // ピン止めブロックのドラッグ&ドロップによる並び替え。ドロップ確定時に order を
@@ -1160,15 +1160,10 @@ export function useSearch(
   // 保存結果を待たず楽観的に並び替えて即座に反映する（体感速度を優先。保存自体は
   // fire-and-forget で発火する）。
   //
-  // 並び替えはドロップした時点で新しい順序・移動先のインデックス（toIndex）が
-  // 両方とも確定しているため、非同期の照合を伴う選択復元機構
-  // （requestSelectRestore）を経由せず、ここで直接選択インデックスを設定する。
-  // ピン止めブロックは常にインデックス0から占有する（ResultList.tsx の
-  // pinnedOffset と同じ前提）ため、オフセット加算は不要で toIndex がそのまま
-  // 選択すべき絶対インデックスになる。ただし、この後の set_favorites 完了で
-  // pinnedPathSet の参照が変わりメイン検索effectが再実行されると1行目へ
-  // リセットされてしまうため、suppressNextSelectReset で1回分だけ抑止する
-  // （詳細は CLAUDE.md「選択状態の維持」節を参照）。
+  // selected への直接書き込みは行わず、移動した行の識別子（"pinned:<path>"）を
+  // intent に積むだけにする。setPinnedFiles(reordered) が同期的に rows を
+  // 再構築させるため、intent 解決用 useLayoutEffect がほぼ次のレンダーで
+  // 選択を解決する（詳細は CLAUDE.md「選択状態の維持」節を参照）。
   const reorderPinned = useCallback(
     (fromIndex: number, toIndex: number) => {
       if (
@@ -1185,8 +1180,10 @@ export function useSearch(
       const [moved] = reordered.splice(fromIndex, 1);
       reordered.splice(toIndex, 0, moved);
       setPinnedFiles(reordered);
-      setSelectedRaw(toIndex);
-      suppressNextSelectReset();
+      updateIntent(
+        { type: "key", key: `pinned:${moved.path}`, expiresAt: Date.now() + SELECT_INTENT_TIMEOUT_MS },
+        "reorder"
+      );
 
       const pathOrder = new Map(reordered.map((f, i) => [f.path, i]));
       const updatedFavorites = favoritesRef.current.map((f) => {
@@ -1206,7 +1203,7 @@ export function useSearch(
         })
         .catch(console.error);
     },
-    [pinnedFiles, suppressNextSelectReset]
+    [pinnedFiles, updateIntent]
   );
 
   // launch_file / open_containing_folder はいずれもファイルやフォルダを OS の既定
@@ -1322,6 +1319,178 @@ export function useSearch(
     setPrefixCommandFrecency(data);
   }, []);
 
+  // R-1: 通常モード（clipboardMode／pathPasteWizardMode を除く）の結果一覧を1つの
+  // フラット配列として計算する。並び順（ピン止めブロック→パス貼り付け候補→
+  // 計算結果→URLエンコード/デコード結果→ファイル検索結果）の正本はこの配列
+  // 自身であり、`ResultList.tsx` の描画・`App.tsx` の `handleKeyDown`／
+  // `StatusFooter`・直後の選択復元用 `useEffect` はいずれもこの `rows`（または
+  // その添字・`row.key`）を参照する形に統一済み（詳細は CLAUDE.md「結果行の
+  // フラット配列化（R-1）」節を参照）。
+  //
+  // Web検索行（webSearchVisible）はこの rows に含めない。prefixCommandMode の候補
+  // 一覧・この通常モードの一覧の両方に共通して末尾へ追加される横断的な行のため、
+  // フェーズEで別途扱う（詳細は CLAUDE.md を参照）。
+  const rows = useMemo<ResultRow[]>(() => {
+    const list: ResultRow[] = [];
+
+    if (pinnedVisible) {
+      for (const file of pinnedFiles) {
+        list.push({
+          kind: "pinned",
+          key: `pinned:${file.path}`,
+          file,
+          exists: pinnedExistence[file.path] ?? true,
+        });
+      }
+    }
+
+    if (pathPasteCandidate) {
+      list.push({
+        kind: "pathPasteShortcut",
+        key: "pathPasteShortcut",
+        candidate: pathPasteCandidate,
+      });
+      if (pathPasteCandidate.isDir) {
+        list.push({
+          kind: "pathPasteAddFolder",
+          key: "pathPasteAddFolder",
+          candidate: pathPasteCandidate,
+        });
+      }
+    }
+
+    if (calcResult !== null) {
+      list.push({ kind: "calc", key: "calc", result: calcResult });
+    }
+
+    if (urlConvertResult !== null) {
+      list.push({
+        kind: "urlConvert",
+        key: "urlConvert",
+        result: urlConvertResult,
+      });
+    }
+
+    for (const file of results) {
+      list.push({
+        kind: "file",
+        key: `file:${file.path}`,
+        file,
+        pinned: isPinned(file.path),
+      });
+    }
+
+    return list;
+  }, [
+    pinnedVisible,
+    pinnedFiles,
+    pinnedExistence,
+    pathPasteCandidate,
+    calcResult,
+    urlConvertResult,
+    results,
+    isPinned,
+  ]);
+
+  // R-1 フェーズD-2: 通常モード（rows）／clipboardMode（clipboardSelectionItems）
+  // の選択（selected）を intent から導出し、反映する唯一の箇所。rows は
+  // useMemo であり、この効果はそれより後で定義する必要がある（rows を
+  // 依存配列・クロージャの両方で参照するため）。
+  //
+  // useLayoutEffect を使う理由：ピン止め追加・並び替え直後、setPinnedFiles
+  // （楽観的反映）や fetchPinnedFiles の完了で rows が更新された瞬間に、
+  // ブラウザが描画する前に selected を確定させたい（useEffect だと描画後に
+  // 走るため、一瞬だけ古い選択が見えてから正しい選択に切り替わる、という
+  // ちらつきが理論上発生しうる）。
+  //
+  // fallback（見つからない場合に維持する値）は selectedFallbackRef が保持する。
+  // 直前にこの効果自身が解決した値を常に書き戻しているため、prefixCommandMode/
+  // pathPasteWizardMode の raw な書き込みとは独立している（それらの間は
+  // rows/clipboardSelectionItems 自体が空になるため、この効果は実質的に
+  // 「今の値をそのまま返す」no-op になる）。
+  const selectedFallbackRef = useRef(0);
+  useLayoutEffect(() => {
+    const items: SelectableItem[] = clipboardMode ? clipboardSelectionItems : rows;
+    const resolved = resolveSelected(intent, items, selectedFallbackRef.current);
+    if (intent.type === "key") {
+      const found = items.some((item) => item.key === intent.key);
+      if (found) {
+        const kind = !clipboardMode ? (items[resolved] as ResultRow).kind : "clipboard";
+        console.debug(
+          `[selectIntent] resolved key="${intent.key}" at index=${resolved} (kind=${kind})`
+        );
+      } else {
+        console.debug(
+          `[selectIntent] key="${intent.key}" not found (itemsCount=${items.length}). Keeping selected=${resolved}.`
+        );
+      }
+    }
+    selectedFallbackRef.current = resolved;
+    setSelectedRaw(resolved);
+  }, [intent, rows, clipboardMode, clipboardSelectionItems]);
+
+  // intent.type === "key" かつ expiresAt が過ぎても対象が見つからない場合、
+  // タイムアウトして intent を {type:'top'} に書き換える（これも「intent の
+  // 更新」という同じ経路を通す。selected を直接いじる特別なリセット処理は
+  // 新設しない）。rows/clipboardSelectionItems の「最新値」はタイマー発火時に
+  // 参照する必要があるため ref に鏡写しする（この効果自体の依存配列に
+  // rows/clipboardSelectionItems を含めると、それらが変化するたびタイマーの
+  // 期限が延長されてしまい、「expiresAt の時点で強制的に諦める」という
+  // タイムアウトの意味が失われるため）。
+  const rowsRef = useRef<ResultRow[]>([]);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+  const clipboardSelectionItemsRef = useRef<SelectableItem[]>([]);
+  useEffect(() => {
+    clipboardSelectionItemsRef.current = clipboardSelectionItems;
+  }, [clipboardSelectionItems]);
+
+  useEffect(() => {
+    if (intent.type !== "key" || intent.expiresAt === undefined) return;
+    const key = intent.key;
+    const delay = Math.max(0, intent.expiresAt - Date.now());
+    const timer = setTimeout(() => {
+      const items = clipboardMode ? clipboardSelectionItemsRef.current : rowsRef.current;
+      const stillMissing = !items.some((item) => item.key === key);
+      if (stillMissing) {
+        console.debug(
+          `[selectIntent] timed out, could not find key="${key}". Falling back to top.`
+        );
+        updateIntent({ type: "top" }, "timeout");
+      }
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [intent, clipboardMode, updateIntent]);
+
+  // 整合性検証用の一時的なデバッグログ（R-1 フェーズA限定。console.debug は本番ビルドで
+  // Terser により自動削除される）。rows.length が、既存のオフセット計算（App.tsx の
+  // baseLength のうち通常モード分の算出式）と同じ式で求めた期待値と常に一致しているかを
+  // 実行時に確認する。フェーズB以降で rows への移行が完了したら、このチェック自体
+  // 不要になるため削除してよい。
+  useEffect(() => {
+    const expectedLength =
+      (pinnedVisible ? pinnedFiles.length : 0) +
+      (pathPasteCandidate ? (pathPasteCandidate.isDir ? 2 : 1) : 0) +
+      (calcResult !== null ? 1 : 0) +
+      (urlConvertResult !== null ? 1 : 0) +
+      results.length;
+    if (rows.length !== expectedLength) {
+      console.debug(
+        `[rows] length mismatch: rows.length=${rows.length}, expected=${expectedLength} ` +
+          `(pinnedVisible=${pinnedVisible}, pinnedFiles=${pinnedFiles.length}, ` +
+          `pathPasteCandidate=${pathPasteCandidate !== null}, calcResult=${calcResult !== null}, ` +
+          `urlConvertResult=${urlConvertResult !== null}, results=${results.length})`
+      );
+    } else {
+      console.debug(
+        `[rows] length OK: ${rows.length} rows (kinds: ${rows
+          .map((r) => r.kind)
+          .join(",")})`
+      );
+    }
+  }, [rows, pinnedVisible, pinnedFiles, pathPasteCandidate, calcResult, urlConvertResult, results]);
+
   return {
     query,
     setQuery,
@@ -1329,6 +1498,9 @@ export function useSearch(
     selected,
     setSelected,
     selectFromHover,
+    selectRowByKeyboard,
+    selectRowFromHover,
+    syncClipboardSelectionItems: setClipboardSelectionItems,
     recordMouseMove,
     calcResult,
     prefixCommandCandidates,
@@ -1368,5 +1540,6 @@ export function useSearch(
     isPinned,
     togglePin,
     reorderPinned,
+    rows,
   };
 }

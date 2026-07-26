@@ -2,7 +2,12 @@ import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { Tooltip } from "./Tooltip";
-import { FileEntry, PastedPathInfo, PrefixCommand, UrlConvertResult } from "../types";
+import {
+  FileEntry,
+  PrefixCommand,
+  ResultRow,
+  UrlConvertResult,
+} from "../types";
 
 const URL_CONVERT_KIND_LABEL: Record<UrlConvertResult["kind"], string> = {
   decode: "デコード結果",
@@ -162,24 +167,19 @@ function PinToggleButton({
 }
 
 export function ResultList({
-  pinnedVisible,
-  pinnedFiles,
-  pinnedExistence,
+  rows,
   pinIconVisible,
-  isPinned,
   onTogglePin,
   onReorderPinned,
-  pathPasteCandidate,
-  calcResult,
   prefixCommandMode,
   prefixCommandCandidates,
   results,
-  urlConvertResult,
   query,
   selected,
   baseLength,
   webSearchVisible,
   onSelect,
+  onSelectRowByKey,
   onAddSearchFolder,
   onStartShortcutWizard,
   onCopyResult,
@@ -188,24 +188,30 @@ export function ResultList({
   onOpenWebSearch,
   onCopyUrlConvertResult,
 }: {
-  pinnedVisible: boolean;
-  pinnedFiles: FileEntry[];
-  pinnedExistence: Record<string, boolean>;
+  // 通常モード（prefixCommandMode を除く）の結果一覧。並び順の正本は
+  // useSearch.ts の rows（詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を
+  // 参照）で、App.tsx がそれをそのままこの props として渡す。
+  rows: ResultRow[];
   pinIconVisible: boolean;
-  isPinned: (path: string) => boolean;
   onTogglePin: (file: FileEntry) => void;
   onReorderPinned: (fromIndex: number, toIndex: number) => void;
-  pathPasteCandidate: PastedPathInfo | null;
-  calcResult: string | null;
   prefixCommandMode: boolean;
   prefixCommandCandidates: PrefixCommand[];
+  // rows.length === 0 かつ query が非空のときの「見つかりませんでした」表示判定に
+  // 使う（rows 自体には該当する行が存在しないため、この判定だけは rows と別に
+  // results を直接見る必要がある）。
   results: FileEntry[];
-  urlConvertResult: UrlConvertResult | null;
   query: string;
   selected: number;
   baseLength: number;
   webSearchVisible: boolean;
+  // prefixCommandMode の候補一覧・Web検索行のホバー選択に使う（生インデックス。
+  // R-1 フェーズD-2 の対象外のため変更していない）。
   onSelect: (index: number, clientX: number, clientY: number) => void;
+  // rows（通常モードの6種類の行）のホバー選択に使う。行の識別子（row.key）を
+  // そのまま渡す（R-1 フェーズD-2。詳細は useSearch.ts の SelectIntent 型の
+  // コメントを参照）。
+  onSelectRowByKey: (key: string, clientX: number, clientY: number) => void;
   onAddSearchFolder: () => void;
   onStartShortcutWizard: () => void;
   onCopyResult: (text: string) => void;
@@ -217,21 +223,6 @@ export function ResultList({
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
   const dragFromIndexRef = useRef<number | null>(null);
-
-  // ピン止めブロックは常にインデックス0から占有する（表示中なら）。パス貼り付け
-  // 候補・計算結果・URLエンコード/デコード結果・ファイル検索結果は、既存の優先順序
-  // （REQUIREMENTS.md「基本動作」節）はそのままに、ピン止めブロックの件数分だけ
-  // 後ろへオフセットされる。
-  const pinnedOffset = pinnedVisible ? pinnedFiles.length : 0;
-  // パス貼り付けの候補行（ショートカット配置→(フォルダのみ)検索フォルダに追加）は
-  // 常に先頭を占有する。ローカルパスは数式計算・URLエンコード/デコードの判定条件と
-  // 構造上両立しないため、この2つと同時に発生することはない（詳細は
-  // REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節を参照）。
-  const pathPasteOffset =
-    pinnedOffset + (pathPasteCandidate ? (pathPasteCandidate.isDir ? 2 : 1) : 0);
-  const calcIndex = pathPasteOffset;
-  const calcOffset = pathPasteOffset + (calcResult !== null ? 1 : 0);
-  const urlConvertOffset = calcOffset + (urlConvertResult !== null ? 1 : 0);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto">
@@ -286,73 +277,315 @@ export function ResultList({
         </>
       ) : (
         <>
-          {pinnedVisible &&
-            pinnedFiles.map((item, i) => {
-              const exists = pinnedExistence[item.path] ?? true;
-              const isSelected = i === selected;
-              return (
-                <button
-                  key={item.path}
-                  data-index={i}
-                  draggable
-                  onDragStart={(e) => {
-                    dragFromIndexRef.current = i;
-                    // dataTransfer への実データ受け渡しは使わず並び替え先の判定は
-                    // dragFromIndexRef（クロージャ経由）で行うが、effectAllowed を
-                    // 明示しないと一部環境でドロップ不可（禁止カーソル）と誤判定
-                    // されることがあるため、setData と合わせて明示しておく。
-                    e.dataTransfer.effectAllowed = "move";
-                    e.dataTransfer.setData("text/plain", String(i));
-                  }}
-                  onDragOver={(e) => {
-                    // ドロップを許可するには dragover の既定動作を必ず抑止する
-                    // （抑止しないとブラウザは「ドロップ不可」として扱い、禁止
-                    // カーソルのまま drop イベントが発火しない）。dropEffect も
-                    // effectAllowed と一致させ、カーソルを "move" 相当にする。
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = "move";
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const from = dragFromIndexRef.current;
-                    dragFromIndexRef.current = null;
-                    if (from !== null) onReorderPinned(from, i);
-                  }}
-                  className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
-                    isSelected
-                      ? "bg-blue-500 text-white"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                  onClick={() => onLaunchFile(item.path)}
-                  onMouseEnter={(e) => onSelect(i, e.clientX, e.clientY)}
-                >
-                  {/* 行の左端に位置するため、既定（左側表示）だと画面外へ
-                      はみ出す。side="right" で右側表示に切り替える
-                      （詳細は CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。 */}
-                  <Tooltip
-                    label="ドラッグして並び替え"
-                    side="right"
-                    className="w-4 mr-2 flex-shrink-0 justify-center"
+          {rows.map((row, index) => {
+            const isSelected = index === selected;
+            switch (row.kind) {
+              case "pinned": {
+                const item = row.file;
+                const exists = row.exists;
+                return (
+                  <div
+                    key={row.key}
+                    role="button"
+                    data-index={index}
+                    draggable
+                    onDragStart={(e) => {
+                      dragFromIndexRef.current = index;
+                      // dataTransfer への実データ受け渡しは使わず並び替え先の判定は
+                      // dragFromIndexRef（クロージャ経由）で行うが、effectAllowed を
+                      // 明示しないと一部環境でドロップ不可（禁止カーソル）と誤判定
+                      // されることがあるため、setData と合わせて明示しておく。
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", String(index));
+                    }}
+                    onDragOver={(e) => {
+                      // ドロップを許可するには dragover の既定動作を必ず抑止する
+                      // （抑止しないとブラウザは「ドロップ不可」として扱い、禁止
+                      // カーソルのまま drop イベントが発火しない）。dropEffect も
+                      // effectAllowed と一致させ、カーソルを "move" 相当にする。
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const from = dragFromIndexRef.current;
+                      dragFromIndexRef.current = null;
+                      if (from !== null) onReorderPinned(from, index);
+                    }}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={() => onLaunchFile(item.path)}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
                   >
-                    <span
-                      className={`cursor-grab select-none font-bold ${
-                        isSelected ? "text-white" : "text-gray-500"
+                    {/* 行の左端に位置するため、既定（左側表示）だと画面外へ
+                        はみ出す。side="right" で右側表示に切り替える
+                        （詳細は CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。 */}
+                    <Tooltip
+                      label="ドラッグして並び替え"
+                      side="right"
+                      className="w-4 mr-2 flex-shrink-0 justify-center"
+                    >
+                      <span
+                        className={`cursor-grab select-none font-bold ${
+                          isSelected ? "text-white" : "text-gray-500"
+                        }`}
+                      >
+                        ⋮⋮
+                      </span>
+                    </Tooltip>
+                    {/* 実体が存在しない場合の「グレーアウト」は、ファイルアイコン・
+                        ファイル名・パス部分にのみ適用する。警告アイコン・ピンアイコンは
+                        むしろ確実に気づいてもらう必要がある要素のため、opacity を
+                        下げる対象から明示的に除外する（以前はボタン全体に opacity-50
+                        をかけていたため、警告アイコンの視認性向上（塗りつぶし化・
+                        彩度アップ）の効果が薄れてしまっていた）。 */}
+                    <div
+                      className={`flex items-center min-w-0 flex-1 ${
+                        !exists ? "opacity-50" : ""
                       }`}
                     >
-                      ⋮⋮
-                    </span>
-                  </Tooltip>
-                  {/* 実体が存在しない場合の「グレーアウト」は、ファイルアイコン・
-                      ファイル名・パス部分にのみ適用する。警告アイコン・ピンアイコンは
-                      むしろ確実に気づいてもらう必要がある要素のため、opacity を
-                      下げる対象から明示的に除外する（以前はボタン全体に opacity-50
-                      をかけていたため、警告アイコンの視認性向上（塗りつぶし化・
-                      彩度アップ）の効果が薄れてしまっていた）。 */}
+                      {item.icon ? (
+                        <img
+                          src={item.icon}
+                          alt=""
+                          className="w-4 h-4 mr-3 flex-shrink-0"
+                        />
+                      ) : (
+                        <svg
+                          className="w-4 h-4 mr-3 flex-shrink-0 opacity-60"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{item.name}</div>
+                        <div
+                          className={`text-xs truncate ${
+                            isSelected ? "text-blue-100" : "text-gray-400"
+                          }`}
+                        >
+                          {item.path}
+                        </div>
+                      </div>
+                    </div>
+                    {!exists && <WarningIcon selected={isSelected} />}
+                    {/* ピン止めブロックは全行が既にピン止め済みのため、非選択時に
+                        常時表示すると状態を区別する情報を持たない単なる装飾になる
+                        （ブロックであること自体はドラッグハンドルが示す）。選択中
+                        （ピン止め解除操作が可能）のときのみ表示する。実体が無い行
+                        でも、選択中であれば手動解除できるようこの条件のみで判断する。 */}
+                    {isSelected && (
+                      <PinToggleButton
+                        active
+                        selected={isSelected}
+                        onToggle={() => onTogglePin(item)}
+                      />
+                    )}
+                  </div>
+                );
+              }
+              case "pathPasteShortcut": {
+                const candidate = row.candidate;
+                return (
                   <div
-                    className={`flex items-center min-w-0 flex-1 ${
-                      !exists ? "opacity-50" : ""
+                    key={row.key}
+                    role="button"
+                    data-index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
                     }`}
+                    onClick={onStartShortcutWizard}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
                   >
+                    <svg
+                      className={`w-4 h-4 mr-3 flex-shrink-0 ${
+                        isSelected ? "text-white" : "text-blue-500"
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 115.656 5.656l-4 4a4 4 0 01-5.656 0"
+                      />
+                    </svg>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        検索フォルダにショートカット配置: {candidate.name}
+                      </div>
+                      <div
+                        className={`text-xs truncate ${
+                          isSelected ? "text-blue-100" : "text-gray-400"
+                        }`}
+                      >
+                        Enter で名前・配置先を選択
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              case "pathPasteAddFolder": {
+                const candidate = row.candidate;
+                return (
+                  <div
+                    key={row.key}
+                    role="button"
+                    data-index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={onAddSearchFolder}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+                  >
+                    <svg
+                      className={`w-4 h-4 mr-3 flex-shrink-0 ${
+                        isSelected ? "text-white" : "text-blue-500"
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 10v6m3-3H9m11 5V7a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v11a2 2 0 002 2h14a2 2 0 002-2z"
+                      />
+                    </svg>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        検索フォルダに追加: {candidate.name}
+                      </div>
+                      <div
+                        className={`text-xs truncate ${
+                          isSelected ? "text-blue-100" : "text-gray-400"
+                        }`}
+                      >
+                        Enter で追加
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              case "calc": {
+                const result = row.result;
+                return (
+                  <div
+                    key={row.key}
+                    role="button"
+                    data-index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={() => onCopyResult(result)}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">
+                        {formatWithCommas(result)}
+                      </div>
+                      <div
+                        className={`text-xs truncate ${
+                          isSelected ? "text-blue-100" : "text-gray-400"
+                        }`}
+                      >
+                        Enter でコピー
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              case "urlConvert": {
+                const result = row.result;
+                return (
+                  <div
+                    key={row.key}
+                    role="button"
+                    data-index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={() => onCopyUrlConvertResult(result.text)}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+                  >
+                    <svg
+                      className={`w-4 h-4 mr-3 flex-shrink-0 ${
+                        isSelected ? "text-white" : "text-blue-500"
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 115.656 5.656l-4 4a4 4 0 01-5.656 0"
+                      />
+                    </svg>
+                    <div className="min-w-0">
+                      <div
+                        className={`text-[11px] truncate ${
+                          isSelected ? "text-blue-100" : "text-gray-400"
+                        }`}
+                      >
+                        {URL_CONVERT_KIND_LABEL[result.kind]}
+                      </div>
+                      <div className="text-sm font-medium truncate">
+                        {result.text}
+                      </div>
+                      <div
+                        className={`text-xs truncate ${
+                          isSelected ? "text-blue-100" : "text-gray-400"
+                        }`}
+                      >
+                        Enter でコピー
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              case "file": {
+                const item = row.file;
+                const pinned = pinIconVisible && row.pinned;
+                return (
+                  <div
+                    key={row.key}
+                    role="button"
+                    data-index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected
+                        ? "bg-blue-500 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={() => onLaunchFile(item.path)}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+                  >
+                    {/* ピン止めブロックのドラッグハンドルと横位置を揃えるための空スペーサー
+                        （このモードでは描画しない）。 */}
+                    {pinIconVisible && <span className={DRAG_HANDLE_GUTTER_CLASS} />}
                     {item.icon ? (
                       <img
                         src={item.icon}
@@ -384,248 +617,25 @@ export function ResultList({
                         {item.path}
                       </div>
                     </div>
+                    {/* 未ピン止め・非選択の組み合わせではアイコン自体を表示しない
+                        （行が選択されて初めて「ピン止めする」候補として現れる）。 */}
+                    {pinIconVisible && (pinned || isSelected) && (
+                      <PinToggleButton
+                        active={pinned}
+                        selected={isSelected}
+                        onToggle={() => onTogglePin(item)}
+                      />
+                    )}
                   </div>
-                  {!exists && <WarningIcon selected={isSelected} />}
-                  {/* ピン止めブロックは全行が既にピン止め済みのため、非選択時に
-                      常時表示すると状態を区別する情報を持たない単なる装飾になる
-                      （ブロックであること自体はドラッグハンドルが示す）。選択中
-                      （ピン止め解除操作が可能）のときのみ表示する。実体が無い行
-                      でも、選択中であれば手動解除できるようこの条件のみで判断する。 */}
-                  {isSelected && (
-                    <PinToggleButton
-                      active
-                      selected={isSelected}
-                      onToggle={() => onTogglePin(item)}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          {pathPasteCandidate !== null && (
-            <>
-              <button
-                data-index={pinnedOffset}
-                className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
-                  selected === pinnedOffset
-                    ? "bg-blue-500 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-                onClick={onStartShortcutWizard}
-                onMouseEnter={(e) => onSelect(pinnedOffset, e.clientX, e.clientY)}
-              >
-                <svg
-                  className={`w-4 h-4 mr-3 flex-shrink-0 ${
-                    selected === pinnedOffset ? "text-white" : "text-blue-500"
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 115.656 5.656l-4 4a4 4 0 01-5.656 0"
-                  />
-                </svg>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">
-                    検索フォルダにショートカット配置: {pathPasteCandidate.name}
-                  </div>
-                  <div
-                    className={`text-xs truncate ${
-                      selected === pinnedOffset ? "text-blue-100" : "text-gray-400"
-                    }`}
-                  >
-                    Enter で名前・配置先を選択
-                  </div>
-                </div>
-              </button>
-              {pathPasteCandidate.isDir && (
-                <button
-                  data-index={pinnedOffset + 1}
-                  className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
-                    selected === pinnedOffset + 1
-                      ? "bg-blue-500 text-white"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                  onClick={onAddSearchFolder}
-                  onMouseEnter={(e) =>
-                    onSelect(pinnedOffset + 1, e.clientX, e.clientY)
-                  }
-                >
-                  <svg
-                    className={`w-4 h-4 mr-3 flex-shrink-0 ${
-                      selected === pinnedOffset + 1 ? "text-white" : "text-blue-500"
-                    }`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 10v6m3-3H9m11 5V7a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v11a2 2 0 002 2h14a2 2 0 002-2z"
-                    />
-                  </svg>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">
-                      検索フォルダに追加: {pathPasteCandidate.name}
-                    </div>
-                    <div
-                      className={`text-xs truncate ${
-                        selected === pinnedOffset + 1
-                          ? "text-blue-100"
-                          : "text-gray-400"
-                      }`}
-                    >
-                      Enter で追加
-                    </div>
-                  </div>
-                </button>
-              )}
-            </>
-          )}
-          {calcResult !== null && (
-            <button
-              data-index={calcIndex}
-              className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
-                selected === calcIndex
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-              }`}
-              onClick={() => onCopyResult(calcResult)}
-              onMouseEnter={(e) => onSelect(calcIndex, e.clientX, e.clientY)}
-            >
-              <div className="min-w-0">
-                <div className="text-sm font-medium truncate">
-                  {formatWithCommas(calcResult)}
-                </div>
-                <div
-                  className={`text-xs truncate ${
-                    selected === calcIndex ? "text-blue-100" : "text-gray-400"
-                  }`}
-                >
-                  Enter でコピー
-                </div>
-              </div>
-            </button>
-          )}
-          {urlConvertResult !== null && (
-            <button
-              data-index={calcOffset}
-              className={`w-full flex items-center px-4 py-2.5 text-left transition-colors border-b border-gray-100 ${
-                selected === calcOffset
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-              }`}
-              onClick={() => onCopyUrlConvertResult(urlConvertResult.text)}
-              onMouseEnter={(e) => onSelect(calcOffset, e.clientX, e.clientY)}
-            >
-              <svg
-                className={`w-4 h-4 mr-3 flex-shrink-0 ${
-                  selected === calcOffset ? "text-white" : "text-blue-500"
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13.828 10.172a4 4 0 010 5.656l-4 4a4 4 0 01-5.656-5.656l1.5-1.5m5.656-5.656l1.5-1.5a4 4 0 115.656 5.656l-4 4a4 4 0 01-5.656 0"
-                />
-              </svg>
-              <div className="min-w-0">
-                <div
-                  className={`text-[11px] truncate ${
-                    selected === calcOffset ? "text-blue-100" : "text-gray-400"
-                  }`}
-                >
-                  {URL_CONVERT_KIND_LABEL[urlConvertResult.kind]}
-                </div>
-                <div className="text-sm font-medium truncate">
-                  {urlConvertResult.text}
-                </div>
-                <div
-                  className={`text-xs truncate ${
-                    selected === calcOffset ? "text-blue-100" : "text-gray-400"
-                  }`}
-                >
-                  Enter でコピー
-                </div>
-              </div>
-            </button>
-          )}
+                );
+              }
+            }
+          })}
           {results.length === 0 && query.length > 0 && (
             <div className="flex items-center justify-center text-gray-400 text-sm py-6">
               見つかりませんでした
             </div>
           )}
-          {results.map((item, i) => {
-            const index = i + urlConvertOffset;
-            const isSelected = index === selected;
-            const pinned = pinIconVisible && isPinned(item.path);
-            return (
-            <button
-              key={item.path}
-              data-index={index}
-              className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
-                isSelected
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-              }`}
-              onClick={() => onLaunchFile(item.path)}
-              onMouseEnter={(e) => onSelect(index, e.clientX, e.clientY)}
-            >
-              {/* ピン止めブロックのドラッグハンドルと横位置を揃えるための空スペーサー
-                  （このモードでは描画しない）。 */}
-              {pinIconVisible && <span className={DRAG_HANDLE_GUTTER_CLASS} />}
-              {item.icon ? (
-                <img
-                  src={item.icon}
-                  alt=""
-                  className="w-4 h-4 mr-3 flex-shrink-0"
-                />
-              ) : (
-                <svg
-                  className="w-4 h-4 mr-3 flex-shrink-0 opacity-60"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate">{item.name}</div>
-                <div
-                  className={`text-xs truncate ${
-                    isSelected ? "text-blue-100" : "text-gray-400"
-                  }`}
-                >
-                  {item.path}
-                </div>
-              </div>
-              {/* 未ピン止め・非選択の組み合わせではアイコン自体を表示しない
-                  （行が選択されて初めて「ピン止めする」候補として現れる）。 */}
-              {pinIconVisible && (pinned || isSelected) && (
-                <PinToggleButton
-                  active={pinned}
-                  selected={isSelected}
-                  onToggle={() => onTogglePin(item)}
-                />
-              )}
-            </button>
-            );
-          })}
           {webSearchVisible && (
             <WebSearchRow
               query={query}

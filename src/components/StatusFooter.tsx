@@ -1,4 +1,5 @@
 import type { PathPasteWizardStep } from "../hooks/useSearch";
+import type { ResultRow } from "../types";
 
 export function StatusFooter({
   pendingCommand,
@@ -6,22 +7,19 @@ export function StatusFooter({
   isWebSearchSelected,
   clipboardMode,
   pathPasteWizardStep,
-  isPathPasteCandidateSelected,
-  isCalcSelected,
   prefixCommandMode,
-  isUrlConvertSelected,
-  isFileSelected,
+  selectedRowKind,
 }: {
   pendingCommand: boolean;
   webSearchVisible: boolean;
   isWebSearchSelected: boolean;
   clipboardMode: boolean;
   pathPasteWizardStep: PathPasteWizardStep | null;
-  isPathPasteCandidateSelected: boolean;
-  isCalcSelected: boolean;
   prefixCommandMode: boolean;
-  isUrlConvertSelected: boolean;
-  isFileSelected: boolean;
+  // 通常モードで現在選択中の行（rows[selected]）の種類。rows に該当する行が
+  // ない場合（clipboardMode・prefixCommandMode・Web検索行選択中・範囲外等）は
+  // null。並び順・rows の詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照。
+  selectedRowKind: ResultRow["kind"] | null;
 }) {
   return (
     <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400">
@@ -48,13 +46,17 @@ export function StatusFooter({
                 ? "Enter クリップボードにセット"
                 : prefixCommandMode
                   ? "Enter 実行"
-                  : isPathPasteCandidateSelected
+                  : selectedRowKind === "pathPasteShortcut" ||
+                      selectedRowKind === "pathPasteAddFolder"
                     ? "Enter 選択"
-                    : isCalcSelected || isUrlConvertSelected
+                    : selectedRowKind === "calc" ||
+                        selectedRowKind === "urlConvert"
                       ? "Enter コピー"
                       : "Enter 起動"}
           </span>
-          {isFileSelected && <span>Shift+Enter フォルダを開く</span>}
+          {(selectedRowKind === "pinned" || selectedRowKind === "file") && (
+            <span>Shift+Enter フォルダを開く</span>
+          )}
           <span>Ctrl+D クリア</span>
           <span>Esc 閉じる</span>
         </>
