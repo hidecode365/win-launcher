@@ -10,23 +10,29 @@
 
 ソースを直接変更する前に、変更内容が要件・設計方針と矛盾しないか確認し、矛盾があれば先に `CLAUDE.md` を更新してから着手する。
 
+設計判断の詳細（現状仕様のフルテキスト・経緯・却下案・不具合の記録）は `docs/design/*.md` に分割して置いている。本ファイルの「設計原則ダイジェスト」節は、そこから抽出した再利用可能な原則の短い箇条書きのみを保持する。実装に着手する前に、該当する `docs/design/*.md` のポインタ先を必ず確認すること（原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある）。
+
 ## 変更時の同期チェックリスト
 
-コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`REQUIREMENTS.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は「設定画面」節を参照）。この節はその再発防止のための原則を定める。
+コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`REQUIREMENTS.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は `docs/design/settings-panel-architecture.md` の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
 
-- **原則**：コードから読み取れる情報は、原則として `CLAUDE.md`・`REQUIREMENTS.md` に重複して書かない。書く場合は正本を1箇所だけ定め、他の箇所は「◯◯節を参照」という参照に留める（同じ一覧を2箇所以上に独立して書かない）
-- **表記の正本はコード**（タブラベル等の実際の文字列）であり、`REQUIREMENTS.md` と `CLAUDE.md` はそれに従う。表記を変更する場合は、コード・`REQUIREMENTS.md`・`CLAUDE.md` の3つを同時に更新する
+- **原則**：コードから読み取れる情報は、原則として `CLAUDE.md`・`REQUIREMENTS.md` に重複して書かない。書く場合は正本を1箇所だけ定め、他の箇所は参照に留める（同じ一覧を2箇所以上に独立して書かない）
+- **表記の正本はコード**（タブラベル等の実際の文字列）であり、`REQUIREMENTS.md` と `CLAUDE.md`／`docs/design/*.md` はそれに従う。表記を変更する場合は、コード・`REQUIREMENTS.md`・該当する `docs/design/*.md` の3つを同時に更新する
 - **設定画面のタブを追加・削除・改名した場合に更新が必要な箇所**（すべて同時に更新すること）：
   - コード：`SettingsPanel.tsx` の `SettingsTab` 型・`SETTINGS_TABS` 配列・分岐、対応する `XxxSettings.tsx`
   - `REQUIREMENTS.md`「設定画面」節のカテゴリ一覧
-  - `CLAUDE.md` のカテゴリナビ一覧（正本1箇所。「設定画面」節を参照）
+  - `docs/design/settings-panel-architecture.md` のカテゴリナビ一覧（正本1箇所。`#settings-tabs-list` を参照）
   - `CLAUDE.md` のディレクトリ構成図（タブの実体ファイルのみ。共通コンポーネントは対象外。次項を参照）
-- **ディレクトリ構成図は「全体像の把握」用の簡略版であり、網羅性の責任を持たない。** コンポーネントファイルを追加した場合、それがタブの実体でなければ構成図への追記は不要（本文の該当節で説明すればよい）。既存の共通コンポーネント（`SettingsIndent.tsx`／`SettingsGroup.tsx`／`SettingsSaveBar.tsx`／`FeatureBlock.tsx`／`FolderDetailSettingsModal.tsx`／`ExtensionFilterEditor.tsx` 等）も同様の理由で構成図には列挙していない
+- **ディレクトリ構成図は「全体像の把握」用の簡略版であり、網羅性の責任を持たない。** コンポーネントファイルを追加した場合、それがタブの実体でなければ構成図への追記は不要（本文の該当節・`docs/design/*.md` で説明すればよい）。既存の共通コンポーネント（`SettingsIndent.tsx`／`SettingsGroup.tsx`／`SettingsSaveBar.tsx`／`FeatureBlock.tsx`／`FolderDetailSettingsModal.tsx`／`ExtensionFilterEditor.tsx`／`Tooltip.tsx` 等）も同様の理由で構成図には列挙していない
 - **設定項目を追加・変更した場合（タブ自体は増減しない場合）に更新が必要な箇所**：
   - コード：該当する `XxxSettings.tsx`、`AppSettings`（`types.ts`）のフィールド、Rust側の `set_*` コマンド
   - `REQUIREMENTS.md`「設定画面」節の該当タブの記述
-  - `CLAUDE.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、その部分だけを追記する）
-- **CLAUDE.md には「どう作られているか」を書き、「何ができるか」は `REQUIREMENTS.md` に書く。** 両方に同じ内容を書かない（本節冒頭の原則の言い換え）。「設定画面」節の「各カテゴリの内容」（後述）で、仕様の列挙を `REQUIREMENTS.md` への参照に置き換え、実装上の技術的補足（どの Rust コマンドを再利用しているか等）のみを残したのはこの原則の適用例
+  - `CLAUDE.md`／`docs/design/*.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/design/*.md` にその部分だけを追記する）
+- **CLAUDE.md・docs/design/*.md には「どう作られているか」を書き、「何ができるか」は `REQUIREMENTS.md` に書く。** 両方に同じ内容を書かない
+- **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`CLAUDE.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
+  - アンカーIDは見出し文言の自動スラッグ化に頼らず、見出し直前に `<a id="...">` を明示的に振る（英語kebab-case）。見出しの日本語文言をリネームしてもアンカーIDは変えない（アンカーIDと見出し文言は独立して管理する）
+  - `docs/design/*.md` 側でアンカーIDを変更・削除した場合、`CLAUDE.md` 側の対応するポインタを同時に更新する（放置すると壊れたリンクが残る）
+  - ダイジェスト側の箇条書きの順序は、対応する detail doc 内のアンカー出現順と一致させる（両ファイルの構造的な対応関係を保ち、片方だけ並び替えて食い違う事故を防ぐため）
 
 ## 言語方針
 
@@ -45,7 +51,7 @@
 | アプリ内更新ダイアログ（latest.json） | 日本語 | last-release-notes.md の内容を反映 |
 | last-release-notes.md | 日本語 | latest.json 用の一時保存ファイル |
 | REQUIREMENTS.md | 日本語 | 仕様書 |
-| CLAUDE.md | 日本語 | CC向けコンテキストファイル自体 |
+| CLAUDE.md／docs/design/*.md | 日本語 | CC向けコンテキストファイル自体 |
 | X（@hidecode365）告知文 | 日本語 | 140字以内 |
 | GitHub Issueテンプレート | 英日併記 | 項目名は英語+日本語併記 |
 
@@ -76,7 +82,7 @@
 4. **原因の性質を判定する（個数によらず初回から必ず行う）**：「そのアクション固有の実装ミスなのか」「今回使った設計パターンそのものが持つ構造的な弱さなのか」を判定する。「同種の個別対応が何個目か」は判断基準にしない。後者（構造的な弱さ）に該当すると判断したら、たとえ初回のバグであっても全体設計の見直しを検討する。個別対応で済ませる場合は、「なぜ全体設計の見直しをしなかったか」を判断根拠として明示すること
 5. **個別対応 or 全体設計見直しの実施**：全体設計を見直す場合は、設計案を複数比較した上で「なぜその設計が良いか」を言語化し、対象範囲全体に一括適用する。既存の個別対応（その場しのぎのフラグ・ガード等）のうち、新しい設計に統合できるものは削除し、複雑化を解消する
 6. **検証範囲の明示**：3の洗い出し結果に基づき、確認すべき項目をチェックリスト化してから動作確認を依頼する
-7. **知見の型化**：CLAUDE.md への追記は、個別の不具合事例の列挙ではなく、再利用可能な「設計原則」として記載する
+7. **知見の型化**：CLAUDE.md／`docs/design/*.md` への追記は、個別の不具合事例の列挙ではなく、再利用可能な「設計原則」として記載する。個別の不具合事例そのもの（症状・原因・検討した設計案・対応）は該当する `docs/design/*.md` の「経緯」節に記録し、`CLAUDE.md` にはそこから抽出した原則のみをダイジェストとして残す
 
 基本姿勢：症状ごとの場当たり的なパッチ（モグラ叩き）は最も避けるべき対応であり、急がば回れで根本原因・共通設計に向き合うことを常に優先する。
 
@@ -88,7 +94,7 @@ Windows 11 向けキーボードランチャー。Alt+Space でウィンドウ�
 
 ## アーキテクチャ
 
-> この構成図は主要なコンポーネントのみを示す簡略版であり、網羅性は保証しない。共通コンポーネントの詳細は本文の各節を参照（詳細は「変更時の同期チェックリスト」節を参照）。
+> この構成図は主要なコンポーネントのみを示す簡略版であり、網羅性は保証しない。共通コンポーネントの詳細は本文の各節・`docs/design/*.md` を参照（詳細は「変更時の同期チェックリスト」節を参照）。
 
 ```text
 win-launcher/
@@ -142,6 +148,8 @@ win-launcher/
 │   └── tauri.conf.json
 ├── scripts/
 │   └── generate-latest-json.ps1  # リリース時に latest.json（Tauri Updater 用）を生成する
+├── docs/
+│   └── design/               # 設計判断の詳細（現状仕様・経緯・却下案・不具合の記録）。詳細は「設計原則ダイジェスト」節を参照
 ├── .claude/
 │   └── skills/
 │       └── release-flow/SKILL.md  # リリース手順（詳細は「リリース手順」節を参照）
@@ -159,11 +167,7 @@ win-launcher/
 | Tailwind CSS | 3 |
 | Vite | 6 |
 
-- 依存バージョンの更新状況：
-  - `vite`：5系から `6.4.3` へ更新済み（`package.json` は `^6.4.3` 固定）
-  - `esbuild`（`vite` の間接依存）：`0.25.12` に更新済み
-  - `@vitejs/plugin-react`：`4.7.0` のまま据え置き（追加の更新なし）
-  - `glib`（Rust、`src-tauri/Cargo.lock` 上の間接依存。Windows ビルドでは未使用）：Dependabot が medium 指摘を出しているが、`tauri` が要求する `gtk 0.18.2` に固定されているため単独更新不可。`tauri` 本体の上流アップデート待ちで保留中
+依存バージョンの更新状況・保留理由は [dependencies.md](docs/design/dependencies.md#dependency-update-status) を参照。
 
 ## Tauri プラグイン
 
@@ -173,912 +177,137 @@ win-launcher/
 | `tauri-plugin-shell` | ファイル起動・Web検索の URL をデフォルトブラウザで開く（`open()`） |
 | `tauri-plugin-autostart` | Windows スタートアップ登録 |
 | `tauri-plugin-store` | 検索フォルダ・各機能 ON/OFF・ホットキー設定・ウィンドウサイズ・ファイル起動の frecency 履歴の永続化（`settings.json`）。frecency 履歴・ウィンドウサイズは Rust コマンドを介さず、フロントエンドが JS パッケージ `@tauri-apps/plugin-store` で直接読み書きする |
-| `tauri-plugin-dialog` | フォルダ選択ダイアログ。**必ず Rust 側の Tauri コマンド（`pick_folder`）として実装し、`FileDialogBuilder::set_parent` で WinLauncher のウィンドウを親に指定すること。** フロントエンドの JS API（`@tauri-apps/plugin-dialog` の `open()`/`save()`/`message()` 等）には親ウィンドウを指定する手段がなく、`alwaysOnTop: true` のウィンドウの背後にダイアログが回り込んでしまう不具合になる（実際に発生し修正済み）。本プロジェクトでは `@tauri-apps/plugin-dialog` は npm 依存にも加えておらず、フロントエンドから直接ダイアログ系 JS API を呼ぶ経路は存在しない |
+| `tauri-plugin-dialog` | フォルダ選択ダイアログ。**必ず Rust 側の Tauri コマンド（`pick_folder`）として実装し、`set_parent` で親ウィンドウを指定すること**（理由は [dependencies.md](docs/design/dependencies.md#dialog-plugin-parent-window) を参照） |
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
 | `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
 | `tauri-plugin-updater` | 自動アップデート（GitHub Releases + `latest.json` の確認・ダウンロード・インストール） |
 | `tauri-plugin-notification` | パス貼り付けによる検索フォルダ管理（検索フォルダ追加・ショートカット配置）完了時の Windows トースト通知 |
 | `tauri` (tray-icon feature) | システムトレイ常駐 |
 
-## 設計方針
-
-### ウィンドウ
-
-- `decorations: false` でフレームなし、`tauri.conf.json` の `center: true` に加え、ウィンドウを表示するすべての箇所（グローバルホットキー / トレイ「Show」/ トレイアイコンクリック）で `show()` 直前に Rust 側から `window.center()` を呼び出して画面中央に表示する
-  - `tauri.conf.json` に `x` / `y` 座標は設定しない（位置を永続化しないため）
-  - ドラッグで移動した位置は保持しない。非表示→再表示のたび（フォーカスアウトによる自動非表示からの再表示も含む）に必ず中央へ戻す
-- `transparent: true` + CSS `border-radius` で角丸を実現（Fluent ライクなアクリル風 UI）
-  - `tauri.conf.json` の `backgroundColor` を `[0, 0, 0, 0]`（alpha 0）に明示設定する。Windows では WebView2 のデフォルト背景が不透明なため、未設定だと角丸の外側にうっすら線（コーナーのにじみ）が見えるアーティファクトが出る
-  - `html` / `body` / `#root` にも `background: transparent` を明示し、ウィンドウ・WebView・DOM の各レイヤーで透過を一貫させる
-  - `tauri.conf.json` の `shadow` は `false` にする。ネイティブの drop shadow は矩形の DWM 拡張フレームに対して描画されるため、CSS の角丸クリップ領域と境界が一致せず、角の外側に薄い線が残るアーティファクトが出る。影は `App.tsx` 側の CSS（Tailwind `shadow-2xl`）で代替する
-- 起動時は `visible: false`（非表示）
-- `skipTaskbar: true`、`alwaysOnTop: true`
-- フォーカスアウトで自動非表示（frontend の `onFocusChanged` イベントで `hide()` を呼ぶ）
-  - WebView2 はウィンドウ内操作（設定パネルへの切替による DOM 入れ替え、ドラッグ開始など）でも一時的にフォーカス喪失を通知することがあるため、即時 `hide()` はしない
-  - フォーカス喪失通知後 150ms 待ち、`isFocused()` で再確認してなお非フォーカスの場合のみ `hide()` する（誤って隠れるのを防ぐデバウンス処理）
-  - **設定画面表示中はこの自動非表示を適用しない**（詳細は REQUIREMENTS.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカスアウトの検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結しているため、Rust 側に状態を持たせたり IPC でフラグを同期したりする必要はなく、フロントエンドの `showSettings` state を判定に使うだけで完結する
-    - `App.tsx` のフォーカス監視 `useEffect` は依存配列が空（マウント時に一度だけ登録）のため、`showSettings` state を直接クロージャで参照すると初回値（`false`）に固定されてしまう。これを避けるため、毎レンダーで最新の `showSettings` を書き込む `showSettingsRef`（`useRef`）を用意し、150ms のデバウンス後に `hide()` を呼ぶかどうかの判定（`if (stillFocused || showSettingsRef.current) return;`）はこの ref を参照する
-    - 設定画面の開閉は `openSettings`/`closeSettings`（いずれも単一の `showSettings` state を更新するだけ）に一本化されており、呼び出し元（歯車アイコンクリック・`Ctrl+S`・`Esc`・設定パネル自身の閉じるボタン）が複数あってもすべてこの2関数を経由する。そのため `showSettingsRef` を見るだけで全ての開閉経路に自動的に追従し、経路ごとに個別のフラグリセット処理を書く必要がない（他の「エラー状態の保持場所」等と同様、単一の state に一本化されていることが、複数経路対応を自明にしている）
-    - 設定画面を閉じた直後の最初のフォーカスアウトから、通常のフェードアウト・非表示挙動に戻る（`closeSettings` 実行時点で `showSettings` が `false` に更新され、次のレンダーで `showSettingsRef.current` も追従するため、追加のリセット処理は不要）
-    - グローバルホットキー（Alt+Space）は Rust 側の「表示中なら非表示、非表示中なら表示」というトグル判定（`main.rs` の `with_handler`、`window.is_visible()` のみを見る）のままで変更していない。設定画面表示中にホットキーを押すと、フォーカスの有無に関わらず「表示中」なので非表示になる（設定画面の状態は保持され、再度ホットキーを押すと同じ設定画面の状態のまま復帰する）
-- フォーカスイン時（グローバルホットキー等での再表示時）は検索欄の内容を保持したまま再フォーカスする
-- ヘッダー行（検索バー / 設定パネルのタイトル行）に `data-tauri-drag-region="deep"` を付与し、マウスドラッグでウィンドウ移動を可能にする
-  - `="deep"` 必須。値なし（bare）はヘッダー要素自身を直接クリックした場合のみドラッグ判定となり、子要素（アイコン・テキスト等）の上では発火しないため不可
-  - `input` / `button` などクリック可能要素は Tauri 側のロジックで自動的にドラッグ対象から除外されるため、サブツリー全体に付与しても入力・クリック操作は阻害されない
-  - 位置の永続化は行わない。`tauri.conf.json` の `center: true` により再起動時は常に画面中央へ戻る
-- `resizable: true` でウィンドウ枠からのリサイズを許可する。`tauri.conf.json` の `width` / `height`（デフォルトサイズ）と `minWidth` / `minHeight`（最小サイズ）はいずれも 640 / 420 とする
-  - 位置とは異なり、サイズは永続化する（再起動後も最後に設定したサイズを維持する）。位置を永続化しない既存方針とは非対称な扱いになるが、これは要件上の明示的な区別であり矛盾ではない
-  - 保存：フロントエンドが `getCurrentWindow().onResized` イベントを購読し、リサイズ確定から 500ms デバウンスしたうえで `@tauri-apps/plugin-store` の JS API（frecency・クリップボード履歴と同じ `storeRef`／`settings.json`）の `"windowSize"` キーへ `{ width, height }`（論理ピクセル。`scaleFactor()` で物理→論理に変換）を直接書き込む。Rust コマンドは追加しない
-  - 復元：Rust 側の `setup()` で `settings.json` の `"windowSize"` を読み込み、存在すればメインウィンドウ生成直後に `window.set_size(LogicalSize::new(width, height))` を呼んで適用する（フロントエンドの描画・表示前に確定させるため、`show()` より前に行う）。キーが存在しない場合（初回起動等）は `tauri.conf.json` のデフォルトサイズ（640×420）のままにする
-  - 最小サイズの強制は `tauri.conf.json` の `minWidth` / `minHeight` に委譲する（Rust 側で個別にクランプ処理は行わない）
-  - ドラッグには `core:window:allow-start-dragging` permission が必要（`capabilities/default.json` に追加）
-
-### グローバルホットキー（Rust / フロントエンド）
-
-- デフォルトは `Alt+Space`。アクセラレータ形式の文字列（`tauri_plugin_global_shortcut::Shortcut`（= `global_hotkey::HotKey`）の `FromStr` 実装が解釈できる形式。例: `Alt+Space`、`Ctrl+Shift+K`。Win キーは `Super`）として `settings.json` の `appSettings.hotkey` に永続化する
-- アプリ起動時（`setup`）に `appSettings.hotkey` を読み込み、`Shortcut::from_str` でパースして `register`。パース失敗時（設定破損等）はデフォルトにフォールバックし、ストアの値も補正して保存し直す
-- `set_hotkey(accelerator)`（Rust コマンド）
-  - `Shortcut::from_str` でパースし、失敗または修飾キー（`mods`）が空の場合はエラーを返して保存しない（修飾キー必須はフロントエンドだけでなく Rust 側でも検証する）
-  - 現在登録中のショートカットを `unregister` → 新しいショートカットを `register`
-  - 新ショートカットの `register` が失敗した場合（他アプリが使用中など）は旧ショートカットを `register` し直して維持し、エラーを返す（ストアは更新しない）
-  - 成功時のみ `appSettings.hotkey` を更新して永続化する
-  - `register`/`unregister` は `&str`（アクセラレータ文字列）を直接渡せる（`TryInto<ShortcutWrapper>` 経由）ため、`Shortcut` への変換とは別に文字列のまま登録・解除できる
-  - グローバルショートカットの `with_handler` はどのショートカットが発火したかに関わらずメインウィンドウの表示/非表示をトグルするロジックなので、登録するショートカットを切り替えるだけで動作が追従する（ハンドラ自体の変更は不要）
-- フロントエンドはキー入力を待ち受けず、修飾キー（Ctrl / Alt / Shift / Win）のチェックボックスと通常キーのプルダウンの組み合わせから直接アクセラレータ文字列を組み立てて `set_hotkey` を呼び出す（詳細は「設定画面」節の全般タブを参照）。ライブキーキャプチャや `WM_SYSCOMMAND` 抑止のような仕組みは不要なため設けていない
-
-### 検索ロジック（Rust）
-
-- `appSettings.fileSearchEnabled` が `false` の場合、フロントエンドは `search_files` を呼ばず検索結果を表示しない
-- 検索対象フォルダは設定で複数登録可能（有効/無効を個別に切替）
-- 有効なフォルダのみ `walkdir` で再帰走査（シンボリックリンク追跡あり）。最大深さはフォルダごとの詳細設定（`max_depth`。デフォルト3）に従う（かつて全フォルダ共通のハードコード値5だったものを、フォルダごとの個別設定に置き換えた。詳細は「検索フォルダごとの詳細設定」節を参照）
-- クエリを小文字変換してファイル名に部分一致
-- 全フォルダ合計で最大 50 件に絞って返却
-- 走査ルート自身（`WalkDir` の depth 0 エントリ、＝検索フォルダそのもの）は「フォルダ自体を検索対象に含める」設定に関わらず結果に含めない（検索フォルダ自身が自分自身の検索結果に出るのは意図しないため）
-- 各ファイルの Windows シェルアイコン（エクスプローラーと同じアイコン）を取得し、`data:image/png;base64,...` 形式の文字列として結果に含める
-  - Win32 API `SHGetFileInfoW`（`SHGFI_ICON | SHGFI_SMALLICON`）でファイルパスから `HICON` を取得
-  - `GetIconInfo` → `GetObjectW` でカラービットマップ（`HBITMAP`）の寸法を取得し、`GetDIBits` で 32bpp トップダウン BGRA のピクセルデータへ変換
-  - BGRA → RGBA に並べ替えたうえで `image` クレートで PNG エンコードし、`base64` クレートで Base64 化
-  - 取得したアイコン・ビットマップ・DC などの GDI ハンドルは RAII ガード（`Drop` 実装）で確実に解放する
-  - 取得に失敗した場合（無効なパス等）はアイコンなし（`null`）として扱い、フロントエンドは汎用のドキュメントアイコン SVG にフォールバックする
-
-### ファイル検索結果の frecency ランキング（フロントエンド）
-
-- `search_files` が返したファイル一覧を、フロントエンド側で frecency スコアの降順に並び替えて表示する（Rust 側のソート処理は不要）
-- 履歴データは `@tauri-apps/plugin-store` の JS API（`Store.load("settings.json")`）から直接読み書きする
-  - Rust 側（`tauri-plugin-store` の `app.store()`）と JS 側（`Store.load()`）は同じ `settings.json` を共有する同一のストアコレクションを参照するため、Rust 側にコマンドを追加せずフロントエンドだけで永続化が完結する
-  - JS から直接ストア操作を呼べるよう、`capabilities/default.json` に `store:allow-load` / `store:allow-get` / `store:allow-set` / `store:allow-save` permission を追加する（削除・クリア等の破壊的操作は使わないため付与しない）
-  - キー名は `"frecency"`、値は `{ [path: string]: { count: number, lastUsed: number } }`（`lastUsed` は UNIX タイムスタンプ ms）
-- アプリ起動時（マウント時）に `frecency` を読み込み、`useState` と同期する `useRef` の両方で保持する（`useRef` は `useCallback` の古いクロージャ参照を避けるため、`useState` は再レンダリングのトリガー用）
-- ファイル起動時（Enter／クリックいずれも `launchFile` 経由）に対象パスの `count` をインクリメントし `lastUsed` を現在時刻で更新、`store.set` → `store.save` で即時永続化する
-- スコア計算：`score = count * decay(lastUsed)`。`decay` は経過時間に応じた係数（1時間以内 `1.0`、1日以内 `0.9`、1週間以内 `0.7`、1ヶ月以内 `0.5`、それ以上 `0.3`）
-- 履歴のないファイルはスコア `0` として扱う。並び替えはスコア降順、スコアが同じ場合（未起動のファイル同士を含む）はファイル名のアルファベット順を二次キーとする
-- この機能の ON/OFF トグルは設けない（常時有効）
-- `recordFrecency(path)` はファイル起動時の後処理として `launchFile` の `closeWindow({ cleanup })` の `cleanup` 内で呼ぶ。ウィンドウが実際に隠れた後にのみ実行されるため、この呼び出しが引き起こす再レンダーのタイミングを個別に気にする必要はない（詳細・経緯は「ウィンドウを閉じる系アクションの共通設計」節を参照）
-
-### ピン止め・お気に入り・メモ機能（Rust / フロントエンド）
-
-- 要件・仕様の詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照。本節は実装上の設計判断・注意点のみを記す
-- 段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装のまま（詳細は「お気に入り機能の実装（段階2）」節を参照）
-
-#### データ構造（`FavoriteNode`）
-
-- ピン止め・お気に入り・メモの3機能を、単一の型 `FavoriteNode`（Rust: `main.rs` の `struct FavoriteNode`、フロントエンド: `src/types.ts` の `FavoriteNode` interface）で管理する。フィールドは `{ id, parentId, type, name, value, order }`
-- **`children` を持つ入れ子構造ではなく `parentId` を持つフラットな配列（隣接リスト方式）を採用した理由**：既存の `FolderEntry`（`folders: FolderEntry[]`）と同じく `Vec<T>`／配列としてそのまま扱えるため、Rust 側に再帰的な型定義（`Box<FavoriteNode>` を含む木構造）を導入する必要がない。将来「お気に入り」でツリー表示・ドラッグ&ドロップによる階層移動を実装する場合も、ノードの `parentId` を書き換えるだけで「別の親へ移動」を表現できる（再帰構造だと移動のたびに元の親の `children` から取り除いて新しい親の `children` へ挿入する、というツリー操作が必要になるのに対し、フラット配列なら1フィールドの更新で済む）
-- 永続化：`settings.json` の新規キー `"favorites"`（`FAVORITES_STORE_KEY`）に `Vec<FavoriteNode>` をそのまま保存する。既存の `folders`/`appSettings` と同じストア・同じ「Rust コマンド経由で読み書きする」方式に統一しており、frecency・clipboardHistory のようなフロントエンドから JS の `@tauri-apps/plugin-store` API で直接読み書きする方式は**採用していない**（将来 `clipboard`/`command` 型のフィールドを追加する際、Rust 側の型定義に `#[serde(default)]` を付与するだけで後方互換を保証できるようにするため。全フィールドに `#[serde(default)]` を付与済み）
-- 保存は全量置き換え方式（`set_favorites(favorites: Vec<FavoriteNode>)`）のみで、部分更新用のコマンド（例:「1件だけ追加」）は設けていない。書き込み頻度が低い（ユーザーがピン止め操作をするたびの低頻度な操作）ため、フロントエンド側で配列を組み立ててから丸ごと送る方式で十分と判断した
-
-#### 予約フォルダ（固定ID）
-
-- ルート直下の「ピン止め」「お気に入り」「メモ」の3ノードは、`main.rs` の定数 `PINNED_FOLDER_ID`（`"__pinned__"`）／`FAVORITES_FOLDER_ID`（`"__favorites__"`）／`MEMO_FOLDER_ID`（`"__memo__"`）という固定文字列IDを持つ。フロントエンド側も `src/types.ts` の `PINNED_FOLDER_ID` 定数で同じ値を持つ（**Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新すること**。両者は文字列リテラルの一致だけで結び付いており、型システムによる自動追従はない）
-- 固定IDを採用した理由：表示名（`name`。ユーザーが変更可能）で予約フォルダを参照すると、名前変更や多言語化時に参照が壊れる。IDで参照すれば `name` は自由に変更できる
-- `enforce_reserved_folders`（`main.rs`）が予約フォルダの整合性を保証する。起動時（`setup()` の `ensure_reserved_folders`）に加え、`set_favorites` コマンド内でも毎回呼ぶことで、フロントエンドから送られてきた配列に予約フォルダの改変（削除・リネーム・親付け替え）が含まれていても、保存直前に正しい値へ強制的に是正する。**UI側で編集不可にするだけでなく、Rust側でも防御する**という、本プロジェクトが `set_folder_settings` の `max_depth` 範囲チェック等で一貫して採っている「バリデーションはフロントエンドだけでなくRust側でも行う」方針を踏襲したもの
-
-#### 検索結果からの除外（`search_files`）
-
-- ピン止め済みファイルを検索ボックスが空のときの通常一覧から除外する処理は、**フロントエンド側でのフィルタではなく Rust 側の `search_files` に `exclude_paths: Vec<String>` 引数を追加して行っている**
-- 理由：`search_files` は `MAX_SEARCH_RESULTS`（50件）に達した時点で走査を打ち切る。フロントエンド側で受け取った50件からピン止め済み分を差し引く方式だと、ピン止め件数が多いほど「一覧に表示できる固有ファイル数」がその分減ってしまう。Rust側の候補生成ループ内（アイコン取得より前、`continue` で早期スキップ）で除外すれば、50件の枠はピン止め対象外のファイルだけで満たされる
-- `exclude_paths` に何を渡すかはフロントエンド（`useSearch.ts`）の責務：クエリが空文字のときのみピン止め済みパス一覧（`pinnedPathSet`）を渡し、クエリに文字が入力されている間は空配列を渡す（＝除外しない）。Rust側の `search_files` 自体はこの「クエリが空かどうか」の判定を一切知らず、渡された `exclude_paths` をそのまま使うだけの単純な実装にとどめている（判定ロジックをRust・フロントエンドの両方に分散させないため）
-
-#### ドラッグ&ドロップとウィンドウドラッグ領域の非競合（今後のD&D実装時の前提）
-
-- 実装前の調査で、`data-tauri-drag-region` は `SearchBox.tsx`（検索ボックスのヘッダー行）と `SettingsPanel.tsx`（設定画面のタイトル行）の2箇所にのみ付与されており、`ResultList.tsx` の行要素・その親（`App.tsx` のルート `<div>` を含む）はいずれもドラッグ領域に含まれないことを確認済み。この構造は今回のピン止め機能実装でも変更していない
-- そのため、ピン止めブロックの並び替えは新規ライブラリ（`@dnd-kit` 等）を追加せず、素の HTML5 Drag and Drop API（`draggable` 属性 + `onDragStart`/`onDragOver`/`onDrop`）で実装した（`ResultList.tsx`）。ウィンドウ移動用のドラッグ（`data-tauri-drag-region`）とは干渉しない
-- **今後 `ResultList.tsx` 配下（またはその他のドラッグ領域外のコンポーネント）に新たな D&D 機能を追加する場合も、この前提（検索結果一覧はドラッグ領域の外）が成り立つ限り同様に素の HTML5 D&D で実装でき、ライブラリ追加の要否を毎回再検証する必要はない**。ただし `data-tauri-drag-region` の付与箇所自体を変更した場合はこの前提が崩れるため、その際は改めて競合を確認すること
-- **この節の調査は「ウィンドウ移動ドラッグ（`data-tauri-drag-region`）との競合」のみを対象にしたものであり、それとは別に、Tauri の `dragDropEnabled` 設定（OSネイティブのファイルドラッグ&ドロップ処理）による、より下層でのHTML5 D&D阻害が実際には発生していた。** 本節の調査時点では「競合しない」という結論そのものは正しかった（`data-tauri-drag-region` は確かに競合していない）が、実装を進めて初めて別の競合要因（`dragDropEnabled`）が見つかった、という経緯がある。詳細と対応は次項「Tauri の `dragDropEnabled` と HTML5 Drag and Drop の競合」を参照
+プラグインの選定理由の詳細は [dependencies.md](docs/design/dependencies.md#plugin-list-rationale) を参照。
 
-#### フロントエンド実装（`useSearch.ts`）
+## 設計原則ダイジェスト
 
-- ピン止めに関する state・ロジックは、`/recent`・パス貼り付けウィザードと同様に `useSearch.ts` 自身に実装している（`useClipboard.ts` のような別フックへの切り出しは行っていない）。「"/" プレフィックスモードの内部アーキテクチャ」節の2パターンにそのまま乗せているため
-  - **世代ID管理**：`get_pinned_files`→`check_paths_exist` の一連の非同期呼び出しに `asyncCallIdRef` の新規キー `"pinned"` を割り当てている（既存の `"search"`/`"recent"` キーとは独立。過去の教訓に従い、既存キーの使い回しは行っていない）
-  - **フォーカス回復時再取得テーブル**：`focusRegainTableRef.current` に `pinned: { active: pinnedVisible, refetch: () => fetchPinnedFiles("focus-regain") }` を追加した。既存の `recent` エントリと並べて登録するだけで、`onFocusChanged` リスナー自体（汎用ロジックのみ）は変更不要だった
-- `pinnedVisible`（ピン止めブロックを表示すべきか）は `appSettings.pinEnabled && query === "" && !clipboardMode && !recentMode` で判定する。`calcMode`／`prefixCommandMode`／`pathPasteWizardMode` を明示的に除外していないのは、これらがいずれも非空クエリを前提とする構造上、`query === ""` の時点で自動的に成立しなくなるため（`isCalcExpression("")` は `false`、`buildPrefixCommandCandidates` は `"/"` で始まらないクエリに対して `[]` を返す、パス貼り付けウィザードは判定対象パスが必要なため空クエリでは開始し得ない）
-- `favorites`（生ノード配列、`get_favorites` で取得）と `pinnedFiles`（表示用・シェルアイコン付き、`get_pinned_files` で取得）を別の state として持つ。前者はピン止めの追加・解除・並び替えの判断材料（`order`・`id` を持つ）、後者は描画専用（アイコンは Rust 側でしか取得できないため）。両者の使い分けを混同しないこと
-- `togglePin`/`reorderPinned` はいずれも `favoritesRef.current`（最新の生配列）を元に更新後の配列を組み立て、`set_favorites` へ送ってから、その戻り値（Rust側で予約フォルダ是正・保存済みの配列）を新しい真実として `favoritesRef`/`favorites` に反映する。`reorderPinned` は保存の完了を待たず `pinnedFiles`（表示用配列）を先に楽観的に並び替える（体感速度を優先。保存自体は fire-and-forget）
+以下は `docs/design/*.md` から抽出した「今後の指針・再利用可能な原則」のみを収めたダイジェストである。**各原則の背景（現状仕様の詳細・経緯・却下案・不具合の記録）は必ずポインタ先で確認すること。** 原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある。
 
-#### インデックス計算への影響（`App.tsx`）
+見出しは横断アーキテクチャ系3ファイル・機能単位系10ファイルの計13ファイルに対応する。
 
-- `App.tsx` には `pathPasteLength`／`calcLength`／`urlConvertLength` など、複数の候補群を合算した選択インデックス計算が複数箇所に分散している（`baseLength` の算出、`handleKeyDown` の Enter 分岐、`StatusFooter` への各 `is*Selected` props）。ピン止めブロックの導入にあたり、`pinnedLength`（`pinnedVisible` のときのみ `pinnedFiles.length`）を**既存の全オフセット計算の先頭**に追加した（表示順序がピン止めブロック→パス貼り付け候補→計算結果→URLエンコード/デコード結果→ファイル検索結果の順のため）
-- 影響箇所の洗い出し結果（新しい候補群を追加する際は同様にこれらすべてを確認すること）：
-  1. `baseLength` の算出式
-  2. `handleKeyDown` 内の `selectedFile`／`selectedPinnedFile` の算出、パス貼り付け候補・計算結果・URLエンコード/デコード結果の各 `selected === ...` 比較
-  3. `StatusFooter` に渡す `isPathPasteCandidateSelected`／`isCalcSelected`／`isUrlConvertSelected`／`isFileSelected` の各判定式
-  4. `ResultList.tsx` 内の `pathPasteOffset`／`calcIndex`／`calcOffset`／`urlConvertOffset`（`data-index`／`onMouseEnter` に使う絶対インデックス）
-- ピン止めブロックの各行は通常のファイル検索結果行と同じアクション体系（Enter起動・Shift+Enterで格納フォルダを開く）を引き継ぐため、`handleKeyDown` では `selectedPinnedFile ?? selectedFile` という形で「ピン止めブロックの選択」と「通常のファイル検索結果の選択」を1つの `effectiveFile` に統合してから分岐している（Shift+Enter・`openContainingFolder` の呼び出し元を分岐ごとに複製しないため）
-- ピンアイコンの表示可否（`pinIconVisible`）は `appSettings.pinEnabled` のみで判定する（段階1.5で `/recent` にもピン止めを解禁したため、`recentMode` による除外は撤去済み。詳細は次項「`/recent` からのピン止め（段階1.5）」を参照）
+### ウィンドウ・ホットキー
 
-#### `/recent` からのピン止め（段階1.5）
+→ 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md)
 
-段階1（通常のファイル検索結果のみ）では `pinIconVisible` に `&& !recentMode` を加え、`/recent` の行にはピンアイコンを表示しない実装になっていた。これは REQUIREMENTS.md 側の仕様漏れによるものであり、REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節「/recent からのピン止め」「最近使ったファイル一覧（/recent）」節「ピン止め」を新設したうえで、この除外を撤去した（段階1.5）。
+- ウィンドウは常に画面中央に表示し、位置は永続化しない。ウィンドウを表示するすべての箇所（グローバルホットキー／トレイ）で `show()` 直前に `window.center()` を呼ぶ。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#frameless-and-centering)
+- 透過・角丸・シャドウ（`backgroundColor` alpha 0／DOM側 `background: transparent`／`tauri.conf.json` の `shadow: false`）の3点セットは個別に変更せず、常にセットで扱う。1つだけ変更すると角のアーティファクトが再発する。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#transparency-and-shadow)
+- 新しいドラッグ可能領域を追加する場合は必ず `data-tauri-drag-region="deep"` を使う（値なしの bare 指定は子要素で発火しないため避ける）。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#basic-window-config)
+- ウィンドウの位置は永続化しないが、サイズは永続化する（この非対称は意図的な仕様であり矛盾ではない）。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#resizing-and-size-persistence)
+- ホットキー変更（`set_hotkey`）は unregister → register の順で行い、新ホットキーの register が失敗したら旧ホットキーを再登録して維持する。フロントエンドはライブキーキャプチャを行わず、修飾キーのチェックボックス＋通常キーのプルダウンからアクセラレータ文字列を直接組み立てる。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#hotkey-registration)
 
-- **rows 構築ロジック自体は元から由来を区別していなかった**：`useSearch.ts` の `rows` は `results`（`recentMode` 中は `recentResults` がコピーされたもの）を単純にループして `kind: "file"` の行を組み立てるだけで、ファイルの由来（通常のファイル検索結果か `/recent` か）を一切見ていない。`row.pinned: isPinned(file.path)` も同様に由来を問わず算出される。そのため今回の変更は **`App.tsx` の `pinIconVisible` から `&& !search.recentMode` を削除しただけ**で、`ResultList.tsx`・`useSearch.ts` の `rows` 構築・`togglePin` 本体の分岐追加は不要だった。「表示ルール・トグル挙動を通常の検索結果行と完全に同一にする」という要件は、そもそも実装が両者を区別していなかったことでほぼ自動的に満たされた
-- **保存するパスの名寄せをしない方針**：`/recent` の行は取得時点で解決済みのローカル実パス（`RecentFile.path`）を持ち、通常のファイル検索結果は検索フォルダ配下の実ファイルパス（ショートカット自体が検索対象になっている場合は `.lnk` のパス）を持つ。`togglePin` は呼び出し元による違いを一切意識せず、常に `file.path` をそのまま `FavoriteNode.value` に保存する。結果として同一の実体ファイルを指していても `/recent` 由来と通常検索由来とでパス文字列が異なれば別エントリとして登録される。これは意図した仕様であり（REQUIREMENTS.md「/recent からのピン止め」節を参照）、名寄せ・正規化のロジックは実装しない（`isPinned` の判定もパス文字列の完全一致のみで、大文字小文字の吸収等は行わない）
-- **選択維持のために必要だった唯一の実質的な修正**：`togglePin` の「新規ピン止め」分岐は、従来 `pinnedVisible` の値に関わらず常にキー `pinned:<path>` を intent にセットしていた（＝保存後にピン止めブロック内の行として現れる前提）。しかし `pinnedVisible`（ピン止めブロックが実際に表示されるか）は `query === "" && !clipboardMode && !recentMode` が条件のため、`/recent` は常に非空クエリを前提とするモードである以上 `pinnedVisible` は常に `false` になる。この状態で新規ピン止めすると、行は「pinned」kind には変わらず「file」kind のまま同じ位置に留まるにもかかわらず、intent は存在しないキーを探し続け、1秒のタイムアウト後に `{type:"top"}` へフォールバックして選択が先頭に飛んでしまう（＝リグレッション）。修正は `pinnedVisible` の値でターゲットキーを `pinned:<path>` / `file:<path>` に出し分けるだけで、`recentMode` を直接参照する分岐は追加していない（`pinnedVisible` は既に `recentMode` を包含する既存の合成条件のため、これを再利用するだけで `/recent` 固有の分岐なしに正しく動作する）。この修正は同時に、通常のファイル検索結果を非空クエリで表示中に新規ピン止めした場合の同種のリグレッション（従来から潜在していたが、`/recent` の実装まで顕在化していなかった）も合わせて解消した
-  - ピン止め解除の分岐は元々キー `file:<path>` を対象にしており、解除後は常に「file」kind に戻ることを前提にしていたため、`pinnedVisible` の真偽に関わらずそのまま正しく動作していた（変更不要）
-- **今後の指針**：`/recent` に対して★（お気に入り）・ノート（メモ）等の同種の行アクションを追加する場合も、`rows` 構築ロジック・行アクションのハンドラ側では `recentMode` を理由にした除外分岐を新設しないこと。表示可否を切り替える必要がある場合は、既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を機械的に再利用し、`recentMode` 単体を条件式に個別に書き足さない（今回 `pinIconVisible` から `&& !recentMode` を削除するだけで済んだこと自体が、rows ベースの設計が由来を区別しない形で既に一般化されていたことの証左）
+### ウィンドウのライフサイクル（表示・非表示・クローズ処理）
 
-#### お気に入り機能の実装（段階2）
+→ 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md)
 
-段階2「★登録 + `/favorite` 呼び出し」で「お気に入り」機能本体を実装した。データ構造そのもの（`FavoriteNode`・隣接リスト方式・予約フォルダの基本設計）は「データ構造（`FavoriteNode`）」節・「予約フォルダ（固定ID）」節に既に記載済みのためここでは繰り返さない。本節はお気に入り機能が**ピン止めとは異なりツリー構造を実際に利用する**ことで生じた設計判断のみを記す。
+- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#focus-out-auto-hide)
+- ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#close-window-common-design)
+- 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得は `focusRegainTableRef.current` にエントリを1つ追加するだけにし、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#prefix-mode-architecture)
+- 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#suppress-next-search-ref-removed)
 
-##### ピン止め（フラット構造）との違い：お気に入りは実際にツリーを組む
+### 検索結果一覧の選択状態・行構造
 
-- ピン止めは `PINNED_FOLDER_ID` の直下にしかノードを追加しない運用のため、データ構造上は隣接リストだが実質的にはフラットな1階層リストとして機能してきた。お気に入りは `FAVORITES_FOLDER_ID` 配下に `type: "folder"` のノードを中間ノードとして自由に作成・ネストできる、初めて「実際に木を組む」機能である
-- この違いにより、以下の3つはお気に入り実装で新規に必要になったもので、ピン止めには存在しない
-  - `is_descendant_of(favorites, parent_id, ancestor_id)`（Rust, `main.rs`）とそのフロントエンド鏡 `isDescendantOfFolder`（`useSearch.ts`）：あるノードが特定の祖先の子孫かどうかを祖先チェーンをたどって判定する。フォルダ削除時の子孫巻き込み判定・重複登録判定（`/favorite` からの★追加時、既に同じ実体が `FAVORITES_FOLDER_ID` の子孫に存在するか）の両方で使う。任意の深さを想定するため、無限ループ防止の深さ上限ガード（64）を持たせている（ピン止めは常に深さ1のため元々この種のガードが不要だった）
-  - `src/lib/nodeTree.ts` の `groupNodesByParent`/`walkGroupedTree`：`parentId` でグルーピングしてから深さ優先で辿る、ツリーの平坦化ロジック共通部分。詳細・切り出しの経緯は次項「同一階層内の同名フォルダ作成を禁止するバリデーション」を参照
-  - 登録ダイアログ（`RegisterEntryDialog.tsx`）の配置先フォルダ選択：ピン止めには「配置先を選ぶ」という概念自体が存在しない（常に `PINNED_FOLDER_ID` 直下に追加するだけ）のに対し、お気に入りは登録の都度どのフォルダ配下に置くかをユーザーが選択する
-- 今後「メモ」機能を実装する場合も、メモを単純な一覧（ピン止め型）にするか、フォルダ分類を持つツリー（お気に入り型）にするかで、上記のうちどれが必要になるかが変わる。フォルダ分類を持たせるなら、この3つ（`is_descendant_of`／`groupNodesByParent`+`walkGroupedTree`／配置先選択 UI）はそのまま再利用できる設計にしてある
+→ 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md)
 
-##### 同一階層内の同名フォルダ作成を禁止するバリデーション
+- 選択（`selected`）は識別子（`ResultRow.key`）を持つ「意図（intent）」と現在の `rows` から `resolveSelected()` で導出する値であり、書き込み可能な state ではない。「意図」と「現在の候補一覧」から導出する設計を優先し、新設する類似の値を直接 state 化しない。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#selection-is-derived)
+- intent を `{type:'top'}` へリセットするのは「query/settings/closeRefreshTick の変化」という汎用トリガー1本のみに一本化する。モード固有の強制リセットeffectや、「次の1回だけ抑止する」一度きりのフラグは新設しない。reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"操作の副作用として変化する値"を含めない。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#reset-triggers)
+- 移動先が操作時点で確定的に分かる場合（末尾追加・D&D確定等）は intent を同期的に設定してよい。移動先が非同期でしか確定しない場合のみ、識別子照合＋タイムアウトの復元機構に乗せる。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#sync-vs-async-restore)
+- 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#adding-a-row-kind)
+- Web検索行は現在 `rows` に未統合で `baseLength+1` の特例（意図的な保留）。選択のずれ・消失の不具合はまずこの特例を疑うこと。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#web-search-row-exception)
+- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#dom-structure-and-dividers)
 
-- `add_favorite_folder`（Rust）に、同一の親フォルダ配下で同名（トリム後・大小文字区別なし）のフォルダを重複作成できないバリデーションを追加した。判定の作法は `validate_unique_keyword`（システムコマンド機能のキーワード重複チェック）と同じ「トリム＋小文字化して比較」の慣習にそのまま合わせている
-- **経緯**：`/favorite` モードでの表示順序が意図と異なるという不具合報告を受けて調査した。まずツリー平坦化アルゴリズム自体（`favoriteTree` の構築ロジック）を、実際の `order` 値を使った複数パターンのスタンドアロン検証スクリプトで確認したところ、アルゴリズム自体は変更前後どちらの実装（重複前の実装・`nodeTree.ts` へ切り出した後の実装）でも一貫して正しく、`order` 値が示す通りの順序をそのまま再現していた。合わせて、この調査の過程で無関係の実在バグ（`createFavoriteFolder` がフォルダ作成後に `rawFavoriteNodes` を再取得しておらず、直後の表示が古いままになる）を1件発見し修正した
-- アルゴリズム自体に不整合は見つからなかった一方、**同一階層に同名フォルダが複数存在すると、ユーザーが登録ダイアログのフォルダ選択プルダウンで区別がつかず、意図と異なる方のフォルダを選んでしまう**（結果として「順序がおかしい」ように見える）ことが、表示上の不整合の実態として説明のつく原因だった。アルゴリズムのバグとして再現・特定するよりも、そもそも同名フォルダが作成できてしまうこと自体を防ぐ方が、再発防止として確実かつシンプルと判断し、上記のバリデーションを追加した
-- **今後の指針**：ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」といった報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、**同名・同一表示内容のノードが複数存在してユーザーが取り違えていないか**を先に確認すること。表示上の識別性（一意な名前）が担保されていないツリーは、アルゴリズムが正しくてもユーザー体感としての「順序の不整合」を生む
+### 設定画面の共通アーキテクチャ
 
-##### `/favorite` モードの並び順方針（フォルダ/ファイルの混在を許可）と視覚的区別の設計
+→ 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md)
 
-- `/favorite` の一覧はファイル検索結果のような機械的な並び替え（frecency・アルファベット順等）を一切行わず、`order` フィールドが示す通りの並び順をそのまま表示する。**フォルダとファイルを種別ごとにグルーピングせず、同一階層内で自由に混在・入れ替え可能な設計を意図的に採用した**
-- **理由**：お気に入りは「少数を厳選して登録する」用途であることを前提にすると、機械的な整列（種別ごとにまとめる等）はユーザーが意図して行った手動の並び替え（後述の上下移動）を無意味化してしまう。ファイル検索結果のような「大量の項目から目的のものを見つける」用途とは異なり、お気に入りではユーザー自身が並び順そのものに意味を持たせたいはずだという判断から、システム側で並び順を再解釈・再整列しない方針にした
-- **視覚的な区別の設計変遷**：フォルダ見出し行とアイテム行を区別しやすくするため、当初は背景色（`bg-gray-100/80`／`hover:bg-gray-200/70`）・上マージン（`mt-2`）・太字＋字間（`font-semibold tracking-wide`）を追加した。しかし実機で確認したところ、「フォルダらしさが伝わる」効果よりも「なぜここだけ背景が違うのか」という別の違和感の方が大きいという判断に至り、これらは全て撤回した。参考にした Vivaldi のブックマークパネルも、背景色や文字装飾ではなく、フォルダアイコンの主張（塗りつぶし）・インデント・件数バッジの3点だけでフォルダを識別させている構成だったため、最終的にこの3点のみに絞った
-  - 残した／採用した表現：フォルダアイコンの塗りつぶし化（`fill="currentColor"`、輪郭線なし）、インデント幅の拡大（`INDENT_STEP_REM` を1.25rem→1.5remへ）、シェブロン（開閉アイコン）のサイズ拡大、そしてフォルダの直下の子ノード数を示す件数バッジ（`ExtensionFilterEditor.tsx` のタグピルより一段小さい `text-[11px]` のグレーの丸バッジ）を新規追加
-  - **一般原則（今後この一覧に手を入れる際に踏まえること）**：行の種別を区別する装飾は、背景色や太字のような「行全体の主張を強める」手段ではなく、アイコンの形状変化・インデント・小さなバッジといった「情報量を追加するが主張は強めない」手段に留めること。過度な装飾はかえって「なぜここだけ違うのか」という別の違和感を生み、可読性を落とす（本節の経緯がその実例）
+- 設定パネルのタブを追加・削除・改名する場合、タブ一覧の正本（`#settings-tabs-list`）を含む全箇所（コード・REQUIREMENTS.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#settings-tabs-list)
+- 設定画面のどの箇所にも縦ラインによる区切り（`border-l`）を使わない。階層構造は `SettingsIndent`、グループ見出しは `SettingsGroup` を使う。区切りは `gap` の広さ、または見出し＋横罫線で表現する。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#indent-and-group)
+- 新しい設定項目を追加する場合、テキスト・数値・タグ入力は `useSettingsDraft` ＋ `SettingsSaveBar` の一括保存パターンに乗せ、トグル・チェックボックス・ラジオボタンは即時保存のパターンに乗せる。どちらにも当てはまらない独自の保存 UI を新設しない。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#save-model)
+- バリデーションエラーは常にそれを表示するコンポーネント自身のローカル state として持つ。タブより上位のフック（`useSettings`/`useHotkey` 等）にエラー state を持たせない。`set_*` 系フックコールバックは「成功時 `null`、失敗時エラーメッセージ文字列」という `Promise<string | null>` の契約に統一する。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#error-state-location)
 
-##### ★・ピンアイコンの表示条件の統一（selected のときのみ表示）
+### ファイル検索・frecency・検索フォルダ詳細設定
 
-- ピン止めブロックの★（実際はピンアイコン）は元々「選択中（`isSelected`。ホバーによる選択を含む）のときのみ表示」という条件になっていた（理由は「現在の実装」節の記載を参照：全行が既にピン止め済みのブロックでは、常時表示すると状態を区別しない単なる装飾になるため）
-- `/favorite` 一覧の★アイコンは、実装当初は常時表示（条件分岐なし）にしていたが、これをピン止めブロックと同じ「selected のときのみ表示」に変更した。`/favorite` に並ぶ項目もお気に入りブロック同様「一覧に出ている時点で必ず登録済み」であるため、常時表示は同じ理由（状態を区別しない単なる装飾になる）で不要と判断し、既存のピン止めブロックの判断をそのまま踏襲した
-- これにより、ピン止めブロック・`/favorite` 一覧・通常の検索結果行（こちらは元々「選択中、またはピン止め/お気に入り済み」の条件）の3箇所すべてで、アイコンの表示条件の考え方が統一された：**「登録済みかどうかを見せる必要がない文脈（一覧の全項目が登録済みであることが自明な文脈）では selected のときだけ見せる」**というルールとして今後も踏襲すること
+→ 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md)
 
-##### `/favorite` モードに前倒し実装した「上下移動」「フォルダ削除」は暫定実装
+- 拡張子フィルタリングを持つ設定を新設する場合、ブラックリスト用・ホワイトリスト用は必ず独立フィールドとして持たせる（共有フィールドにしない。モード切替で入力内容が意図せず流用される事故を防ぐため）。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#folder-detail-settings)
+- frecencyスコアは `count * decay(lastUsed)`。この仕組み（decay係数・二次キー）はプレフィックスコマンド候補（`docs/design/calc-and-prefix-commands.md`）でもキーを `path` から `keyword` に変えて再利用する。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#frecency)
+- ファイル起動は `ShellExecuteW` を直接呼ぶ（`cmd /C start` はコマンドインジェクションのリスクがあるため使わない）。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#file-launch)
+- 拡張子タグ編集 UI は `ExtensionFilterEditor.tsx` を再利用し、個別実装を増やさない。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#extension-filter-editor-extraction)
 
-- `move_favorite_node(id, direction)`・`remove_favorite_folder(id)`（いずれも Rust コマンド）と、`/favorite` 一覧内の上下移動ボタン・削除アイコンは、段階3で予定している設定画面側のドラッグ&ドロップによるツリー編集 UI が完成する**前**に、動作確認・実運用を進めるための最小限の暫定実装として前倒しで追加したものである
-- **設計意図（今後の作業者が必ず踏まえること）**：段階3で設定画面のツリー編集 UI（並び替え・リネーム・削除・フォルダ作成をまとめて扱う想定）が完成した時点で、`/favorite` モード内のこれら暫定機能（上下移動ボタン・削除アイコン・関連する確認モーダル）は**撤去**し、メンテナンス系操作（並び替え・リネーム・削除・フォルダ作成）は設定画面側に一本化する方針である。`/favorite` モードは本来、`/recent` と同様に「呼び出して選ぶだけ」の一覧に留める想定であり、今回の上下移動・削除はそのための恒久機能ではない
-- `move_favorite_node`/`remove_favorite_folder` の Rust コマンド自体（予約フォルダの保護ガード・`order` の部分更新等のロジック）は、設定画面のツリー編集 UI からも同じ操作（並び替え・削除）の裏側として再利用できる可能性が高いため、コマンド自体を段階3実装時に無条件で削除してよいわけではない。**撤去対象は `/favorite` モード側の呼び出し口（UI）であり、Rust コマンドの要否は段階3の設計時に改めて判断すること**
+### ピン止め・お気に入り・メモのデータ構造
 
-#### 実装後に発見された不具合と修正（知見）
+→ 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md)
 
-##### Tauri の `dragDropEnabled` と HTML5 Drag and Drop の競合
+- `FavoriteNode` は `parentId` を持つフラットな配列（隣接リスト）で管理する。再帰的な木構造にせず、ノードの移動は1フィールドの更新で表現する。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#favorite-node-structure)
+- 予約フォルダ（ピン止め／お気に入り／メモ）は固定IDで参照する。Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）。バリデーションはフロントエンドだけでなくRust側（保存直前）でも必ず行う。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#reserved-folders)
+- 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#search-exclusion)
+- `dragDropEnabled: false` によりOSネイティブD&Dは無効化済み。HTML5 D&Dによる並び替えとOSからのファイルドロップ受け入れは現状の実装では二者択一の関係にある。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#dnd-reordering)
+- `/recent` 等の一覧に新しい行アクション（★・メモ等）を追加する場合、`recentMode` を理由にした除外分岐を新設しない。表示可否を切り替える必要がある場合は既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を再利用する。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#pinning-from-recent)
+- ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#duplicate-folder-name-validation)
+- `/favorite` モードの上下移動ボタン・フォルダ削除アイコンは、段階3の設定画面側ツリー編集UIが完成した時点で撤去予定の暫定実装である（Rustコマンド自体は再利用可能性があるため無条件に削除しない）。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#favorite-mode-provisional-features)
 
-- **症状**：ピン止めブロックの行をドラッグすると、ドラッグ中は（CSS の `cursor-grab` による）手のひらカーソルになるが、実際にドロップしようとすると禁止マークのカーソルに変わり `drop` イベントが発火しない
-- **直接原因**：`ResultList.tsx` 側の `onDragOver={(e) => e.preventDefault()}` は実装として正しく、JS コードの不備ではなかった。真因は Tauri v2 の `tauri.conf.json` のウィンドウ設定 `dragDropEnabled`（デフォルト `true`）。この設定は Windows 上で WebView2 が **OS レベルのネイティブファイルドラッグ&ドロップ**（Explorer 等からファイルをウィンドウへドラッグして受け取る機能）を処理するためのものだが、有効な間はページ内（HTML5）の `dragover`/`drop` イベントに対してブラウザ側の判定が割り込み、`preventDefault()` を呼んでいても禁止カーソルのまま `drop` が成立しなくなる（`tauri-utils` クレートの `WindowConfig::drag_drop_enabled` のドキュメントコメントにも "Disabling it is required to use HTML5 drag and drop on the frontend on Windows." と明記されている、既知の仕様）
-  - この原因は「ドラッグ&ドロップとウィンドウドラッグ領域の非競合」節で行った `data-tauri-drag-region` の調査だけでは見つからなかった。あの調査は「ウィンドウ移動ドラッグとの競合」という1つの競合要因を確認・除外したに過ぎず、`dragDropEnabled` というより下層（WebView2 の OS 統合レベル）の別の競合要因は実装を進めてドラッグを実際に試すまで判明しなかった。**「特定の競合要因を1つ確認して問題ないと判断する」ことと「あらゆる競合要因が存在しない」ことは同じではない**、という教訓として記録する
-- **横並び調査**：本アプリはOSからファイルをウィンドウへドラッグ&ドロップして受け取る機能を持たない（「パス貼り付けによる検索フォルダ管理」は Ctrl+C/Ctrl+V のクリップボード経由であり、OSのネイティブドラッグ&ドロップは使用していない）。そのため `dragDropEnabled` を無効化しても失われる機能はない
-- **対応**：`tauri.conf.json` のウィンドウ設定に `"dragDropEnabled": false` を追加した。**今後ウィンドウ内に新しい HTML5 D&D 機能を追加する場合、この設定が `false` のままであることを前提にしてよい**
-- **トレードオフとして記録しておくべき制約**：`dragDropEnabled: false` にした結果、**HTML5 D&D による並び替えと、OSからのファイルドロップ受け入れは、現状の実装では二者択一の関係にある**。将来「Explorer からファイルをウィンドウへドラッグ&ドロップして検索フォルダに追加する」「Explorer からファイルをドラッグしてピン止め／お気に入りに直接追加する」といった、OS側のドラッグ操作を起点とする機能を追加したくなった場合、この設定（現在 `false`）が障害になる。その場合は `dragDropEnabled` を `true` に戻したうえで、ページ内 HTML5 D&D（ピン止めブロックの並び替え等）との共存方法を別途検討する必要がある（両者を同時に成立させる具体的な設計は未検討・今後の課題）
-- 合わせて `onDragStart` に `e.dataTransfer.effectAllowed = "move"` と `e.dataTransfer.setData(...)`、`onDragOver` に `e.dataTransfer.dropEffect = "move"` を追加した。これらは今回の症状の直接原因ではなかったが（`dragDropEnabled` の無効化のみで再現しなくなることを確認済み）、`effectAllowed`/`dropEffect` を明示しておくことは環境差異による同種の症状の再発を防ぐ一般的なベストプラクティスのため、合わせて追加した
+### ピン止め・お気に入りアイコンとツールチップ
 
-##### `pinEnabled` OFF 時に通常検索結果からもピン止めファイルが消える
+→ 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md)
 
-- **症状**：設定画面で `pinEnabled` を OFF にすると、ピン止めブロックが非表示になるだけでなく、ピン止めしていたファイルが通常のファイル検索結果からも消えてしまっていた（ON に戻すと復活する）
-- **直接原因**：`useSearch.ts` の `search_files` 呼び出し箇所で、除外パスの算出条件が `query === ""` のみになっており、`appSettings.pinEnabled` を見ていなかった。`favorites`（ピン止めの生ノード配列）はアプリ起動時に無条件で取得するため、`pinEnabled` の ON/OFF に関わらず `pinnedPathSet` は常に中身を持ち、結果として `pinEnabled` が OFF でも除外され続けていた
-- **教訓（設計原則）**：「ある UI 要素が表示されているかどうか」の判定条件（ここでは `pinnedVisible`）と、「その UI 要素に関連するデータをサーバー/バックエンド側の処理にどう反映するか」の判定条件は、本来1つの真実（同じブール式）であるべきで、片方だけを実装すると今回のように機能 OFF 時の除外解除漏れが起こる。`pinnedVisible` は既に `appSettings.pinEnabled && query === "" && !clipboardMode && !recentMode` を正しく判定していたにもかかわらず、`search_files` の除外条件だけがこれを再利用せず `query === ""` を独自に再実装してしまっていたことが根本原因。**同じ可視性判定が複数箇所で必要になる場合は、判定ロジックを1箇所（`pinnedVisible`）にまとめ、他の箇所はそれを参照するだけにすること**（今回の修正で `search_files` の `excludePaths` 算出も `pinnedVisible` を直接参照する形に統一した）
-- **対応**：`excludePaths` の算出を `query === "" ? ... : []` から `pinnedVisible ? ... : []` に変更した
+- 一覧の全項目が登録済みであることが自明な文脈（ピン止めブロック・`/favorite` 一覧）では、★・ピンアイコンは選択中（selected）のときのみ表示する。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#toggle-icon-visibility)
+- トグルアイコンの状態（登録済み/未登録）は色ではなく形状（輪郭／塗りつぶし）で表現する。色は行の文字色（`currentColor`）に追従させるだけにする。単色シルエットは二色構成よりサイズを一段下げることを検討する。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#toggle-icon-shape-and-color)
+- アイコンは単色を一律適用せず、行が取りうる3状態（通常／選択中／グレーアウト）ごとに個別にコントラストを検証する。「視覚的に目立たせたい要素」と「控えめにしたい要素」が同じ行に混在する場合、`opacity` は控えめにしたい要素側だけに付与する。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#warning-icon)
+- 新しい操作アイコンにツールチップを付ける場合は必ず `Tooltip` 共通コンポーネントを使い、`title` 属性を使わない（「省略テキストの全体表示」目的の場合のみ `title` 属性を許容）。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#tooltip-component)
 
-##### ピンアイコンの意匠変更
+### 計算機能・システムコマンド・プレフィックスコマンド候補
 
-- 当初は独自に用意した「マップピン（涙滴形）」アイコンを使用していたが、Microsoft Teams のメッセージの「ピン留め」メニュー項目に近い、画鋲を斜めに刺したような意匠に変更した（`ResultList.tsx` の `PIN_ICON_PATH`／`PinIcon`）
-- 実装：円形の頭部（`A5 5 0 1 0 ...` の2つの円弧コマンドで1つの真円を描く、SVG path に円のプリミティブが無いための標準的な技法）と、先端が尖った針（三角形の `L` コマンド3点）の2つのサブパスを1つの `path` にまとめ、`<g transform="rotate(45 12 12)">` で45度回転させることで「斜めに刺さった画鋲」の見た目にしている。塗りつぶし/アウトラインの切り替えは従来通り `fill`/`stroke` の切り替えのみで行う（パス自体は共有）
-- 色は変更していない（既存の `text-blue-500`（非選択時）／`text-white`（選択時）をそのまま踏襲。アプリ全体で使われている青系アクセントカラーとの一貫性を優先した）
+→ 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md)
 
-##### アイコンの視認性改善（設計原則：行の背景状態ごとにコントラストを確保する）
+- 計算結果はファイル検索結果と排他にせず、先頭の別枠固定表示領域で共存させる。将来 `isCalcExpression`/`isUrlLikeInput` の判定条件が緩んだ場合に備え、計算結果→URL変換結果の表示順序をルールとして維持する。 → 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md#calc-feature)
+- 呼び出しキーワードの重複チェックは必ず `validate_unique_keyword` を経由させる。新しいキーワードフィールドを追加した場合は、この関数のチェック対象リストに追加する。 → 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md#system-command-feature)
+- 新しい "/" プレフィックス機能を追加する場合、`buildPrefixCommandCandidates` に候補生成ロジックを追加するだけで既存の表示・選択・frecencyの仕組みにそのまま乗せられる。個別の候補表示 UI を新設しない。 → 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md#prefix-command-candidates)
 
-上記の意匠変更後の見た目レビューで、警告アイコン・ピンアイコンの視認性に関する指摘が3件あり、修正した。個別の色調整の記録ではなく、**アイコンは「単色を一律適用する」のではなく、行が取りうる背景状態（通常／選択中／グレーアウト）ごとに個別にコントラストを検証する**という、今後アイコンを追加・変更する際にも適用すべき設計原則として以下に記す。
+### クリップボード履歴・OCR
 
-- **問題の背景**：`ResultList.tsx` の行は「通常（白／薄いグレーhover）」「選択中（`bg-blue-500` の青ハイライト）」「グレーアウト（ピン止め先の実体が見つからない）」の3状態を取りうる。単一の色・不透明度をアイコンに設定すると、必ずどれかの背景で埋没する
-- **警告アイコン**：以前は輪郭線のみ（`fill="none"`、`stroke` 細め）の三角形だったため、遠目には判別しづらかった。塗りつぶし三角形＋「!」部分を `fillRule="evenodd"` の穴抜きで表現する方式に変更した（`WarningIcon`、`WARNING_ICON_PATH`）。**穴の部分は常に行の背景色がそのまま透けて見えるため、「!」の可読性が3状態のどの背景でも自動的に確保される**（背景ごとに個別に色を出し分ける必要がない、という点で優れた解決策のため、同種の「背景に応じて色を変えたい記号」を今後実装する際はこの「穴抜きで背景を見せる」手法を検討すること）。三角形本体の色は `text-amber-600`（非選択）／`text-amber-200`（選択中の青背景で視認できるよう明るい色に切替）とし、彩度も `amber-500` から引き上げた
-- **グレーアウト行の落とし穴**：ピン止めブロックの行全体に `opacity-50` を掛けて「実体なし」を表現していたため、警告アイコン自体もその不透明度に巻き込まれ、色・形状をいくら改善しても効果が薄れる構造になっていた。**「視覚的に目立たせたい要素」と「視覚的に控えめにしたい要素」が同じ行の中に混在する場合、`opacity` はそれらをまとめて持つ共通の祖先要素ではなく、控えめにしたい要素側（ファイルアイコン・ファイル名・パス）だけを囲む内側の要素に付与すること**。警告アイコン・ピンアイコン（トグルボタン）はこの `opacity-50` の対象から明示的に除外した
-- **ピンアイコンが選択中の行で背景に同化する問題**：`PinToggleButton` は「非ピン止め・非選択の行ではホバー時のみ薄く表示する」ためのフェード演出として `opacity-60`〜`opacity-100` を使っていたが、この演出が「選択中（青ハイライト）だが未ピン止めの行」にもそのまま適用され、白系アイコン×青背景×60%不透明という低コントラストな組み合わせを生んでいた。**「ホバーで薄く見せる」という演出上の都合と、「選択中の行では常にはっきり見せたい」という要件は別軸であり、混ぜて1つの opacity ロジックに詰め込むと片方を満たせば片方が壊れる。** 修正では `active || selected`（ピン止め済み、または行が選択中）なら常に `opacity-100`、それ以外（非選択・未ピン止め）の場合のみホバー時フェードを適用する形に分離した
-- **塗りつぶしアイコンの縁取り**：`WarningIcon` に、半透明の暗色（`FILLED_ICON_OUTLINE_COLOR = rgba(0,0,0,0.35)` 前後）の `stroke` を追加した（この時点では `PinIcon` の塗りつぶし時にも同じ半透明縁取りを使っていたが、後述の意匠変更で `PinIcon` 側は固定の濃紺アウトラインに置き換わっている）。SVG の既定の描画順（fill → stroke）ではストロークがパスの境界線上に重なって描かれるため、塗り本体の色を変えずに輪郭だけ明確にできる。**背景色ごとに個別の縁取り色を出し分ける代わりに、半透明の黒という「どんな背景色に対してもある程度沈んで見える」色を選ぶことで、行の背景が3状態のうちどれであっても最低限の輪郭が保証される**（背景ごとの条件分岐を増やさずに済むため、実装・保守コストの面でも優れる）
-- サイズも `w-4 h-4`（16px）から `w-5 h-5`（20px）に引き上げた（警告アイコンもピンアイコンと同サイズに揃えた）
+→ 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md)
 
-##### ピンアイコンの意匠変更（写実路線の撤回 → 提供SVG素材のシルエットへの統一）
+- クリップボード画像を扱う処理は画像本体を JS 側へ渡さず Rust 側で完結させる（IPC 越しの重量データ転送を避ける）。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#clipboard-history)
+- `clipboardPaneWidthRef`（mouseup用）と `clipboardPaneWidth` state（props用）は必ず同時に更新する。ref のみ更新すると、パネル再マウント時に古い幅が渡されるバグになる。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#clipboard-history)
+- OCR前処理（拡大・グレースケール化・コントラスト補正）による精度改善は検証済みで却下・見送り確定。同じアプローチを再検証しない。改善が必要な場合はWindows OCRエンジン自体の限界を前提に別モデルの導入を検討する。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#ocr-preprocessing-rejected)
+- ウィンドウを閉じる新しい演出（フェードアウト等）を追加する場合、`closeWindow()` の「隠れるまで state を変更しない」原則の例外にするかどうかを明確に判断し、例外にする場合は理由を明記する。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#ocr-feature)
 
-視認性改善の後、意匠そのものを複数回作り直した。最終的に、自作の図形ではなくユーザー提供の既製SVG素材のシルエットをそのまま流用する形に落ち着いている。今後同種のアイコンを追加・変更する際、いきなり凝った意匠に寄せず、まず本節の判断基準（特に「経緯」の教訓と、最後の「現在の実装」の配色ルール）を踏まえること。
+### 最近使ったファイル一覧
 
-###### 経緯（写実路線を試し、不採用と判断するまで）
+→ 詳細: [recent-files.md](docs/design/recent-files.md)
 
-1. 参考画像 `D:\ai_work\dev_win\assets\win-launcher\icon\02_ピン止めアイコン\pinned_icon.png`（青系の画鋲。頭部の丸い受け皿・円柱状の軸・軸下部のつば（フランジ）・先端が尖った針の4パーツ構成、濃紺の輪郭線＋鮮やかな青の本体＋白い光沢ハイライトという配色）をもとに、シルエットと明暗のバランスを再現した写実的な塗りつぶしアイコンを実装した（頭部楕円・軸・つば・針の4つの `<rect>`/`<path>` を個別の縁取り付きで重ね描きし、光沢ハイライトを別レイヤーの塗りつぶし図形2つで追加する構成）
-2. 実装後、アプリ全体の見た目で確認したところ、**この写実的な意匠（複数パーツ・光沢ハイライト・固定の配色パレット）が、隣接するテキストベースのフラットな検索結果行と比べて主張が強すぎ、アプリ全体のミニマルな雰囲気に合わない**という判断に至った。視認性そのもの（コントラスト・サイズ）は改善できていたが、「視認性」と「意匠の重さ・主張の強さ」は別軸の問題であり、片方を解決してももう片方が新たな課題になり得るという教訓が得られた
-3. 対応として、写実的な複数パーツ構成・光沢ハイライト・固定配色パレットをすべて廃止し、丸みを帯びた頭部のカプセル形状＋細い針の2パーツのみを自作した、シンプルな線画スタイル（`currentColor` 追従の単色、ChatGPT のチャット UI 等で使われている装飾の少ない簡素なピン留めアイコンの意匠レベルを狙ったもの）に全面的に描き直した
-4. その後、ユーザーから単色（`#4B4B4B`）・グラデーションなし・装飾なしの「花形の頭部＋針」のフラットなピクトグラムSVG素材（ICOOON MONO「押しピンのアイコン素材」。`D:\ai_work\dev_win\assets\win-launcher\icon\02_ピン止めアイコン\押しピンのアイコン素材.svg`）が提供されたため、自作の簡略図形（角丸長方形2つ）をやめ、**この素材のシルエット（実際の `path`/`polygon` の座標データ）をそのまま流用する**形に統一した。既製の意匠アセットが提供された場合は、似た形を自作で近似するより、そのアセットのジオメトリを直接使う方が形状の再現性が高く、かつ実装上の判断（角度・比率等の微調整）を減らせるため
-5. 上記4の時点では、素材本来の単色フラットな設計を離れ、濃紺の輪郭線＋青の本体という固定の二色パレットを後付けしていた（視認性対応の既存の配色ルールを踏襲したもの）。その後、**この二色構成が素材本来の設計（`fill:#4B4B4B` の単色シルエット、輪郭線を持たない）から外れていること、また検索結果行の中でドラッグハンドルやパス表示がニュートラルなグレー階調で統一されているのに対し、ピンアイコンだけが高彩度の二色構成を持ち、操作部品でありながらコンテンツ（ファイルアイコン）と同等以上の視覚的な重さを持ってしまっていたことが問題として指摘され、単色化（`fill="currentColor"` のみ、輪郭線なし）に方針転換した**。あわせて、行の状態を「非選択」「選択中」の2つに統一し（本アプリはマウスホバーで選択行そのものが移動するため、「ホバー中」と「選択中」は同一状態であり、ホバー専用のスタイル分岐を廃止できる）、ピン止め済みかどうかは色相ではなく濃淡で表現する方式に切り替えた。詳細・現在の実装は次項を参照
+- `/recent` はフォーカス復帰のたびに再取得する（プッシュ通知を持たないため、モード遷移時の1回きりの取得だと非表示中の変化が反映されない）。 → 詳細: [recent-files.md](docs/design/recent-files.md#recent-mode-and-fetch)
+- OneDriveのURL→ローカルパス変換ロジックに手を入れる場合、`FullRemotePath`/`UrlNamespace` の使い分けとパーセントエンコーディングの正規化の両方を必ず踏まえる。個人OneDriveのテストだけではTeamsサイト・SharePoint固有の不具合を再現できない。 → 詳細: [recent-files.md](docs/design/recent-files.md#onedrive-double-folder-bug)
+- 「軽い判定→重い処理」の順で処理できる項目（`.url`の表示対象設定等）は、軽い判定を先に行って対象外を早期リターンする最適化を検討する。 → 詳細: [recent-files.md](docs/design/recent-files.md#url-filter-order-optimization)
 
-###### 現在の実装（`PinIcon`／`PinToggleButton`、`ResultList.tsx`）
+### パス貼り付けによる検索フォルダ管理
 
-**【v0.10.x時点（ピン止め機能のみ）の実装。段階2（お気に入り機能）で下記の通り一部変更されている。最新の状態は本項末尾の「【追記・段階2】」を参照】**
+→ 詳細: [path-paste.md](docs/design/path-paste.md)
 
-- ジオメトリ：提供SVG素材（viewBox `0 0 512 512`）の `<path>`（頭部＋軸の花形シルエット）と `<polygon>`（針）をそのまま `PIN_HEAD_PATH`／`PIN_NEEDLE_POINTS` の座標データとして流用している（変更なし）。素材自体が最初から斜めの向きで描かれているため、`<g transform="rotate(...)">` による回転は不要
-- 描画：`PinIcon` は `fill="currentColor"` の単色塗りのみで、輪郭線（`stroke`）を持たない。色・濃淡はすべて呼び出し元（`PinToggleButton`）が `className` で制御する。以前の「塗りつぶし＝固定パレットの二色、アウトライン＝`currentColor`」という fill/stroke の切り替えによる状態表現はやめ、状態はすべて色の濃淡のみで表現する
-- サイズ：`w-5 h-5`（20px）から `w-[18px] h-[18px]`（18px、Tailwindの既定刻みに無いため任意値クラスを使用）へさらに一段引き下げた。単色の塗りつぶしシルエットは、同じ寸法でも輪郭線＋本体の二色構成より視覚的な重さ（面積として感じる大きさ）が増すため
-- 状態と配色（`pinIconColorClass`）：行の状態は「非選択」「選択中」の2つのみで扱う（ホバー専用のスタイル分岐は廃止した。詳細は次の「一般原則」を参照）
-  - 非選択・未ピン止め → **アイコン自体を描画しない**（呼び出し側が `pinIconVisible && (pinned || isSelected)` 等の条件でそもそも `PinToggleButton` をレンダーしない）
-  - 非選択・ピン止め済み → `text-gray-600`（白背景に対して十分な濃さのニュートラルグレー。操作部品としてコンテンツと同じ視覚的重さを持たせない）
-  - 選択中・未ピン止め → `text-white opacity-[0.55]`（薄い白＝「押せば付く」）
-  - 選択中・ピン止め済み → `text-white`（濃い白＝「押せば外れる」）
-  - ピン止めブロック（`pinnedVisible` の一覧。全行が既にピン止め済み）は、非選択時に常時表示すると状態を区別する情報を持たない単なる装飾になるため、選択中（`isSelected`）のときのみ表示する（ブロックであること自体はドラッグハンドルが示す）
-  - 実体が存在しない行でも、選択中であれば上記の「選択中・ピン止め済み」がそのまま適用され、手動でのピン止め解除操作ができる（既存の `!exists` によるグレーアウトはファイルアイコン・ファイル名・パス部分にのみ適用し、警告アイコン・ピンアイコンには適用しない、という方針は維持）
-- ツールチップ：共通コンポーネント `Tooltip`（`src/components/Tooltip.tsx`）で「ピン止めを解除」（ピン止め済み）／「ピン止めする」（未ピン止め）を表示する。当初は `title` 属性を使っていたが、表示遅延・表示位置の両方を制御できない問題があり独自実装に置き換えた（経緯・仕様は次項「ツールチップ表示（`Tooltip` 共通コンポーネント）」を参照）
-- アイコン単体のホバー反応：行の選択とは独立して、マウスカーソルがアイコンそのものの上に乗ったときだけ、`rounded-full` の背景をうっすら表示する（`hover:bg-black/[6%]`＝白系行、`hover:bg-white/20`＝選択中の青ハイライト行）。行の選択状態（背景色・`isSelected`）そのものは変えない、アイコン単体への視覚フィードバック
-- 確認方法：本番の `npm run tauri dev` は起動せず、同じ SVG マークアップを抜き出したスタンドアロン HTML をヘッドレス Edge で画像化し、各状態・各行背景で目視確認した（「選択中・未ピン止め」と「選択中・ピン止め済み」の opacity 差（0.55 と 1.0）が、18px相当のサイズでも判別できることを含めて確認済み）
+- OSのクリップボードから実ファイルパス（CF_HDROP）を読む必要が生じた場合、WebView2の `clipboardData` 経由では取得できないことを前提に、Rust側で直接クリップボードを読み直す設計にする。 → 詳細: [path-paste.md](docs/design/path-paste.md#paste-detection)
+- 複数ステップのウィザード形式インタラクションを追加する場合、キー操作は window レベルのリスナーに一本化し、個別ステップのローカル `onKeyDown` を併存させない（二重ハンドラによるリグレッションの再発を防ぐため）。 → 詳細: [path-paste.md](docs/design/path-paste.md#wizard-keydown-unification-history)
+- Windowsのファイルシステム／シェル関連の機能でサードパーティクレートに不具合が疑われた場合、まず本プロジェクトが一貫して採る「Windows標準API直接呼び出し」への切り替えを検討する。 → 詳細: [path-paste.md](docs/design/path-paste.md#mslnk-to-shell-link-history)
 
-**【追記・段階2（お気に入り機能実装時）】** REQUIREMENTS.md「アイコンによる状態表現の共通規則」節の仕様変更に伴い、ピン止め済みかどうかの表現を上記の「色の濃淡（3値）」から「形状（輪郭／塗りつぶし）」に変更した。これはピン止めだけでなく、同時に新設したお気に入りの★アイコンとも共通のルールである。
+### システムトレイ・自動起動・自動アップデート
 
-- `PinIcon` は `filled: boolean` prop を受け取り、塗りつぶし版（上記のジオメトリを `fill="currentColor"` のみで描画。変更なし）と、輪郭版（同じ素材の線画版 `押しピンのアイコン素材_線画.svg` のジオメトリを使用し、`viewBox="-20 -20 552 552"`・`stroke="currentColor"`・`stroke-width="40"`・`fill="none"` で描画）を切り替える。輪郭版の viewBox が塗りつぶし版（`0 0 512 512`）と異なるのは、線幅40の輪郭線が図形の外側にはみ出す分を吸収するための意図的な指定であり、塗りつぶし版に合わせて書き換えてはならない
-- サイズ：18px（`w-[18px] h-[18px]`）から `w-4 h-4`（16px、Tailwindの既定クラス）へさらに一段引き下げた。**理由はサイズ自体の視覚的な重さの調整ではなく、同じ行に並ぶ★アイコン（お気に入り）と描画サイズを完全に統一するため。** viewBox が異なる2つの形状（ピンの輪郭版・塗りつぶし版）を同じ表示サイズで揃えるには、CSS上の `width`/`height` 相当のクラスを両方に明示的に同じ値で指定する必要がある点に注意（`viewBox` を揃えても表示サイズが揃うわけではない）
-- 状態と配色（`toggleIconColorClass`。ピン・★共通の名称に変更済み）：色は状態の表現に使わなくなったため、「非選択→`text-gray-600`」「選択中→`text-white`」の2値のみに簡素化した（旧・選択中の「未ピン止め＝`opacity-[0.55]`／ピン止め済み＝不透明」という2段階の白の使い分けは廃止。状態は `PinIcon`/`FavoriteIcon` の `filled` prop（形状）が担うため、色側で重ねて表現する必要がなくなったため）
-- ツールチップ文言も「ピン止めする」／「ピン止めを解除」から「ピン止めに追加」／「ピン止めから削除」に変更した（お気に入りの「お気に入りに追加」／「お気に入りから削除」と表現を統一するため）
-- 実装詳細は `src/components/ResultList.tsx` の `PinIcon`／`FavoriteIcon`／`toggleIconColorClass`／`PinToggleButton`／`FavoriteToggleButton` を参照
+→ 詳細: [tray-autostart-updater.md](docs/design/tray-autostart-updater.md)
 
-###### 一般原則（今後アイコンを追加・変更する際に踏まえること）
+- トレイメニューに新しい項目を追加する場合、既存の並び順（Show → Check for Updates → Start with Windows → Restart → Quit）を踏まえた位置に追加する。 → 詳細: [tray-autostart-updater.md](docs/design/tray-autostart-updater.md#system-tray)
+- アップデートダイアログの新しい状態を追加する場合、`SystemCommandModal` と同じオーバーレイ＋カードのデザインパターンを踏襲する。`download_and_install_update` はダウンロード完了後にプロセスが終了し制御が戻らない前提を維持する。 → 詳細: [tray-autostart-updater.md](docs/design/tray-autostart-updater.md#auto-update)
 
-- **ICOOON MONO 等の単色前提の素材に、輪郭線＋本体の二色構成を後付けしない。** 素材が単色フラットなシルエットとして設計されている場合、その設計のまま（`fill="currentColor"` の単色塗り）使うこと。視認性対応のために独自の配色ルールを機械的に適用するのではなく、まず素材本来の設計を尊重する
-- **検索結果行における役割分担**：色を持つのはコンテンツ（ファイルアイコン等）のみとし、操作部品（ピンアイコン、ドラッグハンドル等）はニュートラルな階調（グレー／白の濃淡）に揃える。操作部品が高彩度の固定パレットを持つと、コンテンツと同等以上の視覚的な重さを持ってしまい、情報の主従関係が崩れる
-- **操作部品アイコンの色は、その行の文字色（`currentColor` 相当）に追従させる**（白背景の行ではグレー、選択中の青ハイライト行では白）。状態（ON/OFF、ピン止め済みかどうか等）は色相ではなく濃淡（グレーの濃さ、または同じ白の opacity）で表現する
-- **トグル系アイコンは「現在の状態」を表示する。**「押したらどうなるか」を斜線等の記号で追加表現しない。斜線はUI慣習上「禁止・無効」を意味するため、トグルの意味が反転して伝わる。操作の示唆（クリックできること、押すとどうなるか）はツールチップ（`Tooltip` コンポーネント）とアイコン単体のホバー反応（淡い円形背景等）で行う
-- **本アプリではマウスホバーによって選択行そのものが移動する**（`onMouseEnter` が選択インデックスを更新する）ため、「ホバー中」と「選択中」は同一の状態として扱う。行の状態を「非選択」「選択中」の2つだけに統一し、`group-hover` 等のホバー専用スタイル分岐を作らない（過去に選択中の行へホバー専用スタイルが誤って波及する不具合が繰り返し発生したため、2状態モデルに統一することで構造的に再発しないようにしている）
-- **単色シルエットは、同じ寸法でも二色構成（輪郭線＋本体）より視覚的な重さが増す。** 二色構成から単色化する際は、サイズを一段下げることを検討する（本アイコンでは 20px → 18px）
+### 依存ライブラリ・プラグインの選定理由
 
-#### ツールチップ表示（`Tooltip` 共通コンポーネント）
+→ 詳細: [dependencies.md](docs/design/dependencies.md)
 
-ピンアイコンのツールチップは当初 `title` 属性で実装していたが、以下2点の問題があり独自コンポーネントに置き換えた。
-
-- **表示遅延を制御できない**：`title` 属性のツールチップ表示までの遅延（500ms〜1秒程度）は WebView2（ブラウザ）の固定挙動であり、CSS/JS からは変更できない。体感として遅く感じる
-- **表示位置がカーソル依存**：`title` はマウスカーソルの位置を基準に表示されるため、画面右端に配置されるアイコン（ピンアイコンは行の右端）では表示位置が不自然になりやすい
-
-**方針**：UI 上の操作部品にツールチップを付ける場合、`title` 属性は使わず、必ず共通コンポーネント `Tooltip`（`src/components/Tooltip.tsx`）を使う。配置場所は他の共通コンポーネント（`SettingsIndent.tsx`／`SettingsGroup.tsx` 等）と同じ `src/components/` 直下に揃えている。今後実装予定のお気に入り機能の★ボタン・メモ機能のノートアイコンでもこの同じコンポーネントを使い回すこと（ピン止め専用の実装にしない）。
-
-**API**：`<Tooltip label="表示する文言" className="呼び出し元のレイアウトクラス">{子要素}</Tooltip>` の形で子要素をラップする。`Tooltip` 自身は `relative inline-flex` の `<span>` を1枚追加するだけの薄いラッパーのため、元々ラップ対象が直接持っていたレイアウト用クラス（`ml-2`／`flex-shrink-0` 等、Flex コンテナ内での配置に関わるもの）は `className` prop 経由で `Tooltip` 側に渡し、子要素自身は見た目（丸み・パディング・色）のみを持つ形に分離する（`PinToggleButton` 参照）。
-
-**仕様**：
-
-- 表示までの遅延は300ms。マウスホバー開始から `setTimeout` で計測し、300ms経過時点でまだホバーが続いていれば表示する
-- 非表示はマウスが離れた時点で遅延・アニメーションなしに即座に行う（表示中のタイマーが残っていれば `clearTimeout` で確実に破棄する）。表示・非表示で振る舞いが非対称（片方は遅延あり、片方は即座）なため、単一の CSS `transition` では表現せず、`visible` state による条件付きレンダリングの有無で切り替えている
-- 表示のきっかけはマウスホバーのみ（`onMouseEnter`/`onMouseLeave`）。キーボードによる選択（`onFocus` 等）では表示しない
-- 表示位置は既定で対象要素の左側・垂直方向中央固定（`right-full top-1/2 -translate-y-1/2`）。右端に配置される操作アイコン向けの既定値
-- 見た目：背景 `bg-gray-800`（Tailwind の gray-800 は要件で示された `#1f2937` と一致）、文字は白・`text-xs`（12px）、`rounded-md`。既存 UI に近い水準の小型バッジ・注記表示（`ExtensionFilterEditor.tsx` のタグ等）に合わせたパディング（`px-2 py-1`）を採用した。アニメーションは付けていない（表示・非表示の非対称な振る舞いをシンプルに保つため）
-- コンポーネント自身がアンマウントされる場合（対象行が一覧の再構築で消える等）に備え、表示待ちタイマーを `useEffect` のクリーンアップで確実に破棄する（タイマー発火時に既に存在しない state を更新しようとする事故を防ぐ）
-
-**表示位置の例外（`side` prop）**：既定の左側表示は、対象要素自身が画面左端に近い場合には逆に画面外へはみ出す。ピン止めブロックのドラッグハンドル（行の左端、`px-4` パディングの直後に位置する）がこれに該当したため、`Tooltip` に `side?: "left" | "right"`（デフォルト `"left"`）prop を追加し、ドラッグハンドルの呼び出しのみ `side="right"` を指定して右側表示に切り替えている。他の対象（ピンアイコン・警告アイコン）は行の右寄り〜中央に位置し左側に十分な余白があるため、既定の `"left"` のままでよい。**新しい呼び出し元を追加する際は、対象要素が画面（ウィンドウ）左端に近い位置にあるかどうかを確認し、近い場合は `side="right"` を指定すること。**
-
-**`title` 属性を許容する例外**：ツールチップが「操作の説明」ではなく「省略表示された内容の全体を見せる」目的の場合（例：`FileSearchSettings.tsx` の `FolderPathButton` の `title={path}`。`useTruncatedPath` で中央省略された検索フォルダパスの完全な文字列を見せるためのもの）は、`Tooltip` への置き換え対象から除外し `title` 属性のままでよい。理由は2点：(1) 対象要素自体に既に表示テキストがあり、`title` 属性の遅延・表示位置の問題が操作アイコンほど致命的でない（アイコンのみの要素は「意味そのもの」が伝わらないが、こちらは「省略された残りの情報」の補完に過ぎない）、(2) 長いパス文字列を `Tooltip` の固定幅デザイン（`whitespace-nowrap`、小型バッジ）に載せると、幅や折り返しの調整が別途必要になり `Tooltip` 自体の汎用性を損なう。**「アイコンのみで操作を表す要素」と「省略テキストの全体表示」は目的が異なるため、機械的に全ての `title` を置き換えるのではなく、この2区分で判断すること。**
-
-**適用状況（棚卸し・v0.10.0時点）**：
-
-- ピンアイコン（`PinToggleButton`）：「ピン止めする」／「ピン止めを解除」。`side` 既定（左）
-- ピン止めブロックのドラッグハンドル：「ドラッグして並び替え」。`side="right"`（上記の理由）。以前は `title` 属性だった
-- 警告アイコン（`WarningIcon`）：「実体が見つかりません」。`side` 既定（左）。以前は SVG の `<title>` 要素だった（HTML の `title` 属性と同じ表示遅延・表示位置の問題を持つブラウザ既定の仕組みであり、`title` 属性と同様に置き換え対象とした）
-- 検索ボックスの設定アイコン（`SearchBox.tsx`）：「設定」。`side` 既定（左）。行の右端に位置するが、左側（入力欄）に十分な余白があるため既定のままでよい
-- 設定パネルの戻るボタン（`SettingsPanel.tsx`）：「戻る」。`side="right"`。ヘッダー行の左端（`px-4` の直後）に位置し、既定の左側表示だと画面外にはみ出すため
-- ファイル検索タブの検索フォルダ一覧（`FileSearchSettings.tsx`）：詳細設定アイコンに「詳細設定」、削除アイコンに「このフォルダを検索対象から削除」。いずれも `side` 既定（左）。行の右寄りに位置し、左側（フォルダパス表示部分）に十分な余白があるため
-  - 検索フォルダのフルパス表示（`FolderPathButton` の `title={path}`）のみ、上記の「`title` 属性を許容する例外」に該当するため対象外とした
-- 上記5箇所はいずれも `overflow-y-auto`（一部は入れ子）を持つスクロールコンテナ内・またはウィンドウ全体の角丸クリップ（`overflow-hidden`）の影響下にあるが、対象アイコンがコンテナの左端から十分離れた位置にあるため、ツールチップの表示幅（対象文言の長さから見積もった値）がコンテナ境界を超えないことを寸法計算で確認済み（実機での目視確認は本方針上 `npm run tauri dev` を起動しないため未実施。ウィンドウの最小サイズ 640×420 でも成立することを前提に計算した。もし将来、より長い文言を持つ対象を追加する場合は、この計算を同様に行うか、実機で確認すること）
-
-#### 選択状態の維持（リストの再構築を伴う操作）
-
-ピン止めの追加・解除・並び替えを行うと選択行が毎回1行目にリセットされる不具合があった。3ケース（追加・解除・並び替え）を個別に直すのではなく、以下の**汎用原則**として実装している。**今後実装予定のお気に入り機能・メモ機能（★を押した項目、メモに登録した項目を見失う）でも全く同じ問題が起こるため、同じ仕組みをそのまま適用すること。**
-
-- **選択状態は行番号（インデックス）ではなく、操作対象の識別子（ファイルパス等）に紐づけて復元する。** リストの再構築を伴う操作（項目の追加・削除・並び替え）では、対象の項目が「別の行」「別のリスト（例：ピン止めブロック⇄通常一覧）」へ移動するだけで、ユーザーは引き続きその項目を選択し続けたいと考えるのが自然なため、操作直前に「復元したい識別子」を覚えておき、リスト再構築後にその識別子が今どの行にあるかを探し直して選択し直す
-- **識別子が新しいリストに見つからない場合**（例：ピン止め解除したファイルが通常一覧の表示件数上限に入らない）は、復元をあきらめて先頭（1行目）を選択する
-- **復元した行が表示領域外の場合はスクロールする。** 新たに専用のスクロール処理を書く必要はなく、既存の「選択インデックスが変化するたびに対象行を `scrollIntoView` する」仕組み（`useScrollSelectedIntoView`）にそのまま乗る。選択復元も内部的には同じ選択インデックスの state を更新するだけのため、この既存フックが自動的に反応する
-
-##### 移動先が非同期でしか確定しない場合（`requestSelectRestore`）
-
-一覧の再取得が非同期で、かつ**移動先の行が操作時点では予測できない**場合（ピン止め機能では「ピン止め解除」がこれに当たる。移動先の通常一覧内の位置は frecency ランキングに依存し、`search_files` の応答を見るまで分からない）は、以下の仕組みに乗せる。
-
-- 復元したい識別子を `useRef`（`pendingSelectPathRef`）に保持し、一覧の再構築が完了した時点（`pinnedFiles`／`results` 等、再構築対象の state が変化するたびに発火する `useEffect`）でその識別子を探して選択インデックスに反映し、ref をクリアする。**既存の世代ID管理（`asyncCallIdRef`）とは別の関心事**であり、世代IDは「どの非同期呼び出しの結果を採用するか」を扱うのに対し、選択復元は「採用された結果の中から対象をどう選び直すか」を扱う。両者は競合しない
-- 対象が複数の非同期処理（ピン止め機能では `search_files` の再取得と `get_pinned_files` の再取得の両方）にまたがる場合、「どちらが先に完了するか」を気にせず、**関連する state（`pinnedFiles`／`results` 双方）を依存配列に持つ1つの `useEffect` に復元ロジックを集約する**のが簡潔。片方が完了して対象が見つかればその時点で復元して ref をクリアし、見つからなければ何もせず次の変化を待つ
-- 無期限に探し続けると、ずっと後になってから無関係な操作で偶然同じ識別子を含むリストが表示された際に誤って選択が復元される事故につながるため、タイムアウト（本実装では1秒）を設けて確実に諦め、その時点で明示的に1行目へフォールバックする（`console.debug` で復元できなかった識別子を出力する。原因調査を容易にするため）
-- 実装上の副作用として、複数の依存 state のうち一部だけが更新された瞬間に選択インデックスをリセットする既存コード（例：クエリ変更時の「まず1行目に戻す」処理）は、**選択復元待ちの間は実行を抑止する**必要がある（抑止しないと、復元が完了する前に1行目リセットが割り込み、復元前に一瞬1行目が見えるちらつきの原因になる。`useSearch.ts` では `pendingSelectPathRef.current === null` の場合のみリセットする形で対応している）
-
-##### 移動先が操作時点で確定している場合は同期的に設定する（`requestSelectRestore` を経由しない）
-
-初版の実装は「追加・解除・並び替えの3ケースすべてを `requestSelectRestore` に統一する」形にしていたが、実機検証で**解除は正しく復元されるが、追加（ピン止め）と並び替えは復元されず1行目に飛ぶ**という不具合が見つかった。
-
-- **調査内容**：仮説として「通常結果側 (`path`) とピン止めブロック側 (`FavoriteNode.value` 由来) でプロパティ名や表記が食い違い、ピン止めブロック側の照合だけが常に失敗している」を検証した。Rust 側 (`get_pinned_files`) を確認したところ、`FileEntry { name, path: f.value, icon }` として `path` に一貫して詰め替えており、途中で大文字小文字・区切り文字・末尾等の正規化や変換も一切行っていない。フロントエンド側 (`pinnedFiles.findIndex((f) => f.path === path)`) もプロパティ名・比較方法ともに通常結果側と同一であり、**静的なコードレビューの範囲では、プロパティ名の不一致や表記ゆれによる照合失敗の直接証拠は見つからなかった**。原因を完全に断定できないまま実機での長時間切り分けに頼るのは非効率と判断し、根本原因の特定よりも「そもそも非同期の照合に頼らずに済む設計に直す」方向で解決した
-- **解決した設計**：**移動先の行が操作時点で確定的に分かる場合は、非同期の照合（`requestSelectRestore`）を経由せず、その場で同期的に選択インデックスを設定する。**
-  - **並び替え**：ドロップした瞬間に新しい順序と移動先インデックス（`toIndex`）の両方が確定しているため、`reorderPinned` 内で直接 `setSelectedRaw(toIndex)` を呼ぶ（ピン止めブロックは常にインデックス0から占有するため、オフセット加算は不要）
-  - **ピン止め（追加）**：新規ピンは実装上必ずピン止めブロックの末尾（`order` 最大）に追加されるため、追加前のピン止め件数がそのまま追加後の末尾インデックスになる。`togglePin` の追加分岐内で `setSelectedRaw(pinnedNodes.length)` を直接呼ぶ
-  - **ピン止め解除**：唯一、移動先（通常一覧内の frecency 順位）が操作時点で予測できないケースのため、引き続き上記の非同期 `requestSelectRestore` の仕組みを使う
-- **一般原則（今後の実装判断に使うこと）**：
-  - 「識別子に紐づけて選択を復元する」という原則自体はどのケースでも変わらない。**変わるのは復元の実装方法（同期 or 非同期）であり、これは「移動先が操作時点で確定的に分かるかどうか」で機械的に判断できる。** 確定的に分かる場合（末尾追加、ドロップ先固定など）は同期的に直接インデックスを設定し、確定的に分からない場合（ソート順・ランキングに依存する等）のみ非同期の照合機構に乗せる
-  - 同期で解決できる操作をわざわざ非同期の照合機構に乗せると、（今回のように）照合ロジック自体に問題がなくても、非同期処理特有のタイミングやレースが疑わしく見えてしまい、調査の見通しを悪くする。**確定的に計算できる値を、わざわざ非同期の探索で求め直さない**
-  - **複数のリストにまたがって識別子（パス等）で照合する場合は、リストごとに識別子の保持形式・生成経路が異なりうる**（本アプリでは今回そのような食い違いは見つからなかったが、通常結果は `search_files` の Rust 側で `WalkDir` から得たパス、ピン止めブロックは `FavoriteNode.value` に保存されたパスというように、**生成元が異なる識別子を同一視して比較している**という構造自体はリスクを内包する）。将来的に一方にだけ正規化処理（大文字小文字統一、末尾スラッシュ除去等）が入る、あるいは異なる由来のID体系を混在させる、といった変更が入ると容易に照合が壊れるため、識別子を新たに追加する際は生成経路が同一かどうかを意識し、異なる場合は比較前に正規化して表記を揃えること
-  - 非同期の照合機構（`requestSelectRestore`）を将来再利用する際、原因不明の不具合に遭遇した場合は、本節に追加した `console.debug`（復元対象のパスと各リストの中身を出力する）がまず有効な手がかりになる
-
-##### 「リセットの抑止」と「非同期での選択復元」を分離する（`suppressNextSelectResetRef`）
-
-上記の同期化（ピン止め追加・並び替え）を実装した後も、実機で不具合が再発した。**追加・並び替え直後、一瞬正しい行が選択されたように見えた直後に1行目へ戻ってしまう**という症状で、静的なコードレビューにより原因を特定できた。
-
-- **原因**：`pendingSelectPathRef` は元々「非同期の識別子照合」専用の仕組みだったが、メイン検索effect側のリセットガード（クエリ変更時に1行目へ戻す処理。「一覧の再取得のたびに毎回発火する2箇所」＝①メイン検索effect本体の冒頭、②`search_files` 応答受信時、の両方に存在する）が、この `pendingSelectPathRef` の有無を「今リセットして良いか」の判定に**流用**していた。ピン止め追加・並び替えを同期化した際、これらの操作はもう `pendingSelectPathRef` をセットしなくなったため、①②のガードが素通りするようになり、同期的に正しく設定した選択インデックスを、直後に再実行されたメイン検索effect（`pinnedPathSet` の参照が変わるたびに再実行される）が1行目へ上書きしていた
-- **一般原則**：「リセットの抑止」（今このタイミングでは1行目へ戻さないでほしい、という指示）と「非同期での識別子照合による選択復元」（照合が完了するまでリストの変化を待ち、見つかったら選び直す、というロジック本体）は**別の関心事**であり、1つの ref に両方を担わせると、**片方の性質だけを必要とする操作を追加したときに意図しない挙動になる**（今回のように、抑止だけが必要な操作が、照合ロジックの都合で「抑止も外れてしまう」）。今後 ref・フラグを新設する際は、それが本当に1つの責務だけを表しているかを確認すること
-- **解決した設計**：`pendingSelectPathRef` から「リセットの抑止」の責務を切り離し、専用の `suppressNextSelectResetRef`（`useRef<boolean>`）を新設した
-  - ピン止め追加・並び替えは、同期的に `setSelectedRaw` を呼んだ直後に `suppressNextSelectReset()` でこのフラグを立てるだけ（照合・タイムアウトは一切行わない）
-  - ①メイン検索effect冒頭のガードは `pendingSelectPathRef.current === null && !suppressNextSelectResetRef.current` の両方を満たす場合のみリセットする。ここではフラグを**読むだけでクリアしない**（1回の操作で①→`search_files`呼び出し→②の順に2箇所を通過するため、①で消費してしまうと②では既にフラグが消えており、②のガードが素通りして結局1行目に上書きされる）
-  - フラグの消費（クリア）は `search_files` を実際に呼び出す直前でスナップショットを取ってから行う。以降の無関係な次回のeffect実行（次のキー入力等）にフラグが漏れ出さないようにするためで、②の判定にはこのスナップショットを使う。`fileSearchEnabled` が `false` で `search_files` 自体を呼ばない分岐でも、同じ理由でその場でクリアする（クリア漏れがあると、フラグが立ちっぱなしになり以後の正当なリセット――たとえば次に入力したクエリでの1行目リセット――まで抑止してしまう）
-  - ピン止め解除は引き続き `requestSelectRestore`（識別子照合＋タイムアウトフォールバック）をそのまま使う。変更していない
-- **既知の限界（暫定対応であることの明示）**：この修正は v0.10.0 に向けた最小修正であり、恒久対応ではない。ごく短い時間（`set_favorites` のIPC往復中、体感では数十ms程度）に限り、ユーザーが即座に次の操作（クエリ入力等）を行うと、その正当なリセットが誤って1回だけ抑止される理論上の競合が残っている（逆に、フラグを毎回確実にクリアする設計にしているため、抑止が永続して以後ずっと効かなくなることはない）。結果一覧を構成する行の種類・オフセット計算が随所に分散している現在の構造そのものに起因する問題であり、根本的な解消は結果行のフラット配列化（`ResultRow` の Union 型による一元管理）へのリファクタリングを待つ
-
-**【追記・R-1 フェーズDで置き換え済み】** 上記の `pendingSelectPathRef`／`suppressNextSelectResetRef` という2本立ての ref は、フェーズDで単一の `pendingSelectKeyRef`（識別子＝`ResultRow["key"]` を保持し、`rows.findIndex` で解決する）に統合され、コード上には存在しない。本節（「移動先が操作時点で確定している場合は同期的に設定する」「『リセットの抑止』と『非同期での選択復元』を分離する」の2節）は、**その置き換えに至った経緯・教訓の記録として意図的に残している**（同種の設計判断を将来行う際の参考にするため）。新しい設計の詳細は「結果行のフラット配列化（R-1）」節のフェーズDを参照。ここで述べた「既知の限界」（IPC往復中の割り込みで正当なリセットが1回だけ誤って抑止される競合）は、フェーズD後も**同じ性質のまま残っている**（識別子ベースになったことで抑止対象を取り違えなくはなったが、抑止そのものを解消したわけではない。詳細はフェーズDの記載を参照）。
-
-##### 参考：`pathPasteCandidate` と `recentMode` の関係（既に対応済み・追加対応不要）
-
-上記の調査に付随して、「`recentMode` の分岐が `pathPasteCandidate` をクリアしていないのではないか」という懸念が一時的に挙がったが、確認の結果、`useSearch.ts` のメイン検索effect内の `recentMode` 分岐は `clipboardMode`／`prefixCommandMode` の各分岐と同様に `setPathPasteCandidate(null)` を呼んでおり、既に対応済みだった。`pathPasteWizardMode` の分岐のみ、ウィザード中に機能1/機能2のアクションが `pathPasteCandidate` を引き続き参照する必要があるため、意図的にクリアしていない（この1点のみが例外である旨は当該分岐のコメントに明記済み）。今後同種の懸念が再燃した場合は、まず該当箇所のコードを直接確認すること。
-
-#### 結果行のフラット配列化（R-1）
-
-「選択状態の維持」節・「`suppressNextSelectResetRef`」節で述べた不具合の根本原因は、通常モード（`clipboardMode`／`pathPasteWizardMode` を除く。この2つは既に単一配列への素朴な添字で成立しており対象外）の結果一覧が、行の種類ごとにバラバラの state（`pinnedFiles`／`pathPasteCandidate`／`calcResult`／`urlConvertResult`／`results`）として管理され、それらを1つの選択インデックス空間に対応付けるための同じオフセット計算（`pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength`）が `App.tsx`（`baseLength` 算出・`handleKeyDown`・`StatusFooter` への各 `is*Selected` props）・`ResultList.tsx`（`pinnedOffset` 以下の各 `data-index`/`onMouseEnter`）・`useSearch.ts`（選択復元用 `useEffect`）の3箇所に独立して再実装されていたことにある。新しい行の種類を追加するたびに3箇所すべての同期が必要で、実際に同期漏れに起因する選択リセット不具合を生んだ。
-
-これを解消するため、通常モードの結果一覧を単一のフラット配列 `rows: ResultRow[]`（`src/hooks/useSearch.ts`、`src/types.ts` の判別可能 Union）として再構成する。**行の並び順の正本は `useSearch.ts` の `rows` である**。今後この並び順を変更する場合は `rows` の構築ロジックのみを直し、他の箇所（`App.tsx`/`ResultList.tsx`）はそれを参照するだけにする。
-
-移行は段階的に行い、以下のフェーズに分ける（本節はフェーズD-2の完了時点の記録。以降のフェーズを実施したら本節を更新すること）。
-
-- **フェーズA（完了）**：`rows` の `useMemo` を新設する。純粋な計算の追加のみで、既存の `results`・各種 `Length` 変数・フックの外部インターフェースは変更しない。描画・操作のいずれからも参照しないため、ユーザーから見える挙動の変化はゼロ
-- **フェーズB（完了）**：`ResultList.tsx` の通常モード（`prefixCommandMode` を除く）の描画を `rows.map(...)` ＋ `row.kind` の switch へ書き換える。行の種類ごとの個別 JSX ブロックはそのまま switch の各 case へ移植し（className・DOM構造は一切変更していない）、`pinnedOffset`/`pathPasteOffset`/`calcIndex`/`calcOffset`/`urlConvertOffset` の個別算出は撤去した
-  - この時点では `App.tsx` を変更しない制約のもと作業したため、`ResultList.tsx` は既存 props（`pinnedVisible`/`pinnedFiles`/`pinnedExistence`/`pathPasteCandidate`/`calcResult`/`urlConvertResult`/`results`/`isPinned`）から `useSearch.ts` の `rows` 構築と全く同じ順序・同じ判定式でローカルに `rows` を組み立てる、一時的な重複状態だった（フェーズB-2で解消済み。次項）
-- **フェーズB-2（完了）**：フェーズBで生じた `rows` 構築ロジックの重複（`useSearch.ts` と `ResultList.tsx` の2箇所）を解消した。`App.tsx` が `search.rows` を `ResultList` の `rows` props として直接渡すように変更し、`ResultList.tsx` 側のローカル `rows` 構築（`useMemo`）は削除。これに伴い `ResultList.tsx` の props から `pinnedVisible`/`pinnedFiles`/`pinnedExistence`/`isPinned`/`pathPasteCandidate`/`calcResult`/`urlConvertResult`（7個）を削除した（いずれも `rows` の各行が既に埋め込み済みの情報のため、`ResultList.tsx` 内で他に使われていないことを確認した上で削除）。`results`（`rows.length === 0` かつ `query` 非空時の「見つかりませんでした」判定に必要）と `pinIconVisible`（表示設定。行データではないため）は残した。`rows: ResultRow[]` を構築する箇所は `useSearch.ts` の1箇所のみになった
-- **フェーズC（完了）**：`App.tsx` から `pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` を全廃し、`handleKeyDown`（Enter・Shift+Enter の対象特定）を `const selectedRow = search.rows[search.selected] ?? null;` ＋ `switch (selectedRow.kind)` ベースの判定へ書き換えた。`StatusFooter` も `isPathPasteCandidateSelected`/`isCalcSelected`/`isUrlConvertSelected`/`isFileSelected`（4個の bool props）を廃止し、単一の `selectedRowKind: ResultRow["kind"] | null` props に統合した（表示されるキーヒントの文言は一切変更していない）
-  - `baseLength` は名前・意味を変えずに残した。**理由**：`ResultList.tsx`（`prefixCommandMode` 分岐で `baseLength` を使って Web検索行の位置を決めている）を今回のフェーズでは変更しない制約のため、`baseLength` プロパティそのものは今後も必要。ただし内部の算出式は「`pinnedLength + results.length + pathPasteLength + calcLength + urlConvertLength` の合算」から「通常モードでは `search.rows.length` を直接使う」形に単純化した（`clipboardMode`/`prefixCommandMode`/`pathPasteWizardMode` の各分岐の算出式自体は変更していない）。**「`baseLength` という名前を残したこと」自体は削除対象に含めていた変数名と重なるが、意味が変わった（オフセットの合算ではなく `rows.length` の直接参照）ため、フェーズCの主旨である「オフセット計算の全廃」とは矛盾しない**
-  - 選択復元用 `useEffect`（`useSearch.ts`）・`suppressNextSelectResetRef` は今回変更していない。そこで使われている `pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` は `useSearch.ts` 内のローカル変数であり、`App.tsx` 側の同名変数とは無関係（別ファイル・別スコープ）のため、今回の `App.tsx` 側の削除による影響は受けない（フェーズD で対応予定）
-  - Web検索行の特例（`rows` に含まれない行を `selected === baseLength` で判定する処理）は `handleKeyDown` の Enter 分岐内、`selectedRow` を使った switch より前の1箇所（`if (webSearchVisible && search.selected === baseLength) { ... }`）に集約されている（元々1箇所だったため、今回の書き換えでも分散させていない）
-- **フェーズD（完了）**：選択復元を識別子ベースの `rows.findIndex` に統合し、R-1 の核（フェーズA〜D）を完了させた。
-  - 旧 `pendingSelectPathRef`（ファイルパスのみ保持）と `suppressNextSelectResetRef`（識別情報を持たない一度きりのブールフラグ）の2本立てを廃止し、単一の `pendingSelectKeyRef: useRef<string | null>`（`ResultRow["key"]` と同じ形式の識別子。例: `"pinned:<path>"`/`"file:<path>"`）に統合した
-  - 解決ロジックは `rows` を依存配列に持つ1本の `useEffect`（`rows` の `useMemo` の直後に配置。フックの定義順として `rows` より後である必要がある）に一本化し、`rows.findIndex((row) => row.key === key)` で対象行を探す。旧実装が持っていた「`pinnedFiles` 側を先に見て、見つからなければ `results` 側をオフセット計算込みで見る」という2段階のロジック・`pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` のローカル計算はすべて撤去した（`rows` 自体が既に正しい並び順を表現しているため、`findIndex` 一発で足りる）
-  - 移動先が操作時点で確定的に分かる場合（ピン止め追加・並び替え）は、引き続き `setSelectedRaw` で即座に楽観的反映を行う。ただし旧 `suppressNextSelectReset()`（フラグを立てるだけ）の代わりに、同じ `requestSelectRestore(key)` を呼んで対象の識別子を登録する（ピン止め追加は `` `pinned:${file.path}` ``、並び替えは移動した行の `` `pinned:${moved.path}` ``）。これにより「同期的に確定している場合」と「非同期でしか確定しない場合（ピン止め解除、`` `file:${file.path}` ``）」が同じ1つの識別子ベースの仕組みに統合され、専用の抑止フラグを別途持つ必要がなくなった
-  - メイン検索effectの「クエリ変更時に1行目へ戻す」リセットガードは、`pendingSelectKeyRef.current === null` の1条件だけで判定できるようになった（旧: `pendingSelectPathRef.current === null && !suppressNextSelectResetRef.current` の2条件・`search_files` 呼び出し直前のスナップショット取得＋クリアという分岐が必要だった）
-  - **`findIndex` が `-1` を返す場合（対象行が見つからない）のふるまいは変更していない**：何もせず、`rows` の次の変化を待つか、`requestSelectRestore` のタイムアウト（1秒）が最終的に諦めて1行目へフォールバックする。旧実装（`pinnedFiles`/`results` それぞれで見つからなければ何もしない）と同じ「見つかるまで待つ、ダメなら1秒でフォールバック」という挙動をそのまま踏襲している
-  - **既知の限界は変わらず残っている**：`suppressNextSelectResetRef` 時代に文書化されていた「`set_favorites` のIPC往復中に別の操作（クエリ入力等）が割り込むと、正当なリセットが誤って抑止される」という競合は、識別子ベースになった後も**同じ性質のまま残る**（`pendingSelectKeyRef` が非nullの間はどんな理由でのリセットも一律に抑止するため）。改善した点は「抑止対象を取り違えなくなったこと」（旧: ブールフラグのため、どの操作のための抑止かを区別できなかった）であり、「抑止のタイミングが割り込みに対して脆弱である」こと自体の解消はスコープ外（詳細は「移動先が操作時点で確定している場合は同期的に設定する」節・「『リセットの抑止』と『非同期での選択復元』を分離する」節の追記を参照）
-  - `/recent`（`recentMode`）のフォーカス復帰時再取得は `recentResults` が変わるたび無条件に1行目へリセットする既存の実装のままで、本フェーズでは変更していない（この経路は `pendingSelectKeyRef`/`requestSelectRestore` を一切使っておらず、フェーズDの対象外）。ピン止めブロックのフォーカス復帰時再取得（`fetchPinnedFiles`）も同様に、選択状態を明示的に復元も リセットもしない（`pinnedFiles` の変化はメイン検索effectの依存配列に入っておらず、`pendingSelectKeyRef` が非nullでない限り何も起きない）。この2つの不一致は既知の状態として記録するに留め、今回は是正しない
-- **フェーズD-2（完了）**：フェーズDで実機リグレッションが発生したため、選択の決定方法自体を intent ベースへ作り直した。詳細は次項「選択は intent ベースの導出値であり、書き込み可能な state ではない」を参照
-- **フェーズD-3（完了）**：D-2の事前調査で見落とされていた `recentMode` 専用の強制リセットeffectを撤去し、全モード共通の「intentは変更せず resolveSelected が同じキーを探し直す」挙動に統一した。詳細は「選択は intent ベースの導出値であり、書き込み可能な state ではない」節末尾の追記を参照
-- **フェーズE（未着手）**：Web検索行（`webSearchVisible`）の扱いを検討する。`prefixCommandMode` の候補一覧・通常モードの `rows` の両方に共通して末尾へ追加される横断的な行のため、`ResultRow` に含めるか、`rows` とは別に扱い続けるかを含めて設計する
-- **フェーズF（任意）**：`prefixCommandMode`（プレフィックスコマンド候補一覧）も同じ `ResultRow` の枠組みに統合するかを検討する。現状は `prefixCommandCandidates: PrefixCommand[]` という別の単純な配列で十分に機能しており、統合の必要性が生じた場合にのみ着手する
-
-#### Web検索行のbaseLength特例（R-1フェーズE見送りの経緯）
-
-Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含まれておらず、`App.tsx` 側で `baseLength`（= `rows.length`）への+1という特例で扱われている（`selected === baseLength` の判定、`handleKeyDown` での switch 手前での分岐等）。
-
-これは R-1 のフェーズC の時点で意図的に見送った設計判断であり、バグではない。理由：Web検索行は `prefixCommandMode` の候補一覧と通常モードの一覧の両方に共通して末尾へ付く横断的な行であり、「通常モードのみ」という R-1 のスコープに単純には収まらないため。
-
-将来この行が原因の不具合（選択がずれる、行が消える等）が疑われた場合は、まずこの+1特例の算出箇所（`App.tsx` 内の `baseLength`・`handleKeyDown` のWeb検索行分岐）を確認すること。`rows`/`resolveSelected` の仕組みには含まれていないため、`rows` 側の調査をしても見つからない。
-
-対応する場合は R-1 フェーズE（Web検索行を `rows` に正式統合し、この特例を解消する）として着手する。現時点では優先度が低く保留中。
-
-#### 選択は intent ベースの導出値であり、書き込み可能な state ではない（フェーズD-2）
-
-**フェーズDのリグレッションと根本原因**：フェーズDでは `pendingSelectPathRef`（ファイルパスのみ保持）と `suppressNextSelectResetRef`（一度きりのブールフラグ）を廃止し、`pendingSelectKeyRef`（識別子を保持する ref）＋ `rows.findIndex` による復元に統一した。しかし実機で次のリグレッションが確認された：ピン止め追加・D&D並び替え直後、一瞬正しい行が選択された直後に先頭行へ戻ってしまう（ログ上は `[selectRestore] resolved key="pinned:..." at index=6` の直後に `search_files` の解決が完了し、選択が先頭へ戻っていた）。
-
-原因：選択の復元が成功した時点で `pendingSelectKeyRef` が `null` に戻り、その後遅れて到着する `search_files` 解決時のリセット処理（`pendingSelectKeyRef.current === null` を条件に `selected` を0にする）を、もはや抑止できなくなっていた。**根本原因は、`selected` が「複数の非同期処理がそれぞれ書き込める state」であったこと。** ピン止め操作・D&D・検索結果の解決が、それぞれ独立に `selected` へ書き込む経路を持つ限り、一発の抑止フラグで特定の書き込みだけを抑止しても書き込みの経路自体は残り続け、別のタイミング・別の非同期処理の組み合わせで同種の競合が再発する。フェーズDの識別子ベース化は「復元の照合方法」を改善しただけで、「書き込み経路が複数存在する」という構造上の問題そのものには手を付けていなかった。
-
-**この設計での解決**：`selected` という書き込み可能な state を廃止し、「ユーザーが選びたい」という意図を表す `intent` と、現在の行一覧（`rows`、または `clipboardMode` 中は `clipboardSelectionItems`）から `resolveSelected` で毎回導出する値にした。
-
-```ts
-type SelectIntent =
-  | { type: "top" }
-  | { type: "key"; key: string; expiresAt?: number };
-
-interface SelectableItem {
-  key: string;
-}
-
-function resolveSelected(
-  intent: SelectIntent,
-  items: SelectableItem[],
-  fallback: number
-): number {
-  if (intent.type === "top") return 0;
-  const index = items.findIndex((item) => item.key === intent.key);
-  return index === -1 ? fallback : index;
-}
-```
-
-`resolveSelected` が「見つからない場合」に `fallback`（直前に導出できた選択インデックス）をそのまま返す点が要：「見つからない」は「1行目へリセットする理由」ではなく「今探している対象がまだ rows に反映されていないだけ」を意味するため、見つかるかタイムアウトするまで現在の表示をそのまま維持する。
-
-**書き込み経路を1本に絞る**：`selected` への書き込みは、`intent`/`rows`/`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになった。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、フェーズDで見られたような「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
-
-**intent を {type:'top'} へリセットする2つの専用トリガー**（いずれも `pinnedPathSet`/`frecency`/`recentResults` を依存配列に含めない。含めるとピン止め操作の副作用でこの reset effect が発火し、フェーズDと同じ競合が intent 経由で再発するため）：
-- クエリ・設定（`appSettings`/`settingsVersion`）・`closeRefreshTick`（ウィンドウを閉じた直後の強制再取得）の変化 → `updateIntent({type:'top'}, "query-or-settings-change")`
-- `recentMode` 中の `recentResults` の変化（フォーカス復帰時の再取得を含む。既存の「/recent は毎回リセット」という挙動をそのまま踏襲）→ `updateIntent({type:'top'}, "recent-results-change")`
-
-**intent を更新している全箇所**（すべて `updateIntent(next, source)` という同一のラッパー経由。ログの `source` でどの経路から更新されたか追える）：
-1. 上記の2つの reset トリガー
-2. `selectRowByKeyboard(key)`：↑↓キーによる通常モード／`clipboardMode` の選択（`expiresAt` なし。即座に解決できるため）
-3. `selectRowFromHover(key, x, y)`：マウスホバーによる同上（抑止ロジックは旧 `selectFromHover` と同一）
-4. `togglePin` 追加分岐：`{type:'key', key:`pinned:${path}`, expiresAt: now+1000}`
-5. `togglePin` 解除分岐：`{type:'key', key:`file:${path}`, expiresAt: now+1000}`
-6. `reorderPinned`：`{type:'key', key:`pinned:${moved.path}`, expiresAt: now+1000}`
-7. タイムアウト効果（`intent.expiresAt` を過ぎても対象が見つからない場合）：`{type:'top'}`
-
-**適用範囲は「通常モード（rows）」と「clipboardMode（clipboardSelectionItems）」のみ**。`prefixCommandMode`／`pathPasteWizardMode`／Web検索行の +1 特例は、今回これらに非同期の書き込み競合を追加する具体的な予定が無いため、現状の生インデックス書き込み（`setSelected`／`selectFromHover`。フェーズDと同じ、変更していない）のまま維持する。`clipboardMode` を対象に含めた理由：クリップボード履歴は既に OS のクリップボード変更通知（非同期の外部更新）を持ち、今後お気に入り／メモ機能でノート登録という非同期IPC書き込みが加わる予定があり、今回のリグレッションと同型の「非同期書き込み × 非同期外部更新」という構造を抱えることになるため、先んじて intent 化した。
-
-`clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした（`useClipboard` の新しい引数として追加）。
-
-**`findIndex` が `-1` を返す場合のふるまいは変更していない**：フェーズDと同じく、何もせず `rows`/`clipboardSelectionItems` の次の変化を待つか、`expiresAt` のタイムアウト（1秒）が最終的に諦めて `{type:'top'}` へフォールバックする。
-
-**既知の限界（フェーズD時代から性質は変わらない）**：`intent.type === 'key'` の間はどんな理由でのリセットも一律に抑止される（reset トリガーの条件自体が `intent` を経由せず直接 `pinnedPathSet` 等を見ているわけではないため）。ごく短い時間（`set_favorites` のIPC往復中）にユーザーが次の操作を行った場合の挙動は、新しい `intent` がすぐさま古い `intent` を上書きするため、通常は問題にならない。ただし理論上、新しい操作が「同じ対象への操作」でない限りは新しい `intent` に置き換わるため、フェーズDで文書化されていたのと同種の競合そのものは、書き込み経路の構造的な分離によって解消された（reset トリガーが pin 操作の副作用では発火しなくなったため）。
-
-**再発防止の指針（今後 selected 関連のコードに触れる際に必ず踏まえること）**：
-- **`selected` に相当する値を新設する場合、書き込み可能な state にしないこと。** 「ユーザーの意図（intent）」と「現在の候補一覧」から導出する設計を優先する。書き込み可能な state にすると、書き込み経路が増えるたびに「どちらが勝つか」という競合の火種が増える
-- **「次の1回だけ何かを抑止する」という時間依存の一度きりフラグ（旧 `suppressNextSelectResetRef` のようなもの）を新設しないこと。** 抑止したい理由が「復元待ち」であるなら、それは常に「復元したい対象の識別子（intent）を保持しているかどうか」だけで判定できるはずであり、識別情報を持たない別のブールフラグを追加で持たせる必要はない
-- **reset トリガー（何かが変わったら intent を top に戻す）の依存配列には、"ユーザーが新しい文脈に入ったことを示す値" だけを含め、"その文脈内での操作の副作用として変化する値"（`pinnedPathSet`/`frecency`/`recentResults` 等）を含めないこと。** 混在させると、副作用側の変化が reset トリガーを誤発火させ、intent による復元を上書きしてしまう
-- 選択中の行の種類の判定は、常に `rows[selected].kind` で行い、`pinnedLength`/`pathPasteLength`/`calcLength`/`urlConvertLength` のような個別のオフセット変数を新設しないこと
-- 新しい行の種類（★お気に入り・メモ等）を追加する場合も、まず `ResultRow` に新しい `kind` を追加して `rows` の構築ロジック（`useSearch.ts` の1箇所）に組み込み、`App.tsx`/`ResultList.tsx` 側は `rows[selected].kind` の switch に case を1つ追加するだけで対応できる状態を維持する
-
-**フェーズD-3の追記：`recentMode` に残っていた専用リセットトリガーの撤去**
-
-D-2実装時点では、`intent` を `{type:'top'}` へ戻すトリガーが実は2本存在していた：(1) `query`/`settingsVersion`/`appSettings`/`closeRefreshTick` の変化を検知する汎用トリガー（全モード共通）と、(2) `recentMode` 専用の「`recentResults` が変化するたび無条件にトリガーする」effect（`[recentMode, recentResults]` に依存）。(2) は D-2 の対象範囲（「通常モード＋clipboardMode」の intent 化）に含まれていなかったため、古い設計（フェーズD以前からの「`/recent` はフォーカス復帰のたびに毎回1行目へ戻す」という挙動）がそのまま見落とされて残っていた。
-
-D-2完了後の事前調査（D-3着手前）で、この (2) の存在と、それが原因で `recentMode` だけが「他3モード（通常のファイル検索・`clipboardMode`・ピン止めブロック）と異なり、フォーカス復帰のたびに選択が強制的にリセットされる」という非対称な挙動になっていることが判明した。REQUIREMENTS.md には「フォーカス復帰のたびに選択をリセットする」という仕様は存在せず、この非対称性は仕様ではなく実装上の見落としと判断し、(2) を撤去した。
-
-撤去後、`recentMode` の選択は他3モードと全く同じ経路——(1) の汎用トリガー（`recentMode` への新規突入・離脱は必ず `query` の変化を伴うため、突入時に選択が先頭になる動作はこれで担保される）と、`resolveSelected` の fallback 挙動（見つかれば識別子で追従、見つからなければ現在の選択を維持）——だけに統一された。`recentResults` が変化しても（フォーカス復帰時の再取得を含め）、`intent` 自体は変更されない。
-
-**今後の指針（再発防止）**：新機能・新モードを追加する際、「このモードのデータが変化したら選択をリセットしたい」という要求が生じても、そのモード専用の強制リセットeffectを新設しないこと。選択のリセットは常に (1) の汎用トリガー（`query`/`settingsVersion`/`appSettings`/`closeRefreshTick` という「ユーザーが新しい文脈に入ったことを示す値」の変化）だけに一本化し、それ以外のデータ変化（一覧の再取得・並び替え等）は `resolveSelected` の fallback 挙動に委ねること。モード固有の特別な reset トリガーは、今回のように「他のフェーズの対象範囲から漏れて見落とされる」「モード間で非対称な体感を生む」という問題を再発させる。
-
-`ResultRow` の各バリアント（`kind: "pinned" | "pathPasteShortcut" | "pathPasteAddFolder" | "calc" | "urlConvert" | "file"`）は、`rows` の並び順（ピン止めブロック→パス貼り付け候補（機能2→機能1の順）→計算結果→URLエンコード/デコード結果→ファイル検索結果）にそのまま対応する。`key` フィールドはファイルパス等に種別ごとの接頭辞（`pinned:`/`file:` 等）を付けたもので、他種別のキーと衝突しない安定した識別子として持たせている（行番号は使わない。行の追加・削除で他の行の React key が変わらないようにするため）。
-
-`pinned`（ピン止めブロック）の `exists`／`file`（ファイル検索結果）の `pinned` は、`rows` 構築時に一度だけ計算して各行に埋め込む（`exists: pinnedExistence[file.path] ?? true`、`pinned: isPinned(file.path)`）。`ResultList.tsx` 側の描画はこの埋め込み済みの値（`row.exists`/`row.pinned`）を使い、行ごとに個別で再計算しない（`pinIconVisible` によるアイコン自体の表示可否は行データではなく表示設定のため、描画側で `pinIconVisible && row.pinned` のように別途掛け合わせる）。
-
-#### 結果行の DOM 構造（`<div role="button">`）と区切り線を使わない方針（X-10 / X-11）
-
-`ResultList.tsx` の `rows.map` が描画する6種類の行（`pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlConvert`/`file`）は、行のルート要素を `<button>` ではなく **`<div role="button">`** で実装している。
-
-- **理由**：v0.10.0 でピン止め機能を実装した際、行の `<button>` の中に `PinToggleButton`（ピン止めトグル用の別の `<button>`）を入れ子にしたため、React が `validateDOMNesting`（`<button>` cannot appear as a descendant of `<button>`）の警告を出す状態になっていた。今後この行に★（お気に入り）ボタン・ノート（メモ）アイコンを追加していく計画があり、行内の操作ボタンが増える前提の構造にする必要があるため、行そのものを「内部に操作用の `<button>` を複数個持てる」構造（`<div role="button">` ＋子要素として本物の `<button>` を複数持てる）に直した
-  - `role="button"` は、この要素がクリックで実行される操作であることをアクセシビリティツリー上に示すためのもの。ただし `tabIndex` は付与していない（キーボード操作は行そのものにフォーカスを当てる設計ではなく、検索ボックス側の document レベル `keydown` リスナー・↑↓キーによる選択インデックス管理で完結しているため。フォーカス移動を伴うキーボード操作の対象にする設計ではない）
-  - `type="button"` 属性は行の要素には元々付与されていなかった（`div` になった今も不要）。`PinToggleButton` 自身の `<button type="button">` は変更していない（そのまま実在する `<button>` として維持しており、入れ子構造ではなくなったため `type="button"`・クリックの `stopPropagation()` ともに従来通り機能する）
-  - `<button>` → `<div>` の変更に伴う見た目の補正は不要だった。本プロジェクトは `@tailwind base`（Preflight）を有効にしており、Preflight が `button` 要素に対して `border-width: 0`・`background-color: transparent`・`font-family: inherit` 等を既定で適用するため、これらの行の `<button>` は元々ブラウザ既定の見た目（枠線・背景色・ボタン風フォント）を一切持っていなかった。カーソル形状についても、ブラウザは `<button>` に既定で `cursor: pointer` を与えない（`<a href>` とは異なる）ため、`<div>`化してもカーソル形状は変化しない。レイアウトに関わる `display`/`text-align`/`width` 等はいずれも `className`（`flex items-center` `text-left` `w-full` 等）で明示済みのため、タグ変更による差分は生じない
-- **今後の指針**：**結果行のルート要素は `<div role="button">` であり、行の内部に操作ボタン（ピン止めトグル、将来のお気に入り★ボタン・メモのノートアイコン等）を複数個置く前提の構造である。** 行に新しい操作ボタンを追加する場合、行のルート要素を `<button>` に戻さないこと（内部の操作ボタンとの入れ子が再発する）
-- **結果行に区切り線（`border-b`/`border-t` 等）は使わない。** v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlConvert` の5種類には `border-b border-gray-100` が付いていたが、色が薄すぎて実際にはほぼ視認できず、`file` 行だけ付いていないという不揃いな状態になっていた（「見えない装飾をどの行に付けるか」の判断コストだけが発生し続ける状態）。視認できない装飾を残す実益がないため、5種類すべてから削除し、`file` 行と統一した。行の高さは1pxずつ詰まるが、見た目上の変化としては許容する。**今後、結果行に区切りを表現したくなった場合も `border-b`/`border-t` のような境界線ではなく、既存の選択中/非選択の背景色差・hover 背景色のみで表現すること**（設定画面の「縦ラインによる区切りは使わない」方針と同様、結果行についても「区切り線を使わない」を明文化する）
-- **他モードの調査結果（今回は変更していない。判断はユーザー側で行う）**：
-  - `prefixCommandMode`（`ResultList.tsx` の `prefixCommandCandidates.map`）：`border-b`/`border-t` なし。行の `<button>` の子要素はアイコン（`svg`）とテキストのみで、ボタンの入れ子は存在しない
-  - `clipboardMode`（`ClipboardPanel.tsx` の `entries.map`）：`border-b`/`border-t` なし。行の `<button>` の子要素は画像/アイコンとテキストのみで、ボタンの入れ子は存在しない。なお詳細パネル側（右カラム、選択中エントリのメタ情報表示）には `border-t border-gray-200/60` があるが、これは一覧の行区切りではなく本文とメタ情報（コピー日時・文字数等）を区切るフッター境界線であり、本節が扱う「行の区切り線」とは性質が異なる
-  - `pathPasteWizardMode`（`PathPasteWizard.tsx` の `folders.map`、フォルダ選択ステップ）：`border-b`/`border-t` なし。行の `<button>` の子要素はアイコンとテキストのみで、ボタンの入れ子は存在しない
-  - `WebSearchRow.tsx`（`prefixCommandMode`・通常モードいずれの一覧の末尾にも共通して追加される行。触ってはいけない箇所のため今回は変更していない）：`border-t border-gray-100` が付いている（今回削除した5種類と同じ薄い色）。ボタンの入れ子は存在しない。この行についても同種の「視認できない区切り線」問題が存在する可能性がある
-
-### 検索フォルダごとの詳細設定（Rust / フロントエンド）
-
-- 設定画面「ファイル検索」タブの検索フォルダ一覧の各行に歯車アイコンボタンを配置し、押下すると `FolderDetailSettingsModal.tsx` が中央オーバーレイのモーダルとして開く（既存の削除確認モーダル・`SystemCommandModal` と同じ `absolute inset-0` オーバーレイパターンを踏襲）
-- データ構造：Rust の `FolderEntry`（`folders: FolderEntry[]`。「設定画面」節を参照）に既存の `path`/`enabled` と並べてフォルダごとの詳細設定5項目を追加した
-  - `max_depth: u32`（検索階層数。デフォルト3。バリデーション範囲は1〜20）
-  - `include_folders: bool`（フォルダ自体を検索対象に含めるか。デフォルト `false`）
-  - `extension_filter_mode: ExtensionFilterMode`（`"blacklist"` | `"whitelist"` の2値 enum。`#[serde(rename_all = "camelCase")]` により JS 側は小文字の文字列として扱う。デフォルト `"blacklist"`）
-  - `blacklist_extensions: Vec<String>` / `whitelist_extensions: Vec<String>`（拡張子タグの配列。いずれもデフォルト空。保存時に Rust 側でトリム・先頭 `.` 除去・小文字化・重複除去を行ってから保存する）
-    - **ブラックリスト用・ホワイトリスト用を独立フィールドとして持たせている理由**：当初は `extensions: Vec<String>` という単一フィールドを両モードで共有していたが、これだと「ブラックリストで入力したタグ一覧を、ホワイトリストに切り替えた瞬間に流用してしまう（あるいはその逆）」という、ユーザーの意図しないデータ共有が起きる。ブラックリスト（除外リスト）とホワイトリスト（許可リスト）は意味的に全く別物であり、モードを行き来しながらそれぞれ別のタグ集合を組み立てたいユースケース（例：一旦ホワイトリストで絞り込みを試してから、ブラックリストでの除外運用に戻す）を考えると、値を共有する設計は構造的に誤りと判断し、2フィールドに分離した。フロントエンド（`FolderDetailSettingsModal.tsx`）側もこれに合わせて `blacklistExtensions`/`whitelistExtensions` の2つの state を持ち、`filterMode` に応じてどちらを表示・編集するかを `activeExtensions`/`setActiveExtensions` で切り替える（タグの追加・削除ハンドラ自体は1本のまま、対象リストだけを動的に differ させる構成。モード自体はラジオボタンで即座に切り替わるが、切替時に他方のリストを破棄する処理は行わない＝入力内容は保持される）
-  - 新規5フィールドはすべて `#[serde(default = ...)]` を付与している。旧バージョンで保存された `folders` エントリ（これらのキーを持たない）を読み込んだ場合、deserialize 時にこのデフォルト値（3階層・フォルダ非対象・ブラックリスト空・ホワイトリスト空）が自動的に補われる（要件の「既存フォルダへのデフォルト値自動適用」はこの serde のデフォルト補完機構でそのまま満たされ、マイグレーション処理は別途必要ない）
-  - **単一 `extensions` フィールドから `blacklist_extensions`/`whitelist_extensions` の2フィールドへ移行した際のマイグレーション方針（決め打ちでリセット）**：旧フィールド名 `extensions` で保存されていた既存データは、どちらのリストへ引き継ぐかの一意な正解がない（ブラックリストとして保存されていたタグをホワイトリストへ引き継ぐのは明らかに誤りだが、「保存時点の `extensionFilterMode` に応じて機械的に振り分ける」ような救済ロジックを組んでも、後から手動でモードだけ切り替えて放置していたデータ等では実態と食い違いうる）。本機能はリリース直後（v0.8.0）で実利用者が少なく設定の消失を許容できる時期だったため、複雑な引き継ぎロジックは実装せず、フィールド名の変更（`extensions` → 新2フィールド）によって旧キーが単純に無視され、`#[serde(default)]` で両リストとも空にリセットされる、という serde の既定動作にそのまま委ねている。今後同種の「意味が変わるフィールド分割」を行う場合も、リリース初期で影響範囲が小さいと判断できるなら同様に決め打ちリセットを優先し、複雑な移行コードを書かないこと
-  - `FolderEntry::new(path)` コンストラクタで新規フォルダ登録時（`add_folder`／`add_search_folder_from_paste` の両方）にも同じデフォルト値を設定する（`FolderEntry { path, enabled: true }` のようなリテラル構築を残すと新フィールドの初期値がその都度バラバラになりうるため、コンストラクタに一本化した）
-- 保存 UI：モーダルは「保存」「キャンセル」ボタンを持つ一括保存方式とする。他の設定タブ（ON/OFF は変更immediate、テキスト/数値は「保存」ボタンで個別 invoke）とは異なり、このモーダルは5項目をローカル state（ドラフト）で保持し、「保存」押下時に `set_folder_settings(path, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` を一度だけ呼ぶ。「キャンセル」はドラフトを破棄してモーダルを閉じるのみで、invoke を呼ばない
-  - `useSettings.ts` の `setFolderSettings` は成功/失敗を真偽値で返す（他の `set_*` 系フックが `AppSettings` を返すのと違うパターン）。`FileSearchSettings.tsx` はこの戻り値を見て、成功時のみモーダルを閉じ、失敗時はエラーメッセージ（`folderSettingsError`）を表示したままモーダルを開いた状態を維持する
-- 拡張子タグ入力 UI：`FolderDetailSettingsModal.tsx` 内にタグ形式の入力欄を実装（1件ずつテキスト入力→Enterまたは「追加」ボタンでタグ化、各タグに削除ボタン付き）。汎用コンポーネントへの切り出しは行わず、このモーダル専用のローカル実装とした（他画面での再利用箇所が今のところないため）
-- 検索ロジックへの反映（`search_files`、Rust）
-  - `WalkDir::new(...).max_depth(dir.max_depth as usize)` でフォルダごとの階層数を反映する（従来の全フォルダ共通ハードコード値 `5` を置き換え）
-  - `entry.depth() == 0`（走査ルート＝検索フォルダ自身）は `include_folders` の値に関わらず常にスキップする
-  - `is_dir && dir.include_folders` の場合のみディレクトリエントリを結果候補に含める。ファイル（`is_file`）は従来通り常に候補
-  - 拡張子フィルタリング（`passes_extension_filter`）はファイルのみに適用し、ディレクトリには適用しない。`dir.extension_filter_mode` に応じて `dir.blacklist_extensions`／`dir.whitelist_extensions` のどちらを使うかを呼び出し側（`search_files`）で選んでから渡す。ブラックリストは空リストなら常に許可、ホワイトリストは空リストなら常に拒否（`*` のような全許可特殊タグは実装しない。空ホワイトリストは意図的に「0件」を意味する）。拡張子を持たないファイルは、ブラックリストの個々のタグに一致しようがないため許可、ホワイトリストの個々のタグに一致しようがないため拒否、という扱いになる
-  - アイコン取得（`shell_icon::get_icon_data_url`）はファイル・フォルダ双方に対して既存のまま動作する（`SHGetFileInfoW` はディレクトリにも有効なため、フォルダ結果にもエクスプローラーと同じフォルダアイコンが付く。個別対応不要）
-
-### 設定画面（Rust / フロントエンド）
-
-- 設定パネルは左にカテゴリナビ（全般／ファイル検索／お気に入り／パス貼り付け／計算・変換／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR／このアプリについて）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）。**カテゴリ一覧の正本はこの箇条書きであり、他の節から言及する場合はここへの参照に留める（詳細は「変更時の同期チェックリスト」節を参照）**
-- 設定パネルは検索ボックス右の歯車アイコンのクリック、または `Ctrl+S` でトグル開閉する（検索 UI 表示中なら開く、設定パネル表示中なら閉じる）
-- 設定パネル表示中は `Ctrl+S` または `Esc` のどちらでも検索 UI に戻る
-- `Ctrl+S` の開閉トグルは input 要素のローカル `onKeyDown` ではなく、`window` への `keydown` イベントリスナー（`useEffect`）で一括処理する
-  - input のローカルハンドラに持たせると、WebView2 のフォーカス状態や Ctrl+S の既定動作（ページ保存）の影響で発火しないことがあるため
-- 設定変更後（パネルを閉じた時点）に検索結果を再評価する
-- 永続化は `tauri-plugin-store` の `settings.json` に集約する
-  - `folders: { path, enabled, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions }[]`（ファイル検索カテゴリの検索フォルダ一覧。`maxDepth`/`includeFolders`/`extensionFilterMode`/`blacklistExtensions`/`whitelistExtensions` はフォルダごとの詳細設定。詳細は「検索フォルダごとの詳細設定」節を参照）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled, checkUpdateOnStartup, urlConvertEnabled, urlConvertKeepSpaceEncoded, recentFilesEnabled, recentKeyword, recentMaxAgeDays, recentMaxResults, recentIncludeFolders, recentExtensionFilterMode, recentBlacklistExtensions, recentWhitelistExtensions, pathPasteEnabled, pinEnabled, favoriteEnabled, favoriteKeyword }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF、URLエンコード/デコード機能の ON/OFF とスペースのエンコード維持可否、最近使ったファイル一覧の呼び出しキーワード、パス貼り付け機能・ピン止め・お気に入りの ON/OFF とお気に入りの呼び出しキーワード。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`、`favoriteKeyword` のデフォルトは `"favorite"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。6つのキーワード（shutdown/restart/sleep/clipboard/recent/favorite）は互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照）。`recentIncludeFolders`/`recentExtensionFilterMode`/`recentBlacklistExtensions`/`recentWhitelistExtensions` は `/recent` の「表示対象設定」で、デフォルトはそれぞれ `false`/`"blacklist"`/空配列/空配列（詳細は「/recent の表示対象設定」節を参照）。`pinEnabled`/`favoriteEnabled` はそれぞれピン止め・お気に入り機能の ON/OFF（詳細は「ピン止め・お気に入り・メモ機能」節を参照）。フィールドの並び順は `src/types.ts` の `AppSettings` interface の宣言順と一致させている）
-  - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
-  - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（プレフィックスコマンド候補の使用履歴。`frecency` と同形式・同方式で、キーがファイルパスではなく呼び出し文字列（`/shutdown` 等）になる。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「プレフィックスコマンド候補表示」節を参照）
-  - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）
-  - `windowSize: { width, height }`（ウィンドウサイズ、論理ピクセル。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接書き込み、Rust 側が起動時に読み込んで適用する。詳細は「ウィンドウ」節を参照）
-  - `clipboardPaneWidth: number`（クリップボード履歴パネルの左ペイン幅、px。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。ドラッグ終了時（mouseup）およびフォーカスアウト時（blur）に保存する。Rust コマンドは追加しない）
-- 各タブに含まれる設定項目・その仕様は REQUIREMENTS.md「設定画面」節の各カテゴリの記述を参照（正本は REQUIREMENTS.md。CLAUDE.md には仕様を書き写さない。詳細は「変更時の同期チェックリスト」節を参照）。以下は REQUIREMENTS.md に書けない実装上の補足のみ
-  - ファイル検索タブの検索フォルダパステキストのクリック可能化は、既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶ実装で実現しており、追加の Rust コマンドや権限は不要である
-- 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` / `set_calc_enabled` / `set_system_command_enabled` / `set_system_command_keyword` / `set_web_search_enabled` / `set_copy_with_comma` / `set_clipboard_enabled` / `set_clipboard_prefix` / `set_clipboard_max_items` / `set_recent_files_enabled` / `set_recent_keyword` / `set_ocr_enabled` / `set_check_update_on_startup` / `set_path_paste_enabled`）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する
-- フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定（計算モード／プレフィックスコマンド候補表示モード／ファイル検索／Web検索行の表示／クリップボード履歴モード）に反映する。OFF の機能は対応する Tauri コマンド（`calculate` / `search_files`、プレフィックスコマンド候補表示、Web検索行の表示、クリップボード履歴モードへの切替）自体を呼び出さない・表示しない
-
-#### 設定画面の共通レイアウト・保存方針（フロントエンド）
-
-全タブに共通のレイアウト・保存ルール（REQUIREMENTS.md「設定画面」節の「共通レイアウト・保存方針（全カテゴリ共通）」を参照）を、以下の共通コンポーネント・共通フックで実現している。タブごとに個別実装せず、新しいタブ・設定項目を追加する際もこれらを再利用すること。
-
-**縦ラインによる区切りは、設定画面のどの箇所でも使用しない。** `SettingsGroup`（後述）がカード背景・左端の縦ラインを使わない設計であることに加え、タブ内で個別に要素をグルーピングしたい場合（例：起動ホットキーの修飾キー群とプルダウンの境目）も `border-l` 等の縦の区切り線を新設せず、`gap` による余白の広さだけで区別を表現する。過去に「全般」タブのホットキー設定で `border-l` を使った独自の区切りを入れたことがあったが、間隔が開きすぎる副作用を招いたうえこの方針にも反していたため、gap のみの表現に統一した（詳細は後述の「全般」タブの記述を参照）。
-
-- **階層構造（インデント）**：`SettingsIndent`（`src/components/SettingsIndent.tsx`）が担う。`pl-7` の左インデントのみを行う薄いラッパーで、各タブは「親 `FeatureToggle`」＋「`SettingsIndent` で包んだ従属設定群」という構成にする
-  - `disabled` prop を渡すとグレーアウト・操作不可（`opacity-40 pointer-events-none`）になる。ただしこのグレーアウトは「計算・変換」タブの機能ブロック単位（後述の `FeatureBlock`）でのみ使用する既存挙動を維持したもので、システムコマンド／クリップボード／最近使ったファイル／ファイル検索／OCR の各タブでは `disabled` を渡さず、機能 OFF 時も従属設定は編集可能なまま（従来の挙動を維持）
-  - `className` prop でレイアウト（`flex flex-col gap-*` 等）を上書きできる。ファイル検索タブの検索フォルダ一覧のように `flex-1 min-h-0` を必要とする特殊なレイアウトはこの prop で個別対応する
-  - `FeatureBlock`（`src/components/FeatureBlock.tsx`。既存。「計算・変換」タブの機能ブロックで使用）は内部で `SettingsIndent` を利用するようリファクタリングした（`FeatureToggle` ＋ `SettingsIndent disabled={!checked}` の組み合わせに委譲。見た目・挙動は変更していない）
-- **設定グループの表現**：`SettingsGroup`（`src/components/SettingsGroup.tsx`）が担う。要素順は「小見出し → 区切り線 → 説明文（任意）→ 子要素（設定項目）」で、カード背景・左端の縦ラインは使わない。**タブ内で複数の設定項目（または検索フォルダ一覧のような単一のリスト型設定）をまとめて示す見出しは、必ずこのコンポーネントを使うこと**（プレーンな `text-sm font-medium ...` の div を見出し代わりに使わない）。現在の使用箇所：「全般」タブの「起動ホットキー」（説明文あり）、「ファイル検索」タブの「検索フォルダ」（説明文なし）、「最近使ったファイル」タブの「表示対象設定」（説明文なし）
-  - 区切り線は小見出しの直下（数px程度の狭い間隔）に配置する。説明文や設定項目との間に置くと「見出しの下線」ではなく単なる仕切り線に見えてしまうため、必ず小見出し直後に置く
-  - 区切り線は `<hr>` ではなく `border-t` を持つ `div` で明示的に描画する（`<hr>` は Tailwind の preflight リセットの影響で意図した太さ・色で描画されず、実際にほぼ視認できなくなる事例があったため）。色も通常の項目間セパレータ（`border-gray-200/60`）より濃い `border-gray-300` にし、確実に視認できる濃さにする
-  - グループ小見出しは、サイズ・太さを通常の項目ラベル（`text-sm font-medium text-gray-800`）と揃え、色のみ一段抑える（`text-gray-700`）。「項目ラベルより目立たなくする」のではなく「項目ラベルとは役割が違う」ことが伝わるようにするための、控えめな差別化に留める（サイズまで落とすと単なるキャプションに見え、グループの起点としての存在感がなくなることが分かったため、サイズは通常ラベルと同等に戻した経緯がある）
-  - `description` prop は省略可能。グループの意味が自明でない場合にのみ使う。「表示対象設定」に元々付いていた説明文（「フォルダごとではなく `/recent` 機能全体で共有する設定」という趣旨の文言）は、ファイル検索側のフォルダ単位設定との内部的な対比を説明しているだけで、このタブしか見ないユーザーには意味が伝わらないと判断し削除した（同種の「実装上の対比を説明するだけの補足」は今後も description に含めないこと）
-  - グループ開始前の余白は、呼び出し側の flex gap（多くの場合 `gap-4` = 16px）に依存せず、`SettingsGroup` 自身が既定で `mt-8`（32px、目安2倍）を持つことで、通常の項目間の余白より明確に広い余白を保証する
-  - `className`（既定 `"mt-8"`）・`contentClassName`（既定 `"mt-3 flex flex-col gap-3"`）で外側ラッパー／子要素コンテナのレイアウトを個別に上書きできる（`SettingsIndent` の `className` prop と同じ考え方）。用途の例：
-    - 「全般」タブの「起動ホットキー」はそのタブの先頭要素（上に区切るべき内容がない）なので `className=""` で既定の `mt-8` を打ち消している
-    - 「ファイル検索」タブの「検索フォルダ」は一覧をスクロール表示するため、`className="mt-8 flex-1 flex flex-col min-h-0"` / `contentClassName="mt-3 flex-1 flex flex-col min-h-0 gap-2"` で `flex-1`/`min-h-0` を伝播させている
-  - 「ファイル検索」タブの検索フォルダ一覧は、各行の `max-w-md` で一覧全体の最大幅を制限している（`FileSearchSettings.tsx`）。フォルダ名（行左端、`flex-1 min-w-0 truncate`）と詳細設定／削除アイコン（行右端）が同一行内にあるため、行がパネル幅いっぱいに広がるウィンドウ幅の広い環境では両者の距離が開きすぎ、どのフォルダに対する操作アイコンか対応が取りにくくなる。行ごとにアイコンをフォルダ名の直後へ寄せる方式（可変幅）ではなく、一覧全体に固定の最大幅を設ける方式を採用した（複数行にわたってアイコンの位置が縦に揃い、スキャンしやすいため）。以前あった、一覧を設定パネルの右端まで見せかけ上ブリードさせる `-mr-4` の負のマージンは、この上限幅の導入に伴い意味を失うため削除した
-  - **検索フォルダ一覧のパス表示（中央省略）**：長いパスは末尾省略（CSS `truncate` のみ）だと、フォルダを識別する上で最も重要な末尾のフォルダ名が失われる。Windows のエクスプローラーやファイルダイアログに合わせ、先頭のドライブ／UNCルートと末尾のファイル/フォルダ名を残し、中間のセグメントを `...` に置き換える中央省略を採用した。CSS の `text-overflow: ellipsis` は末尾省略しか行えないため、JS側で表示用の文字列そのものを加工する
-    - `truncatePathMiddle(path, maxWidth, font)`（`src/lib/path.ts`）：中央省略の本体。パスを `\` 区切りのセグメントに分割し、先頭ルート（ドライブ文字、または `\\server` 形式のUNCルート。判定は「先頭から続く空文字セグメント＋直後の非空セグメント」をまとめて1ルートとして扱う）と末尾のファイル/フォルダ名を必ず残す。中間セグメントは、前方・後方どちらに1つ追加した場合の描画幅が小さいかを都度比較しながら、収まる限り交互に追加していく貪欲法で、幅に収まる最大の情報量を残す。ルート・末尾だけでも `maxWidth` に収まらない極端なケース（コンテナが極端に狭い、あるいはセグメント自体が長すぎる）や、中間に省略できるセグメントが存在しない（ルートと末尾しかない）場合は、文字単位で中央から削る `truncateCharsMiddle` にフォールバックする
-    - 表示可能幅の実測方式を採用した理由：セグメント数による決め打ち省略（例：常に先頭2つ＋末尾1つを残す）も検討したが、この一覧行の幅はウィンドウリサイズ（要件上サポート済み）や `max-w-md` の上限との兼ね合いで変動するため、決め打ちだと広い時に不必要に省略されたり、狭い時に収まりきらなかったりする。Canvas の `measureText` で実際のフォント・文字幅を測って必要最小限だけ省略する方式の方が、表示幅を無駄にせず正確に収まることを優先した
-    - フォントは呼び出し元の DOM 要素から `getComputedStyle(el).font` で動的に取得する（フォントサイズ・ウェイト等のハードコードを避けるため）。幅の再計測は `useTruncatedPath<T extends HTMLElement>(path)`（`src/hooks/useTruncatedPath.ts`）という共通フックに切り出しており、`ResizeObserver` で要素幅の変化（ウィンドウリサイズ等）を監視し、変化のたびに再計算する。このフックは「対象パス文字列」だけを受け取る汎用実装のため、今後 `/recent` の一覧等、他のパス表示箇所でも同様に採用できる
-    - React の Rules of Hooks 上、`folders.map()` のコールバック内で直接 `useTruncatedPath` を呼ぶことはできない（ループ内でのフック呼び出しは禁止）。そのため1行分のパス表示だけを担う `FolderPathButton` という行専用のコンポーネントに切り出し、そのコンポーネントのトップレベルでフックを呼ぶ形にしている。同様に他の一覧へ適用する場合も、行を独立したコンポーネントとして切り出したうえで `useTruncatedPath` を使うこと
-- **保存モデル（一括保存）**：
-  - `useSettingsDraft<T>(committedValue, isEqual?)`（`src/hooks/useSettingsDraft.ts`）：テキスト・数値・タグ入力1項目分のドラフト state を管理する共通フック。`[draft, setDraft, isDirty]` を返す。`committedValue`（保存済みの値＝props）が変化するたびドラフトを再同期し、`isDirty` はドラフトと `committedValue` の差分から都度算出する（別 state を持たない）。配列（拡張子タグ等）を扱う場合は第2引数に `arraysEqual`（`src/lib/arrayUtils.ts`）等の等価判定関数を渡す
-  - `SettingsSaveBar`（`src/components/SettingsSaveBar.tsx`）：タブ末尾に置く単一の「保存」ボタン＋「未保存の変更があります」表示＋エラー表示をまとめた共通コンポーネント。`isDirty` が `false` の間はボタンを無効化する
-  - 各タブは複数の `useSettingsDraft` を束ね、`isDirty`（OR）と `handleSave`（ダーティなフィールドだけを対象コマンドへ直列で保存）をタブコンポーネント側に実装する。直列保存は「ダーティな項目を先頭から順に保存し、いずれかが失敗した時点で打ち切る」方式で統一している（クリップボード／最近使ったファイルのように複数フィールドが単一のエラー文字列 state を共有するタブで、後続フィールドの保存成功が先行フィールドの失敗表示を上書き・消去してしまう事故を避けるため）。この直列保存を可能にするため、対象の `set_*` 系フックコールバック（`useSettings.ts` の `setSystemCommandKeyword` / `setClipboardPrefix` / `setClipboardMaxItems` / `setRecentKeyword` / `setRecentMaxAgeDays` / `setRecentMaxResults` / `setRecentDisplaySettings` / `setFolderSettings`、`useHotkey.ts` の `setHotkey`）は、**成功時は `null`、失敗時はエラーメッセージ文字列（`Promise<string | null>`）を返す**契約に統一している（旧 `Promise<boolean>` からの変更経緯は次項「エラー状態の保持場所」を参照）。呼び出し元は戻り値が非 `null` ならその文字列をそのままエラー表示に使う
-  - トグル・チェックボックス・ラジオボタンは引き続き操作した時点で即時保存する（`onChange` から直接 `set_*` を呼ぶ、従来通りのパターン）。「最近使ったファイル」タブの「フォルダを対象に含める」トグルは、同じグループ内の拡張子フィルタリング（タグ入力＝一括保存対象）とは独立して即時保存する（トグル変更時は `extensionFilterMode`/`blacklistExtensions`/`whitelistExtensions` の**保存済み**の値をそのまま使って `set_recent_display_settings` を呼び、未保存のタグ編集内容を巻き込まない）
-  - タブ切り替え時の未保存変更の破棄は追加コードなしで実現している：`SettingsPanel` は選択中のタブのみを条件付きレンダリングしており（他タブは unmount される）、`useSettingsDraft` のドラフト state はタブコンポーネントのローカル state のため、タブ切り替え時の unmount で自動的に破棄される
-- **エラー状態の保持場所（設計原則）**：バリデーションエラー（保存失敗時のメッセージ）は、**そのエラーを表示するタブ／モーダルコンポーネント自身のローカル state として保持する**。`App.tsx` の `useSettings`/`useHotkey` のようなタブより上位のフックには一切持たせない
-  - **経緯（不具合とその原因）**：ドラフト state をタブコンポーネントのローカルに統一した際、エラー state だけは `useSettings.ts`/`useHotkey.ts`（`App.tsx` で1度だけマウントされ、`SettingsPanel` が開いている間ずっと生き続ける）に取り残されていた。その結果、例えば「クリップボード」タブで「最大保持件数」に不正な値を入力・保存してエラーを表示させたあと、別タブへ切り替えて戻ってきても、そのエラーメッセージが消えずに残る不具合があった（`clipboardSettingsError` はタブが unmount されても影響を受けない、タブより上位の state だったため）
-  - **横並び調査の結果**：同一パターン（バリデーションエラーが `useSettings.ts`/`useHotkey.ts` 側の state として保持され、対応する `reset*Error` 関数が `App.tsx` の `closeSettings`（パネルを閉じた時のみ）からしか呼ばれない）が、`hotkeyError`（全般タブ）／`clipboardSettingsError`（クリップボードタブ）／`recentSettingsError`（最近使ったファイルタブ）／`systemCommandKeywordErrors`（システムコマンドタブ）／`folderSettingsError`（フォルダ詳細設定モーダル）の**5箇所全てに共通して存在していた**（`folderSettingsError` は、モーダルを開く直前に呼び出し元が明示的に `onResetFolderSettingsError()` を呼ぶ個別対応が既に入っていたため症状は表面化していなかったが、同じ構造的弱さを抱えていた）
-  - **原因の性質の判定**：特定のタブの実装ミスではなく、「エラー state の保持場所」というこの設定画面全体の設計に共通する構造的な弱さと判定した。ドラフト state は既にタブローカルに統一されていた（unmount で自動破棄される）のに対し、エラー state だけが取り残されていたという非対称性がある以上、1タブだけを個別に直しても他の4箇所が同じ形で再発するのは確実であり、全体設計の見直しを行った
-  - **検討した設計案**：(1) `SettingsPanel` のタブ切り替えハンドラで全エラー state の `reset*Error` をまとめて呼ぶ（対症療法。新しいタブ・新しいエラー state を追加するたびに、この1箇所への追加登録を手動で行うことを求め続ける必要があり、"忘れたら同じ不具合が再発する" という構造が残る）／(2) **エラー state 自体をタブ／モーダルコンポーネントのローカル state に変更する**（ドラフト state と同じ mount ライフサイクルに乗せることで、"unmount されたら消える" という既に信頼されている仕組みだけで自動的に正しくなる。新しいタブを追加する開発者が特別な配線を意識する必要がない）。(2) を採用した。理由：(1) は場当たり的な追加登録を要求し続ける点で「モグラ叩き」の再発を構造的に防げないのに対し、(2) は「エラーの寿命は、それを表示する UI の寿命と一致するべき」という単純な原則に沿っており、今後 SettingsPanel に新しいタブ・新しい保存項目が追加された場合も、単に `useState` をそのタブ内に置くという通常の実装パターンに従うだけで自動的に正しい挙動になる
-  - **適用した変更**：`useSettings.ts`/`useHotkey.ts` 側の `xxxError` state・`setXxxError`・`resetXxxError` を全廃し、対応する `set_*` コールバックの戻り値を `Promise<boolean>` から `Promise<string | null>`（成功時 `null`、失敗時エラーメッセージ）に変更した。呼び出し元（`GeneralSettings`/`SystemCommandSettings`/`ClipboardSettings`/`RecentFilesSettings`/`FolderDetailSettingsModal`）はそれぞれ `useState<string | null>` でエラーをローカルに保持し、`handleSave`（またはモーダルの `handleSave`）が戻り値を見て `setError` する。`App.tsx` の `closeSettings` から5つの `reset*Error` 呼び出しをすべて削除した（呼び出す対象の関数自体が存在しなくなったため）
-  - **副次的な単純化**：`FolderDetailSettingsModal` は `detailTarget` が `null` → フォルダオブジェクトに変わるたびに新規マウントされる（フォルダ→別フォルダへ直接遷移することはなく、必ず一度 `null` を経由する）ため、エラー state をモーダル自身のローカルに持たせるだけで「モーダルを開くたびにエラー表示がリセットされる」が自動的に成り立つ。これにより、以前 `FileSearchSettings.tsx` の歯車アイコンの `onClick` にあった `onResetFolderSettingsError()` の明示呼び出し（モーダルを開く直前に手動でエラーをリセットする個別対応）が不要になり削除できた
-- **対象外**：`FolderDetailSettingsModal`（検索フォルダの詳細設定ダイアログ）のレイアウト・保存ボタンの配置は本節の共通レイアウトルールの対象外。モーダル自身の「保存」「キャンセル」ボタンによる一括保存（従来通り）を維持する。ただし上記「エラー状態の保持場所」の原則（エラーをそのコンポーネント自身のローカル state に持つ）はレイアウトルールとは別の話であり、このモーダルにも適用されている
-- 「全般」タブ・「このアプリについて」タブは、タブ全体を表す単一の ON/OFF 機能が存在しないため、親 `FeatureToggle` ＋ `SettingsIndent` の構成は採用していない。「全般」タブのホットキーは元々タブ内専用の「保存」ボタンを持つ深い保存パターン（構成が複数コントロール＝チェックボックス＋プルダウンにまたがり、"少なくとも1つの修飾キー" のバリデーションを要するため、チェックボックス単体の即時保存にはできない）だったため、専用ボタンをタブ末尾の `SettingsSaveBar` に置き換える形で一括保存モデルへ統一した。「起動ホットキー」の見出し自体も他タブのグループ見出しと表現を揃えるため `SettingsGroup`（`className=""` で既定の `mt-8` を打ち消し、タブ先頭要素として不要な余白が生まれないようにしている）でラップしている
-  - ホットキーの入力コントロール（修飾キー Ctrl/Alt/Shift/Win のチェックボックス群＋通常キーのプルダウン＋現在の組み合わせのプレビュー表示）は、`flex flex-wrap` の1行レイアウトに統一している（配置順は Ctrl → Alt → Shift → Win → プルダウン → プレビュー）。修飾キーのチェックボックス群とプルダウン＋プレビューのグループは、外側コンテナの `gap-4`（修飾キー同士の間隔と同じ量）のみで区切る。当初は `border-l`（縦の区切り線）＋左右の余白（`ml-6 pl-6`）で境目を明示していたが、間隔が開きすぎて「ひとつのホットキー設定」に見えなくなったこと、また縦ラインによる区切りは本節冒頭の共通方針（後述）に反することから、gap のみに戻した。ウィンドウ幅が狭い場合は `flex-wrap` によりプルダウン＋プレビューのグループごと次の行へ折り返す（要素単位でバラバラに折り返さない）
-
-### 計算機能（Rust / フロントエンド）
-
-- `appSettings.calcEnabled` が `false` の場合、入力内容に関わらず `calculate` コマンドを呼ばない（計算結果表示欄自体を出さない）
-- `calcEnabled` が `true` のとき、入力文字列が数字と演算子（`+ - * /`）・括弧のみで構成され、数字と演算子を1文字以上含む場合（`isCalcExpression`、`src/hooks/useSearch.ts`）に自動で `calculate` を呼び出す
-- 数式らしい入力であってもファイル検索（`search_files`）とは排他にせず、両方を独立して実行する（`useSearch.ts` の `useEffect` 内で `calculate` 呼び出しと `search_files` 呼び出しを条件分岐せず両方行う）。計算結果はファイル検索結果を置き換えず、その先頭の別枠固定表示領域に共存表示する（URLエンコード/デコード結果 `urlConvertResult` と同じ位置づけ。「URLエンコード/デコードの自動表示」節を参照）
-  - 選択（↑↓キー）のインデックス空間は「計算結果（表示中なら1）＋ URL変換結果（表示中なら1）＋ ファイル検索結果」の順で連結する。計算結果は常にインデックス0、URL変換結果はその直後（計算結果がなければ0）を占有し、ファイル検索結果はその後ろへオフセットされる（`ResultList.tsx` の `calcOffset` / `urlConvertOffset`、`App.tsx` の `calcLength` / `urlConvertLength`）
-  - `isCalcExpression`（数字・演算子・括弧のみ）と `isUrlLikeInput`（`http(s)://` 始まり、レターを含む）は許容文字クラスが構造上排他のため、計算結果と URL変換結果が同時に発生することはない。ただし将来どちらかの判定条件が緩んだ場合に備え、上記のインデックス連結順（計算結果 → URL変換結果）をルールとして明記している
-  - 選択中に Enter またはクリックで結果をクリップボードにコピーしてウィンドウを閉じる挙動は `urlConvertResult` と同一（`copyResult` / `copyUrlConvertResult`）
-- Rust 側で四則演算・括弧（優先順位対応の再帰下降パーサ）を評価し、結果を返す
-  - 自前実装（外部クレート未使用）。`tokenize`（字句解析）→ `Parser`（`parse_expr` → `parse_term` → `parse_factor` の3段構成の再帰下降パーサ）→ `calculate_expr`（トークン列が丁度消費し切れているかを検証してから評価結果を返す）の流れで評価する
-  - `Token` は `Num` / `Plus` / `Minus` / `Star` / `Slash` に加え `LParen`（`(`） / `RParen`（`)`）を持つ。`tokenize` はこれらの文字をそのままトークン化する
-  - 括弧は `parse_factor`（`factor := ('+' | '-')* (number | '(' expr ')')`）で処理する。`(` を検出したら `parse_expr` を再帰呼び出しして中身を評価し、続く `)` を消費する。`)` が見つからない場合（閉じ括弧の不足）は `None` を返し、既存のパース失敗時（数字以外の文字混入等）と同様に `calculate` コマンドの戻り値が `None` になる。新規のエラーメッセージは設けていない
-- `calculate` が `None` を返した場合（ゼロ除算・パース不能な式・括弧の対応不整合を含む）は計算結果表示欄自体を表示せず、ファイル検索結果はインデックス0から通常通り表示する（「計算できません」のような固定メッセージは表示しない）
-- 表示は常にカンマ区切り。コピー時にカンマ区切りを含めるかは `appSettings.copyWithComma`（デフォルト `true`）に従う。フロントエンドはこの値を見て `formatWithCommas` を適用するかをコピー直前に切り替える（画面表示用のフォーマットとは独立した分岐）
-  - `set_copy_with_comma(enabled)`（Rust コマンド）は他の機能 ON/OFF トグル（`set_calc_enabled` 等）と同一のパターン（`load_app_settings` → フィールド更新 → `save_app_settings` → 更新後の `AppSettings` を返す）で実装する
-
-### システムコマンド機能（Rust / フロントエンド）
-
-- 明示プレフィックスは「`/`（固定の区切り文字） + キーワード（コマンドごとに個別カスタマイズ可能）」の2部構成。`/` 自体を変更する設定項目はない
-- `AppSettings` はシステムコマンド用に `shutdown_keyword` / `restart_keyword` / `sleep_keyword`（camelCase 変換で `shutdownKeyword` / `restartKeyword` / `sleepKeyword`）の3フィールドを持つ（デフォルトはそれぞれ `"shutdown"` / `"restart"` / `"sleep"`）。旧バージョンの設定ファイルとの互換のため、いずれも `#[serde(default = ...)]` でデフォルト値を補う
-- `appSettings.systemCommandEnabled` が `false` の場合、システムコマンドの候補は一切表示しない（判定自体を行わない）
-- `systemCommandEnabled` が `true` のとき、検索クエリが `/` + 各コマンドのキーワード（大小文字区別なし）に前方一致するかどうかをコマンドごとに独立して判定する（`useSearch.ts` の `matchSystemCommands`）
-  - クリップボード履歴のような「共通プレフィックス＋残り文字列の抽出」ではなく、コマンドごとに `/` + キーワード全体の文字列に対してクエリが前方一致するかを判定する（`systemCommandKeyword(action, appSettings)` でコマンドに対応するキーワードを取得し、`/` を連結してから比較する）
-  - `shutdown_keyword` → シャットダウン
-  - `restart_keyword`（従来の `reboot` は廃止し `restart` に一本化） → 再起動
-  - `sleep_keyword` → スリープ
-  - どのコマンドにも前方一致しない入力（プレフィックスなしで `shutdown` 等とだけ入力した場合を含む）は通常のファイル検索・Web検索の対象として扱う
-- モードが有効な間はファイル検索・計算結果表示を行わない（システムコマンドモードはファイル検索・計算結果と排他のまま。この点は計算機能との共存化の対象外）。Windows のファイル名に `/` を使用できないため、ファイル検索と共存させる実益がなく排他のままとしている
-- キーワードへの前方一致のため、例えばキーワードが既定値のままなら `/re` で「再起動」、`/s` で「シャットダウン」「スリープ」の両方が候補に出る（複数候補時は ↑↓ で選択）
-- マッチしたシステムコマンドは、クリップボード履歴の呼び出しキーワードと合わせて統一された候補一覧（`prefixCommandCandidates`）としてフロントエンドが表示・選択を扱う。表示形式・排他制御・使用実績（frecency）の詳細は「プレフィックスコマンド候補表示」節を参照
-- 各キーワードは設定画面の「システムコマンド」カテゴリで、3つの独立したテキスト入力としてそれぞれ変更可能（1つの共通プレフィックス設定ではない）
-  - `set_system_command_keyword(command, keyword)`（Rust コマンド）は対象コマンド（`"shutdown"` / `"restart"` / `"sleep"`）とキーワードを引数に取り、該当フィールドのみを更新する。`load_app_settings` → バリデーション → フィールド更新 → `save_app_settings` → 更新後の `AppSettings` を返す、という他の `set_*` と同一のパターンで実装する
-  - 空文字列はエラーを返し保存しない
-  - `validate_unique_keyword(settings, changing, new_value)`（Rust の共通関数）で重複チェックを行う。システムコマンド3キーワード＋クリップボードの呼び出しキーワード（`clipboard_prefix`）の計4つのうち、`changing`（変更対象の識別子）を除く他の3つのいずれかと大小文字区別なしで完全一致する場合はエラーを返し保存しない。この関数は `set_system_command_keyword` と `set_clipboard_prefix` の両方から呼ばれる（詳細は「クリップボード履歴」節を参照）
-  - フロントエンド（`useSettings.ts`）はコマンドごとに独立したエラー state（`systemCommandKeywordErrors: { shutdown, restart, sleep }`）を持ち、保存に失敗した場合は該当コマンドのフィールドにのみエラーメッセージを表示する（他のフィールドの表示・値には影響しない）。設定パネルを閉じる際に全フィールド分をまとめてリセットする（`resetSystemCommandKeywordErrors`）
-- 候補を Enter／クリックした時点では即実行せず、確認モーダル（`pendingCommand` state）を表示する
-  - モーダルには対象コマンドのラベル（例: 「シャットダウン」）を表示する
-  - モーダル表示中は検索入力を `disabled` にし、↑↓ による候補選択も無効化する
-  - 「キャンセル」ボタン or Esc キーでモーダルを閉じ、候補選択画面に戻る（ウィンドウは閉じない）
-  - 「実行」ボタン or Enter キーで確定し、Rust 側の `execute_system_command(action)` を呼び出してウィンドウを閉じる
-- `execute_system_command(action)`（Rust）自体は確認を行わず、指定されたコマンドを即実行するだけ。確認は呼び出し前のフロントエンド責務とする
-  - `shutdown` → `shutdown /s /t 0`
-  - `restart` → `shutdown /r /t 0`
-  - `sleep` → `rundll32.exe powrprof.dll,SetSuspendState 0,1,0`（スタンバイ。ハイバネートではない）
-
-### Web検索機能（フロントエンド）
-
-- `appSettings.webSearchEnabled` が `true` かつ検索クエリ（`query.trim()`）が1文字以上の場合、現在表示中のリスト（クリップボード履歴モードを除く。システムコマンド候補、またはファイル検索結果＋計算結果＋URL変換結果の共存表示のいずれか）の末尾に「Googleで〇〇を検索」の固定行を常に追加する（〇〇は `query` そのもの）
-  - ファイル検索結果が0件で「見つかりませんでした」を表示している場合も、その下に固定行を追加する
-  - 通常の検索結果アイテムと区別するため、アイコンの配色（青系）と上端のボーダーで視覚的に区別する
-- ↑↓ による選択のインデックス空間は「現在のモードのリスト長（`baseLength`） + Web検索行（表示中なら 1）」を対象にする。Web検索行は常にリストの最後のインデックスになる。`baseLength` はシステムコマンドモード／クリップボード履歴モードでは各モードの件数、それ以外では「ファイル検索結果件数 + 計算結果（表示中なら1）+ URL変換結果（表示中なら1）」の合計になる（詳細は「計算機能」節を参照）
-- Enter／クリックで `@tauri-apps/plugin-shell` の `open()` を使い、デフォルトブラウザで `https://www.google.com/search?q=<encodeURIComponent(query)>` を開いてウィンドウを閉じる
-  - Rust 側の追加実装は不要（`shell:allow-open` permission は既存の `capabilities/default.json` に登録済み）
-
-### クリップボード履歴（Rust / フロントエンド）
-
-- 検出（Rust）：メインウィンドウの HWND を `SetWindowSubclass`（`windows-rs` の `Win32_UI_Shell`、既存）でサブクラス化し、`AddClipboardFormatListener`（`Win32_System_DataExchange` feature）でクリップボード変更通知の受信者として登録する
-  - ウィンドウが `hide()` で非表示の間もメッセージループは稼働しているため、バックグラウンドでも `WM_CLIPBOARDUPDATE` を受信できる
-  - サブクラスプロシージャは `WM_CLIPBOARDUPDATE` を受信すると、即座に `std::thread::spawn` で別スレッドへ処理を逃がし、ウィンドウのメッセージループ（メインスレッド）をブロックしない。サブクラスプロシージャ自体は「スレッドを立てて返る」以外の処理を一切行わない
-  - `extern "system"` のサブクラスプロシージャはクロージャで `AppHandle` を捕捉できないため、`static APP_HANDLE: OnceLock<AppHandle>` を `setup()` で一度だけ設定し、プロシージャ内ではそこから取得して spawn したスレッドに `clone()` で渡す
-- 画像の取得・キャッシュ（Rust、`handle_clipboard_change` 関数。spawn したスレッド上で実行）
-  - `appSettings.clipboardEnabled` が `false` の場合は何もせず即 return する（機能 OFF 時はキャプチャ処理自体を行わず CPU を消費しない）
-  - `app.clipboard().read_image()`（`tauri-plugin-clipboard-manager` の Rust API。`arboard` 経由でクリップボードの画像を直接読む。JS の `readImage()` 経由ではなく Rust から直接呼ぶため、画像データが IPC（JS ⇄ Rust の JSON シリアライズ）を一度も通過しない）が成功した場合のみ画像として処理する
-  - 取得した RGBA を `image` クレートで PNG にエンコードし、そのバイナリ（`Vec<u8>`）をアプリ内メモリのキャッシュ（`ClipboardImageCache`。`tauri::State` で管理する `Mutex<HashMap<id, Vec<u8>>>` ＋挿入順管理用 `VecDeque<id>`）にユニーク ID をキーとして保存する
-  - 同時に `image::imageops::resize`（幅 320px 以下、高さはアスペクト比維持）でサムネイルを生成し、PNG → Base64 化した `data:image/png;base64,...` 文字列を作る
-  - フロントエンドへは `"clipboard-changed"` イベントで `{ type: "image", id, thumbnailDataUrl, width, height, timestamp }`（`width`/`height` は元画像のサイズ）のみを emit する。画像本体（PNG バイナリ・RGBA）は一切 JS 側へ渡さない
-    - `ClipboardChangedPayload` enum の `#[serde(rename_all = "camelCase")]` は enum 直下に付けても variant タグ名（`Text`/`Image`）のリネームにしか効かず、struct variant（`Image { .. }`）内部のフィールド名には伝播しない。`thumbnail_data_url` を JS 側の `thumbnailDataUrl` と一致させるには、`Image` variant 自身にも `#[serde(rename_all = "camelCase")]` を付ける必要がある（付け忘れるとフィールド名が snake_case のまま emit され、JS 側で `payload.thumbnailDataUrl` が `undefined` になりサムネイルが表示されないバグになる）
-  - `read_image()` が失敗した場合（クリップボードに画像形式がない）は `{ type: "text" }` を emit するだけで終える。テキストの実際の取得は従来通りフロントエンドの責務とする（テキストは画像と違って IPC 越しでも軽量なため、性能上の問題がなく変更不要）
-  - キャッシュは `appSettings.clipboardMaxItems` を超えたら挿入順の古いものから削除する（`VecDeque` の先頭から `pop_front` し、対応する `HashMap` エントリも削除）
-- テキストの取得・記録（フロントエンド、変更なし）：`"clipboard-changed"` イベントの payload が `{ type: "text" }` の場合のみ `@tauri-apps/plugin-clipboard-manager` の `readText()` を呼び、成功したらテキストエントリとして記録する
-  - `appSettings.clipboardEnabled` が `false` の間は payload の種類に関わらず無視する（記録しない）。ネイティブの監視（`AddClipboardFormatListener`）自体は ON/OFF に関わらず常時有効のままにし、Rust 側を動的に着脱しない
-  - テキストエントリ：`{ type: "text", id, text, timestamp }`（`id` はフロントエンドで生成するランダム文字列）
-  - 画像エントリ：`{ type: "image", id, thumbnailDataUrl, width, height, timestamp }`。`id` は Rust 側のキャッシュキーをそのまま使う（書き戻し時にも同じ `id` を使ってキャッシュを参照するため）
-  - 重複排除：テキストは文字列の完全一致、画像は受信した `thumbnailDataUrl` の完全一致で既存エントリを検出し、見つかった場合は既存エントリを削除してから最新の内容として先頭に再挿入する（件数は増やさず「最新の1件」に統合）
-  - 最大件数（`appSettings.clipboardMaxItems`、デフォルト `50`）を超えた古いエントリは配列末尾から削除する（表示用リストの上限。Rust 側キャッシュの上限とは別管理だが同じ設定値を参照するため実質揃う）
-- 永続化：テキストエントリのみ `@tauri-apps/plugin-store` の JS API で `settings.json` の `"clipboardHistory"` キーへ永続化する（frecency と同じ方式。Rust コマンドは追加しない）。画像エントリ（サムネイルや ID）は永続化対象外（メモリ上のみ。アプリ再起動で失われる。Rust 側の画像キャッシュもプロセス内メモリのみで再起動とともに消える）
-  - アプリ起動時（マウント時）に `clipboardHistory` を読み込み、テキストエントリのみの履歴として復元する
-- 呼び出し（モード切替）：明示プレフィックスは「`/`（固定） + `appSettings.clipboardPrefix`（呼び出しキーワード。フィールド名・保存キーはリネームせずそのまま流用し、意味だけを「`/` に続くキーワード」として扱う。デフォルト `"cb"`）」の2部構成。検索クエリが `/` + `clipboardPrefix`（大小文字区別なし）に前方一致する場合にクリップボード履歴モードへ切り替える（`useSearch.ts` の `clipboardModeFilter`。`/` を先頭に連結してから前方一致判定する点はシステムコマンドと同じだが、こちらは単一キーワードのため前方一致した残り文字列をそのまま履歴のテキストフィルタとして使う）。画像エントリはテキストを持たないため、フィルタ文字列が空でない間は一覧から除外する
-  - `appSettings.clipboardEnabled` が `false` の場合はこのモード判定自体を行わない（通常の検索/計算/システムコマンド判定にフォールバックする）
-  - 呼び出しキーワードは設定画面の「クリップボード」カテゴリの「呼び出しキーワード」欄（ラベルは「呼び出しプレフィックス」から変更）で変更可能。入力欄の近くに「`/` が自動的に先頭に付与されます」という説明を表示する
-  - `set_clipboard_prefix(prefix)`（Rust コマンド）は保存時、システムコマンド機能の `validate_unique_keyword(settings, "clipboard", trimmed)` を呼び、システムコマンド3キーワードのいずれかと重複する場合はエラーを返し保存しない（詳細は「システムコマンド機能」節を参照）
-- 一覧表示：左リストは新しい順。テキストは先頭数十文字、画像はサムネイルアイコン＋コピー日時を表示する。↑↓ で選択、Enter／クリックで選択中のエントリをクリップボードへ書き戻してウィンドウを閉じる
-  - テキストの書き戻しは既存の `copy_to_clipboard`（Rust コマンド）を再利用する
-  - 画像の書き戻しは `paste_clipboard_image(id)`（Rust コマンド）を呼ぶだけ。フロントエンドはエントリの `id` を渡すのみで、画像バイナリを一切扱わない
-    - Rust 側は `ClipboardImageCache` から `id` に対応する PNG バイナリを取得し、`image::load_from_memory` で RGBA にデコードしたうえで Win32 API（`OpenClipboard` → `EmptyClipboard` → `SetClipboardData(CF_DIB, ...)` → `CloseClipboard`）を直接呼んでクリップボードへ書き込む（`GlobalAlloc`/`GlobalLock`/`GlobalUnlock` で確保した `GMEM_MOVEABLE` メモリに BITMAPINFOHEADER ＋ ボトムアップ BGRA ピクセル列を書き込み、`SetClipboardData` に渡す。渡したメモリの所有権は OS に移るため明示的な解放は行わない）
-    - `CF_DIB` は `Win32_System_Ole` feature、`GlobalAlloc` 等は `Win32_System_Memory` feature（いずれも `Cargo.toml` に追加）
-- 分割線リサイズ：`ClipboardPanel` コンポーネントが左右ペイン間に分割線要素（幅 4px）を描画し、`onMouseDown` でドラッグ開始を検出する
-  - 左ペイン幅を `useState` でコンポーネント内部管理し、`initialLeftWidth` props（App.tsx が store から読み込んで渡す）で初期値を設定する（デフォルト 224px）
-  - ドラッグ中は `document` レベルの `mousemove`/`mouseup` を `useEffect` で登録して追従し、`useEffect` のクリーンアップで解除する。`isDragging`（ref）と `leftWidthRef`（現在幅を mouseup コールバックに伝えるための ref）の 2 本を使って実装する
-  - 左ペインの最小幅 150px、最大幅はパネル全体の 60%（`panelRef` で外コンテナを計測）
-  - ドラッグ中は `document.body.style.cursor = "col-resize"` / `userSelect = "none"` をセットし、mouseup で元に戻す
-  - 幅確定（mouseup）時に `onWidthChange` コールバックを呼ぶ。App.tsx はこのコールバックで `settings.json` の `"clipboardPaneWidth"` を即時保存する
-  - フォーカスアウト（blur）時にも App.tsx の `clipboardPaneWidthRef`（mouseup で常に最新値を保持するための ref）を使って同キーへ保存する
-  - `clipboardPaneWidthRef`（mouseup コールバック用）と `clipboardPaneWidth` state（ClipboardPanel への props 用）は必ず同時に更新する。ref のみ更新して state を更新しないと、パネル再マウント時に古い幅が渡されるバグになる
-- 右パネル：クリップボード履歴モードのときのみ、左リストの右側に詳細パネルを表示する2カラムレイアウトに切り替える（他のモードは従来通り単一カラム）。選択中のエントリがテキストなら本文（折り返し表示）とコピー日時・文字数、画像ならサムネイル（`<img src={thumbnailDataUrl}>`）とコピー日時・画像サイズ（元画像の `width`×`height`）を表示する
-- 必要な権限（`capabilities/default.json`）：`clipboard-manager:allow-read-text`（テキスト取得用。画像の読み書きは Rust 内部で直接 `app.clipboard()` / Win32 API を呼ぶため JS 側のコマンド許可は不要で `allow-read-image` / `allow-write-image` は付与しない）
-
-### 最近使ったファイル一覧（Rust / フロントエンド）
-
-- 明示プレフィックスは「`/`（固定） + `appSettings.recentKeyword`（呼び出しキーワード。デフォルト `"recent"`）」の2部構成。判定方式（前方一致・残り文字列をフィルタとして使う）はクリップボード履歴と同じ（`useSearch.ts` の `recentModeFilter`）
-  - `appSettings.recentFilesEnabled` が `false` の場合はこのモード判定自体を行わない
-  - 他のプレフィックスキーワード（システムコマンド3つ・クリップボード）と重複できない。`validate_unique_keyword` の対象に含まれる（「システムコマンド機能」節を参照）
-  - キーワードは設定画面の「最近使ったファイル」カテゴリで変更可能。`set_recent_keyword(keyword)`（Rust コマンド）は他の `set_*` と同一パターン（空文字列はエラー、重複チェック後にフィールド更新・保存）で実装する
-- 取得（Rust、`recent_files.rs`）：`get_recent_files()`（Rust コマンド）が以下2フォルダの直下（非再帰）を走査し、`.lnk`（ショートカット）・`.url`（インターネットショートカット）を最終アクセス日時（由来ファイル自体の mtime）降順で最大 `MAX_SEARCH_RESULTS`（50）件返す
-  1. Windows の Recent フォルダ：Known Folder API（`SHGetKnownFolderPath(&FOLDERID_Recent, ...)`）で取得する。環境によって実パスが異なり得るためハードコードしない
-  2. Office の Recent フォルダ（`%APPDATA%\Microsoft\Office\Recent`）：対応する Known Folder API が存在しないため `%APPDATA%` 環境変数からパスを組み立てる
-  - `.lnk`：`lnk` クレートの `ShellLink::open` でパースし `link_target()` でリンク先ローカルパスを取得する。リンク先が実在しない場合は除外する。リンク先がフォルダの場合の扱い・拡張子フィルタリングの適用は「/recent の表示対象設定」節を参照。`link_target()` は `lnk` クレート側の制約で `panic` しうるため `catch_unwind` で保護し、1件の異常な `.lnk` がプロセス全体を巻き込まないようにする（release ビルドは `panic = "abort"` のため素通しは致命的）
-    - 文字コード：`ShellLink::open` はエンコーディング引数を要求する。固定で `WINDOWS_1252` を渡すと、`LinkInfo` の ANSI フォールバック文字列（Unicode フィールドとは別に必ず読み込まれる）が日本語（Shift-JIS）パスでデコード不能となり `Err` を返す＝一覧から静かに欠落するバグになる。`GetACP()`（Win32 API）でシステム既定 ANSI コードページを取得し、`encoding_rs` の対応エンコーディング（932 → `SHIFT_JIS` 等）を都度渡すことで解消している（`system_default_encoding`）
-  - `.url`：テキスト（INI形式）としてパースし `URL=` 行の値を取得する。同期ライブラリ（個人 OneDrive 本体・OneDrive for Business の個人領域・SharePoint チームサイトの共有ライブラリ・OneDrive に追加したショートカット等）上のファイルを指す URL のみ、ローカル同期先パスへの変換を試みる（`resolve_sync_engine_local_path`）
-    1. レジストリ `HKEY_CURRENT_USER\Software\SyncEngines\Providers\OneDrive` 配下の全サブキーを動的に列挙し、各サブキーの `UrlNamespace`（そのドキュメントライブラリ自体のルート URL）・`FullRemotePath`（実際に同期対象としているサブフォルダの URL）・`MountPoint`（対応するローカル同期先フォルダ）を取得する（`sync_engine_mount_points`、`SyncEngineMount`）。個人・組織・複数ライブラリいずれの構成もこの同じレジストリ配下に登録されることを実地検証で確認済み
-    2. マッチング・相対パス抽出の基準は、**`FullRemotePath` が空文字列でなければそちらを優先し、空文字列の場合のみ `UrlNamespace` にフォールバックする**。基準の文字列が URL に前方一致するエントリを探し、複数該当する場合は最も長く一致するものを採用する（最長一致優先）。基準がホスト名のみの場合（個人 OneDrive 本体 `https://d.docs.live.net` 等）は、直後に挟まるアカウント識別子セグメントを追加で1つ読み飛ばしてから相対パスとして扱う
-       - **`FullRemotePath` と `MountPoint` の対応関係（二重フォルダ名バグの原因と修正）**：Teams サイト形式のマウントでは、`MountPoint`（ローカルフォルダ）は `UrlNamespace`（ライブラリ全体のルート）ではなく `FullRemotePath`（実際に同期対象としているサブフォルダ）に対応している（実機で確認: `UrlNamespace` が `.../Shared Documents/`、`FullRemotePath` が `.../Shared Documents/General`、`MountPoint` が `...\Team A - General` のとき、`MountPoint` は `FullRemotePath` の末尾フォルダ `General` に対応する）。これを見落として `UrlNamespace` を基準に相対パスを計算すると、`UrlNamespace` と `FullRemotePath` の差分（`General`）が `MountPoint` に含まれる分と重複し、`...\Team A - General\General\...` のようにフォルダ名が二重になる不具合になる（実機ログで発見・修正済み）。個人 OneDrive（`personal/...` 形式）では `FullRemotePath` が空文字列で登録されるため、この場合は差分計算の必要がなく `UrlNamespace` をそのまま基準にする。`FullRemotePath` が `UrlNamespace` と同値の Teams サイト（差分が無い＝ライブラリのルートそのものを同期しているケース）ではどちらを基準にしても結果は変わらない
-       - **パーセントエンコーディングの正規化**：レジストリの `UrlNamespace`/`FullRemotePath` は生の文字列（例: `Shared Documents`）で登録される一方、`.url` の `URL=` 値はパーセントエンコード済み（例: `Shared%20Documents`）であり、両者の表記が食い違う場合がある。個人 OneDrive（`d.docs.live.net`）は基準がエンコード不要な区間（ホスト名のみ）でたまたま一致していたため表面化しなかったが、SharePoint チームサイトのように基準の文字列自体が半角スペースや日本語のサイト名等を含む場合、生の文字列同士の前方一致では不一致となり変換に失敗する（実機で SharePoint チームサイトのショートカット経由ファイルが `/recent` 一覧に出ないバグとして発見・修正済み）。これを吸収するため、比較・相対パス抽出は基準の文字列・URL 双方をパーセントデコードで正規化した文字列同士で行う（`%20` だけの個別対応ではなく、非ASCII文字も含めて救える汎用的な正規化処理にしてある）
-       - ショートカット名（`MountPoint` に対応するローカルフォルダ名）をユーザーが変更しても、OneDrive クライアント側の同期タイミングに応じてレジストリの `MountPoint` 値が追従して更新される（反映まで数分〜PC再起動を要する場合がある）ため、アプリ側で特別な対応・注釈は不要と判断している
-    3. マッチした残りの相対パス（正規化済み）を `MountPoint` と結合してローカルパスを組み立てる。実在確認は呼び出し元（`process_url`）が行う
-    - 表示名はファイル名から末尾の `.url` を除いたもの。除去後に「もっともらしい拡張子」（ASCII 英数字のみの拡張子）で終わらないもの（OneDrive 上のフォルダ的参照）の扱い・拡張子フィルタリングの適用順序は「/recent の表示対象設定」節を参照（`has_plausible_extension`）
-    - ソートキーは変換の成否に関わらず `.url` 自体の mtime
-  - Windows の Recent フォルダと Office の Recent フォルダの両方に同一のローカルパスを指すエントリが存在する場合は1件に統合する（mtime が新しい方を採用）。`.lnk` 由来・`.url` 由来（ローカルパス変換成功済み）を問わず同じ統合ロジックを適用する
-- モード切替・フィルタ・表示（フロントエンド、`useSearch.ts`）
-  - モードに入ったタイミング（`recentMode` が `false → true` になった瞬間）で `get_recent_files` を呼び直す。フィルタ文字列が変わるたびには再取得せず、取得済みの一覧をフロントエンド側で表示名（`RecentFile.name`。`.lnk`/`.url` いずれもここに統一済み）への部分一致でフィルタする（`recentResults`）。既に最終アクセス日時降順で取得済みのため、フィルタ後も順序は維持される
-  - 加えて、`recentMode` を維持したままウィンドウが非表示→再表示された場合（`getCurrentWindow().onFocusChanged` でフォーカス回復を検知）も取得し直す。クリップボード履歴は OS のクリップボード変更通知を常時受信しているため非表示中の変化も自動で最新化されるが、最近使ったファイル一覧にはプッシュ通知の仕組みがなく、モード遷移時の1回きりの取得のままだと非表示中にファイルを開く／削除する等の変化が反映されないままになる（フォーカスアウト→インを挟んでも一覧が更新されず、見た目上フリーズしたように見える不具合の原因になっていた）。フォーカス回復のたびに再取得することで、クリップボード履歴と同様「再表示時には常に最新の状態を見せる」挙動に揃えている。この再取得判定自体は `useSearch.ts` 内の `/recent` 専用ハードコードではなく、汎用の「フォーカス回復時再取得テーブル」（`focusRegainTableRef`）へのエントリとして宣言している。詳細・新モード追加時の規約は「"/" プレフィックスモードの内部アーキテクチャ」節を参照
-  - `RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する（`RecentFile.path` は `.lnk`/`.url` いずれも実在確認済みのローカルパスに統一されているため、起動処理を由来で分岐する必要がない）
-  - ファイル検索結果・計算結果・URLエンコード/デコード結果との関係は他のプレフィックスモードと同様に排他（`recentMode` の間は `search_files` を呼ばず、それらを表示しない）
-  - frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）
-- 設定画面の「最近使ったファイル」カテゴリ：機能 ON/OFF トグル＋呼び出しキーワードのテキスト入力＋保持期間・最大表示件数の数値入力＋「表示対象設定」（`RecentFilesSettings.tsx`。詳細は次項）
-
-#### /recent の表示対象設定（Rust / フロントエンド）
-
-- データ構造：`FolderEntry`（ファイル検索の検索フォルダごとの詳細設定）とは独立させ、`/recent` 機能全体で共有する単一のグローバル設定として `AppSettings` に直接持たせている（`folders: FolderEntry[]` のようなフォルダ単位の配列ではなく、`AppSettings` のスカラー/配列フィールドとして4つ追加した）
-  - `recent_include_folders: bool`（デフォルト `false`）
-  - `recent_extension_filter_mode: ExtensionFilterMode`（ファイル検索と同じ enum を再利用。デフォルト `"blacklist"`）
-  - `recent_blacklist_extensions: Vec<String>` / `recent_whitelist_extensions: Vec<String>`（デフォルトいずれも空）。ブラックリスト用・ホワイトリスト用を独立フィールドとして持たせる理由は「検索フォルダごとの詳細設定」節のブラックリスト/ホワイトリスト分離と全く同じ（モード切替時に他方の入力内容を消さないため）
-  - 新規4フィールドはすべて `#[serde(default)]` を付与しており、旧バージョンの `settings.json` を読み込んだ場合も自動的にこのデフォルト値が補われる（マイグレーション処理は不要）
-  - 拡張子タグの正規化（トリム・先頭 `.` 除去・小文字化・重複除去）は `normalize_extensions`（`main.rs`）を、拡張子フィルタリングの判定は `passes_extension_filter`（`main.rs`）を、いずれもファイル検索の検索フォルダ詳細設定と共有する（`pub(crate)` にして `recent_files.rs` から `crate::normalize_extensions`/`crate::passes_extension_filter` として呼ぶ。ロジックを複製しない）
-- 保存：`set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)`（Rust コマンド）が4項目を一括保存し、更新後の `AppSettings` を返す。`set_folder_settings` と同じ「一括保存」パターンだが、対象が `folders` 配列中の1エントリではなく `AppSettings` 単体である点が異なる
-- UI（フロントエンド）：`RecentFilesSettings.tsx` の「表示対象設定」ブロックに、「フォルダを対象に含める」トグル（`FeatureToggle`）と拡張子フィルタリング編集 UI を配置する
-  - 拡張子フィルタリング編集 UI（ブラックリスト/ホワイトリストの排他選択＋タグ形式の追加・削除）は `ExtensionFilterEditor.tsx` として `FolderDetailSettingsModal.tsx` から切り出し、`RecentFilesSettings.tsx` と共有する。切り出し前は「他画面での再利用箇所が今のところない」という理由でモーダル専用のローカル実装にしていたが（「検索フォルダごとの詳細設定」節を参照）、この機能追加で2箇所目の利用箇所ができたため方針を変更した
-  - 保存は他の個別テキスト入力欄（呼び出しキーワード・保持期間・最大表示件数、それぞれ「保存」ボタンで即座に個別 invoke）とは別に、「フォルダを対象に含める」トグル＋拡張子フィルタリング（モード・両リスト）をまとめて1つのローカル draft state として保持し、単一の「保存」ボタンで `set_recent_display_settings` を一度だけ呼ぶ（`FolderDetailSettingsModal.tsx` の一括保存パターンをモーダルではなくタブ内のインライン UI として踏襲したもの）
-  - エラー表示は既存の `recentSettingsError`（呼び出しキーワード・保持期間・最大表示件数の保存エラーと共通の state）をそのまま使う。表示対象設定は数値範囲バリデーション等の失敗要因を持たないため、実質的には transport エラーのみを拾う
-- `/recent` の取得・フィルタロジックへの反映（`recent_files.rs`）
-  - `get_recent_files` の6段階パイプライン（列挙→mtime降順ソート→保持期間による足切り→表示件数上限による足切り→リンク先解決/ローカルパス変換/実在チェック→重複統合）は変更していない。「表示対象設定」の判定は5番目の段階（`process_lnk`/`process_url`）に組み込む形で追加した。そのため、拡張子フィルタリングやフォルダ除外によって対象外と判定されたエントリも、既存の「実在しない・変換失敗のエントリ」と同様に4番目の段階（件数上限による足切り）より後で除外される＝最終的な表示件数が `max_results` よりやや少なくなることがある、という既存の許容仕様がそのまま適用される（拡張子フィルタリングを制限的に使うと結果が0件に近くなりうる点は既知の制約として許容する。件数上限より前の段階まで判定を遡らせる設計変更はスコープ外とした）
-  - `.lnk`（`process_lnk`）：リンク先の実在チェック（UNC 以外）で取得した `Metadata::is_dir()` の結果を使い、フォルダなら `include_folders` に従う（`false` なら除外）。ファイルの場合のみ、リンク先ローカルパスに対して `passes_extension_filter` を適用する。UNC パス（実在チェック自体をスキップする既存仕様）はフォルダかどうか判定できないため、常にファイル扱いとして拡張子フィルタリングのみ適用する（パス文字列からの判定のみで完結し I/O 不要なため、UNC でも適用できる）
-  - `.url`（`process_url`）：**パフォーマンス最適化として、判定順序を意図的に「表示対象設定の判定が最優先」に組み替えている。** `.url` ファイル名（＝拡張子除去後の表示名）だけで拡張子フィルタリング・フォルダ的参照の判定が完結する（`.url` 本体の読み込み・`URL=` 行のパース・レジストリを使ったローカルパスへの変換のいずれも不要）ため、この判定を最初に行い、対象外と分かった時点でそれらの重い処理（特にレジストリ列挙を伴う `resolve_sync_engine_local_path`）自体を一切実行せずに早期リターンする。表示名に拡張子がない場合（フォルダ的参照）は `include_folders` に従い、拡張子がある場合は `passes_extension_filter` で判定する。この最適化は「レジストリ変換より前に拡張子フィルタ判定を行う」という要件を満たすだけでなく、`.url` 本体の読み込み自体も省略できるため、対象外の `.url` に対しては旧実装（実在チェック後に表示名のフォルダ判定のみ行っていた）よりファイル I/O ・レジストリアクセスの両方を削減できる
-  - `search_files`（ファイル検索）と同様、`ExtensionFilterMode` に応じてブラックリスト/ホワイトリストのどちらのリストを使うかは呼び出し元（`get_recent_files` Tauri コマンド）が選んでから `recent_files::get_recent_files` に渡す（`recent_files.rs` 内で `AppSettings` を直接参照しない設計を維持するため）
-
-### 格納フォルダを開く（Shift+Enter）（Rust / フロントエンド）
-
-- 対象：通常のファイル検索結果、`/recent`（最近使ったファイル一覧）の結果一覧の両方（いずれも `useSearch.ts` の `results` state を共有しているため、キーボード操作側は由来を区別しない。計算結果・URLエンコード/デコード結果・システムコマンド候補・クリップボード履歴・プレフィックスコマンド候補はファイルパスを持たないため対象外）
-- 選択中に Shift+Enter を押すと、対象ファイルの親フォルダをエクスプローラーで開く。通常の Enter によるファイル起動と同様にウィンドウを閉じる（非表示にする。詳細は後述の「ウィンドウを閉じる」小節を参照）
-- Rust：`open_containing_folder(path)` コマンド（`main.rs`）
-  - `path` の拡張子が `.lnk`（大小文字区別なし）の場合、`recent_files::resolve_lnk_target_path(path)` でリンク先ローカルパスを解決し、解決できればそちらの親フォルダを、できなければ `.lnk` 自身の親フォルダを開く（`Option::unwrap_or` でフォールバック）
-  - `.lnk` 以外はそのまま `path` の親フォルダ（`Path::parent()`）を開く
-  - フォルダを開く処理自体は既存の `open_file`（`ShellExecuteW` にディレクトリパスを渡すとエクスプローラーが開く。設定画面の検索フォルダパスクリックと同じ仕組み）をそのまま流用する。新規の Win32 API 呼び出しは追加していない
-- Rust：`.lnk` のリンク先解決ロジックの共有（`recent_files.rs`）
-  - 「最近使ったファイル一覧」節の `.lnk` 処理（`process_lnk`）から、リンク先ローカルパスの解決部分だけを `pub fn resolve_lnk_target_path(lnk_path: &Path) -> Option<String>` として切り出した（`ShellLink::open` によるパース、`system_default_encoding()` による文字コード解決、`link_target()` の `catch_unwind` による panic 対策を含む、`process_lnk` が使っていたロジックそのもの）。`process_lnk` はこの関数を呼んだうえで実在チェック・フォルダ除外を追加で行う一覧生成用のラッパーになっている
-  - `open_containing_folder` はこの `resolve_lnk_target_path` を実在チェックなしでそのまま呼ぶ（`.lnk` 自体が通常のファイル検索結果に出現している時点で実在は保証されているため、`process_lnk` の実在チェック・フォルダ除外ロジックは不要）
-- フロントエンド：`useSearch.ts` の `openContainingFolder(path)`
-  - `launchFile` と同じ「ウィンドウを閉じる」経路（`closeWindow({ cleanup: () => setResults([]) })`）を通る。frecency は記録しない（ファイルを起動したわけではないため）。`closeWindow()` の詳細・`invoke` を `await` せず発火する理由は「ウィンドウを閉じる系アクションの共通設計」節を参照
-  - `App.tsx` の `handleKeyDown` で `e.shiftKey` を判定し、計算結果・URLエンコード/デコード結果・Web検索行のインデックスオフセットを踏まえた同一の計算式（`search.results[search.selected - calcLength - urlConvertLength]`）で対象ファイルを求める。この計算式は通常の Enter 起動と共通の `selectedFile` 変数として1箇所にまとめている（計算結果・Web検索行等が選択中の場合は範囲外アクセスとなり `undefined` になるため、Shift+Enter は自然に無効化される。個別の除外条件を書く必要がない）
-  - フッターのキー操作ヒント（`StatusFooter.tsx`）：`isFileSelected` が真（＝選択中の項目が実ファイル）のときのみ「Shift+Enter フォルダを開く」を表示する
-
-### パス貼り付けによる検索フォルダ管理（Rust / フロントエンド）
-
-- Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・「モード共存・排他一覧」節を参照
-- `appSettings.pathPasteEnabled`（デフォルト `true`）が `false` の場合、判定自体を行わない（`set_path_paste_enabled` コマンド）
-
-#### 貼り付け判定（Rust、`path_paste.rs` / `read_pasted_hdrop_path`・`judge_pasted_path` コマンド）
-
-CF_HDROP の確認と、パスの実在判定（テキスト解釈）は、別々の2つのコマンド・別々のタイミングで行う1経路に統一している（**経緯**：以前は CF_HDROP を検知した場合にバックエンド側で直接パスを判定して候補を生成する経路と、テキスト貼り付けを検索ボックス経由で判定する経路の2つが並存していたが、CF_HDROP も最終的に検索ボックスへ流し込むことで両者を1つの判定経路へ統一した。REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節の「貼り付け内容の判定方法」を参照）。
-
-- `SearchBox.tsx` の `onPaste` は画像ペースト（OCR）以外のすべての貼り付けで `onPathPaste`（`useSearch.ts` の `detectPastedPath`）を呼ぶ。画像判定と異なり `e.preventDefault()` はしない（通常のテキスト貼り付け動作を妨げない）
-  - CF_HDROP はブラウザ／WebView2 の `clipboardData` に実ファイルパスとして現れない（`items`/`getData` 経由では取得できない）ため、確認は常に Rust 側（`read_pasted_hdrop_path` コマンド）で実クリップボードを直接読み直す方式にしている。JS 側の貼り付けイベントはあくまで「確認のトリガー」としてのみ機能する
-- `read_pasted_hdrop_path`（Rust）：`clipboard-win` クレート（`Clipboard::new_attempts` でクリップボードを開き、`formats::FileList` の `Getter::read_clipboard` で読む）で `CF_HDROP` の有無のみを確認する。パスが単一の場合はそのパス文字列をそのまま返し（クォート等の加工はしない）、複数パスの場合・`CF_HDROP` 自体が存在しない場合はいずれも `None` を返す（呼び出し側はこの2ケースを区別する必要がない）。実在確認・フォルダ/ファイル判定はここでは行わない
-  - `clipboard-win` は既存のクリップボード履歴機能（`tauri-plugin-clipboard-manager` が内部で使う `arboard` の間接依存）として既に依存関係ツリーに含まれていたクレートを、`Cargo.toml` に直接依存として追加して使う（新規のクレート調査コストなしで導入できるため）
-- フロントエンド（`useSearch.ts` の `detectPastedPath`）：`read_pasted_hdrop_path` が `Some(path)` を返した場合のみ `setQuery(path)` で検索ボックスへそのまま流し込む（複数パス・CF_HDROP なしの場合は何もしない＝ OS 標準の Ctrl+V にそのまま委ねる。単一パスの場合も `e.preventDefault()` していないため OS 標準のペーストと並行して走るが、CF_HDROP のみの内容は通常テキスト表現を持たないため実際に競合することはない）
-- `judge_pasted_path`（Rust）：検索ボックスの文字列（上記の流し込み・通常のテキスト貼り付け・手入力のいずれも区別しない）を受け取り、`parse_text_path`（前後のダブルクォートのみを取り除く。「パスのコピー」等でクリップボードに入る `"C:\Users\...\file.txt"` 形式・クォートなしの生のパス文字列のいずれも同様に処理できる）→ `Path::exists()`/`Path::is_dir()` で実在確認・フォルダ/ファイル判定、の順に処理する（実在しない場合は `None`）
-  - メインの検索 `useEffect`（`query` 変更のたび発火）から `calculate`/`search_files` と同様に毎回呼ぶ。`calcEnabled`/`fileSearchEnabled` 同様、呼び出し自体をフロントエンド側の `appSettings.pathPasteEnabled` で制御するため、`calculate`/`search_files` 同様この Rust コマンド自体は設定値を確認しない（`read_pasted_hdrop_path` は貼り付けイベント起点のため `ocr_from_clipboard` と同様に Rust 側でも `path_paste_enabled` を確認する。2つのコマンドでこの点が異なるのは、呼び出しの起点（イベント駆動 vs. クエリ変更のたび）が異なるため）
-  - `pathPasteCandidate` は `query` から直接導出される値になったため、以前存在した「貼り付け時点の `query` を記録し、その後 `query` が変化したら候補を破棄する」ための鏡 ref（`pathPasteCandidateQueryRef`）は不要になり削除した（CF_HDROP 経由の貼り付けも検索ボックスの `query` を経由するようになったことで、候補と `query` が構造的に常に同期するため）
-
-#### 機能1: 検索フォルダとして追加（Rust、`add_search_folder_from_paste` コマンド）
-
-- 判定したパスがフォルダの場合のみ候補行に表示する。Enter／クリックで確定すると `closeWindow()`（「ウィンドウを閉じる系アクションの共通設計」節）経由で実行する
-- 既存の検索フォルダ一覧に同じパスが既に存在する場合は追加処理をスキップし、トースト通知「既に登録済みです」を表示する（エラー扱いにはしない）。新規追加時は「検索フォルダに追加しました: `<フォルダ名>`」を表示する
-
-#### 機能2: 検索フォルダにショートカットとして追加（Rust / フロントエンド）
-
-- 判定したパスがフォルダ・ファイルいずれの場合も候補行に表示する。Enter／クリックで、3ステップのミニウィザード（`useSearch.ts` の `wizardStep`: `"idle"` → `"folderSelect"` → `"nameEdit"`、`PathPasteWizard.tsx` が `"folderSelect"`/`"nameEdit"` の描画を担当）に遷移する。これは既存の暗黙判定・プレフィックスコマンドが採る「Enter一発で確定」パターンとは異なる新しいインタラクションパターン
-  - `"folderSelect"`：`get_folders` で登録済み検索フォルダ一覧を取得し、プレフィックスコマンド候補と同様のリストUIで選択させる
-  - `"nameEdit"`：選択したフォルダを配置先として、デフォルト値が元のファイル/フォルダ名の編集可能な名前入力欄（`PathPasteWizard.tsx` 内の専用 `<input>`。メインの検索ボックスはウィザード中 `readOnly` になるため、マウント時に明示的に `focus()` する）を表示する
-- ウィザード進行中（`wizardStep !== "idle"`）は `useSearch.ts` の `pathPasteWizardMode` として公開され、ファイル検索・数式計算・URLエンコード/デコード・プレフィックスコマンド候補と排他になる（メインの検索効果（`useEffect`）は早期 return し、`search_files`/`calculate` を呼ばない）
-- **ウィザード中のキー操作（↑↓・Enter・Escape）は、`"folderSelect"`／`"nameEdit"` いずれのステップも `App.tsx` の window レベル `keydown` リスナー（Ctrl+S/Ctrl+D と同じもの）が一括して処理する。`SearchBox`・各ステップの入力要素側にはローカルの `onKeyDown` を持たせない**
-  - **経緯（フォーカス依存の不具合と、その修正が生んだリグレッションの経緯）**：当初 `"folderSelect"` ステップの候補行（`SearchBox` とは別の `<button>` 要素）は Enter 確定直後や行のクリックでフォーカスが `SearchBox` から外れることがあり、フォーカス先の行がステップ遷移で DOM から消えると `document.body` にフォーカスが戻って `SearchBox` の React `onKeyDown` に keydown が届かなくなる（＝ Escape 等が効かない）不具合があった。Ctrl+S/Ctrl+D と同じ理由（フォーカス状態に依存しないよう window レベルに統一する）で `"folderSelect"` のみを window リスナーに移した際、`"nameEdit"` ステップ側は専用入力欄のローカル `onKeyDown`（Enter＝保存／Escape＝1ステップ戻る）に残したままにしたところ、window リスナー・ローカル `onKeyDown` の双方が同一の Escape キー押下に反応しうる状態になり、「名前編集ステップの Escape が1ステップ（フォルダ選択に戻る）ではなく2ステップ分（通常の検索状態まで）戻ってしまう」というリグレッションが発生した。これを踏まえ、`"nameEdit"` 側のローカル `onKeyDown` を撤去し、`"folderSelect"` と同じ window リスナーに一本化することで、二重ハンドラの併存自体を構造的に無くした
-- Escape は `wizardBack()` でステップを1つ戻す（名前編集→フォルダ選択、フォルダ選択→候補行表示 or 通常のファイル検索結果表示）。これは Esc＝ウィンドウ非表示という基本挙動の例外
-- 保存（ステップ3の Enter）も `closeWindow()` 経由で実行し、`.lnk` ファイルの作成自体（`create_shortcut` コマンド）は非表示解決後に裏で行う
-  - `.lnk` の作成には Windows COM の `IShellLinkW`／`IPersistFile` インターフェースを `windows-rs` 経由で直接呼び出す（`path_paste::write_shortcut_file`）。読み取り専用の `lnk` クレート（`recent_files.rs` でリンク先解決に使用）とは書き込み/読み取りで役割が異なる別物であり、置き換えではない
-    - **経緯（サードパーティクレート `mslnk` からの切り替え）**：当初は `mslnk`（`ShellLink::new(target).create_lnk(path)` の2手順のみのシンプルな API）を採用していたが、実運用でフォルダを対象にショートカットを作成すると「リンク先」「作業フォルダー」が空欄になり機能しない不具合が発覚した。`mslnk` 0.1.8 のソース（`ShellLink::new()`）を確認したところ、対象が `fs::metadata().is_dir()` の場合はリンク先情報（相対パス文字列・作業フォルダー文字列・LinkTargetIDList）を一切設定せず `FILE_ATTRIBUTE_DIRECTORY` を立てるだけで終わる実装になっており、ファイル向けの else 分岐でしか実際のリンク先が書き込まれないことが原因と判明した。さらに `LinkTargetIdList::set_linktarget()` 内部のロジックも、パスの終端セグメントを常に「ファイル」として分類する作りで、仮に呼び出し側でフラグ・パス情報を手動補完してもフォルダの終端アイテムが誤ってファイル種別としてマークされてしまう、という2つ目の潜在的な仕様違反も確認した。上流リポジトリ（`dobefore/mslnk`）の Issue #6「Empty lnk with directory target」（2025-03-28 起票）で同一事象が既に報告されているが、直近のマージ済み PR が2022年で止まっており未対応のまま放置されている状況だった。これらを踏まえ、外部クレートのパッチ的回避（public API 経由でのフラグ手動補完）ではなく、本プロジェクトが `ShellExecuteW`・`SHGetFileInfoW`・クリップボードの Win32 API 直接操作・OCR の WinRT 直呼び出しなど随所で採用している「サードパーティ再実装に頼らず Windows 標準 API を直接呼ぶ」方針との一貫性を優先し、`IShellLinkW`/`IPersistFile` を直接使う実装に切り替えた。標準 API は PIDL（ITEMIDLIST）の構築を内部で行うため、対象がファイルかディレクトリかで呼び出し側の処理を分岐する必要が原理的にない
-    - 実装：`CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)` で `IShellLinkW` を生成し、`SetPath`（リンク先）・`SetWorkingDirectory`（対象の親フォルダ）を設定した後、`.cast::<IPersistFile>()` で `IPersistFile` を取得して `Save(lnk_path, true)` で書き出す。`CoInitializeEx(None, COINIT_MULTITHREADED)` の RAII ラッパー（`ComInit`）は `ocr` モジュールの同名パターンと同じ考え方だが、モジュールが異なるため個別に定義している
-  - 同名の `.lnk` が既に存在する場合は Explorer 標準の挙動に倣い「名前 (2)」のように連番を付与する（`path_paste::unique_lnk_name`。上書きしない）
-  - 保存成功時、トースト通知「ショートカットを配置しました: `<名前>`」を表示する
-
-#### トースト通知（Rust、`show_toast` 関数）
-
-- Windows のトースト通知には `tauri-plugin-notification`（Tauri 公式プラグイン）を使う。サーバーレス・無料方針に合致し、`AppHandle` の `NotificationExt` トレイト経由でアプリ内から直接呼び出せるため、外部サービス連携や追加のランタイム依存なしに導入できる標準的な選択肢として採用した
-- `show_toast(app, message)` が `app.notification().builder().title("WinLauncher").body(message).show()` を呼ぶだけの薄いヘルパー。失敗（通知権限なし等）は無視する（トーストはあくまで補助的なフィードバックであり、失敗してもフォルダ追加・ショートカット作成自体は成功しているため）
-- `capabilities/default.json` に `notification:default` permission が必要
-
-### プレフィックスコマンド候補表示（フロントエンド）
-
-- 検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`useSearch.ts` の `buildPrefixCommandCandidates`）
-  - システムコマンド3つは既存の `matchSystemCommands`（「システムコマンド機能」節を参照）をそのまま呼び出し、一致した `SystemCommand` を `PrefixCommand`（`{ keyword, description, kind: "system", action }`）に変換して候補に加える。個別のキーワード判定ロジック自体（`/` + キーワード全体への前方一致）は変更しない
-  - クリップボード履歴は `/` + `appSettings.clipboardPrefix` がクエリに前方一致するかを同じ方向（候補文字列がクエリで始まるか）で判定し、一致すれば `{ keyword, description: "クリップボード履歴", kind: "clipboard", action: null }` を候補に加える
-  - 最近使ったファイル一覧は `/` + `appSettings.recentKeyword` が同様に前方一致するかを判定し、一致すれば `{ keyword, description: "最近使ったファイル", kind: "recent", action: null }` を候補に加える
-  - `appSettings.systemCommandEnabled` / `clipboardEnabled` / `recentFilesEnabled` が `false` の機能はそれぞれ候補生成の対象から除外する
-  - `calcMode`（数式らしい入力）、または `clipboardMode`／`recentMode`（呼び出しキーワードが完全に入力済みで既に専用モードに切り替わっている状態）の間は候補を生成しない（`clipboardMode`／`recentMode` は個別の発火ロジック＝`clipboardModeFilter`／`recentModeFilter` を変更せず、そのまま優先させる。つまり `/cb` や `/recent` を最後まで入力した時点で候補一覧ではなく専用モードへ直接切り替わる、という挙動を維持する）
-- `PrefixCommand`（`src/types.ts`）は `{ keyword: string, description: string, kind: "system" | "clipboard" | "recent", action: SystemCommandAction | null }`。`keyword` は呼び出し文字列（`/` + キーワード全体、例: `"/shutdown"`）で、frecency のキーにもそのまま使う
-- 候補は frecency スコアの降順で並び替える（`sortPrefixCommandsByFrecency`）。ファイル検索結果の frecency（`sortByFrecency`/`frecencyScore`/`decayFactor`。「ファイル検索結果の frecency ランキング」節を参照）と全く同じ関数を再利用し、キーだけを `path` から `keyword` に変えている。使用実績のない候補はスコア0、その場合は `keyword` のアルファベット順が二次キーになる
-  - 使用実績（`count`/`lastUsed`）は候補を Enter／クリックで選択（＝実行）した時点（`selectPrefixCommand`）で記録する。システムコマンドは確認モーダルの確定を待たず、候補を選んだ時点で記録する
-  - `tauri-plugin-store` の `settings.json` に `"prefixCommandFrecency"` キー（`{ [keyword]: { count, lastUsed } }`）でフロントエンドが直接永続化する（frecency と同じ方式。Rust コマンドは追加しない）。アプリ起動時（マウント時）に App.tsx が読み込み、`useSearch` の `setInitialPrefixCommandFrecency` で初期値を反映する
-- 表示（`ResultList.tsx`）：ファイル検索結果・システムコマンド候補と同じリストUI（アイコン＋太字1行目＋グレー2行目）を流用する。1行目に呼び出し文字列（`cmd.keyword`）、2行目に説明文（`cmd.description`）を表示する。アイコンは `kind` によって切り替える（システムコマンドは既存の電源アイコン、クリップボード履歴は `ClipboardPanel` のテキストエントリと同じドキュメントアイコン、最近使ったファイル一覧は時計アイコン）
-- ファイル検索結果との関係は排他（`prefixCommandMode = prefixCommandCandidates.length > 0` の間はファイル検索・計算結果・URLエンコード/デコード結果を表示せず、`search_files` も呼ばない）。旧 `systemMode`/`systemMatches` はこの機能に統合され、`useSearch.ts` の公開APIからは削除された（`prefixCommandMode`/`prefixCommandCandidates`/`selectPrefixCommand` に置き換え）
-- 選択・実行（`selectPrefixCommand`）：↑↓ で選択、Enter／クリックで直接実行する（ファイル検索結果の選択・実行と同じ挙動）
-  - `kind: "system"` の場合：`requestSystemCommand({ action, label: description })` を呼ぶだけで、既存の確認モーダル（`pendingCommand` state、「システムコマンド機能」節を参照）にそのまま合流する
-  - `kind: "clipboard"` または `kind: "recent"` の場合：`setQuery(candidate.keyword)` で検索クエリを呼び出しキーワード全体（例: `"/cb"`、`"/recent"`）に置き換える。これにより次のレンダリングで既存の `clipboardModeFilter`／`recentModeFilter` が自然に一致し、それぞれの専用モードへ切り替わる（専用の遷移コードを新設しない）
-- 前方一致する候補が0件の場合（例: `/xyz`）は `prefixCommandMode` が `false` のままとなり、候補欄を表示せず通常のファイル検索結果を表示する
-
-### ウィンドウを閉じる系アクションの共通設計（フロントエンド）
-
-ウィンドウを閉じる系のアクション——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`／`addSearchFolderFromPaste`／`confirmShortcut`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）——は、すべて `useSearch.ts` の `closeWindow(options?)` を経由する。**新しくウィンドウを閉じる系アクションを追加する場合も、必ずこの関数を経由すること。** `closeWindow()` を経由しない独自のクローズ処理・個別の `useRef` ガードを新設しない。
-
-**設計原則：`hideWindow()` を最優先で `await` し、React state の変更は解決後に行う**
-
-```ts
-const closeWindow = useCallback(
-  async (options?: {
-    clearQuery?: "full" | "prefixOnly";
-    prefix?: string;
-    cleanup?: () => void | Promise<void>;
-  }) => {
-    await hideWindow();
-    if ((options?.clearQuery ?? "full") === "prefixOnly") {
-      setQuery(options?.prefix ?? "");
-    } else {
-      setQuery("");
-    }
-    bumpCloseRefreshTick();
-    await options?.cleanup?.();
-  },
-  [bumpCloseRefreshTick]
-);
-```
-
-- `results`／`selected`／`calcResult`／`frecency` 等、画面に影響する React state の変更は、必ず `cleanup` オプション（または `closeWindow()` 自身が行うクエリのクリア）としてまとめ、`hideWindow()` の解決後にのみ実行されるようにする。この境界さえ守れば、後処理がどれだけ重かったり（frecency の store 書き込み等）、他の `useEffect` を連鎖的に再実行させたり（`/recent` の `recentResults` 再計算等）しても、ウィンドウが可視状態のまま中間状態が描画されることは構造的に起こり得ない
-- 各アクションが行う「ファイル起動・クリップボードへの書き込み等の Rust 呼び出し（アクション本体）」は、`closeWindow()` を呼ぶ前に `await` せず fire-and-forget で発火する。ウィンドウの表示状態と無関係な副作用のため `hideWindow()` を待たせる理由がなく、開いたアプリの起動が遅い場合（画像ビューアー等）でも `closeWindow()` の `hideWindow()` 呼び出し自体は遅延しない
-- `bumpCloseRefreshTick()` は `closeRefreshTick`（`useState<number>`）を加算し、メインの検索 `useEffect` の依存配列に含めている。React の `useState` は新しい値が `Object.is` で現在値と等しければ再レンダリングをスキップする（ベイルアウト）ため、無入力のまま（`query` が既に `""`）frecency 順のデフォルト一覧から直接ファイルを起動した場合や、`/recent`・`/cb` で連続してプレフィックスのみへ戻す場合、`setQuery` だけでは値が変化せず検索エフェクトが再実行されないことがある。`closeRefreshTick` は query の値に依存せず確実にエフェクトを再実行させるための専用カウンタ
-- **`clearQuery` の使い分け（"full" / "prefixOnly"）**：`"full"`（デフォルト。クエリを完全に空文字へ戻す）と `"prefixOnly"`（プレフィックス部分だけを残し、それに続く絞り込みフィルタ文字列だけをクリアする。残す文字列は呼び出し側が `options.prefix` に渡す）の2パターン。`"prefixOnly"` を使うのは `launchFile` の `/recent` モード分岐と `selectClipboardEntry`（`/cb`）の2箇所のみで、それ以外は明示的に指定しない限り `"full"` のまま動作する
-  - **新規プレフィックスモード追加時の検討観点**：確定（Enter／クリック）のたびにそのモードから連続して別の項目を選び直すユースケースが想定されるモード（`/recent`・`/cb` のような一覧選択系）は `"prefixOnly"` の対象候補にする。逆に、1回の確定でそのモード自体から離脱するのが自然なモード（通常のファイル検索、システムコマンドの実行等）は `"full"` のままでよい。`options.prefix` に渡す文字列は、設定画面で変更可能な呼び出しキーワードを反映した動的な値（`PREFIX_CHAR + appSettings.xxxKeyword` 等）として都度組み立てること。`"/recent"`・`"/cb"` のようなハードコードはしない（ユーザーがキーワードを変更している場合に不整合が生じるため）
-
-**過去の経緯（モグラ叩きの反省）**：以前は各アクションが「アクション本体の副作用 → 結果クリア → `closeWindow()`」という順序を個別に実装しており、`hideWindow()` が解決する前に他の非同期処理（`recordFrecency` の `setFrecency` が引き起こす検索 `useEffect` の再実行、`/recent` の `recentResults` の同期的な再計算等）が先に走ってしまい、選択ハイライトの位置や結果一覧の内容が一瞬だけ意図しない状態で描画される「ちらつき」バグが、症状ごとに個別発生していた（通常のファイル検索での frecency 起因のちらつき、`/recent` で画像ファイルを実行した場合のみ再発したちらつき、等）。それぞれを `closingRef` のような個別ガードで後追いに潰す対症療法を重ねていたが、ファイル種別や処理の重さが変わるたびに新しい中間状態が露出しかねない構造だった。「`hideWindow()` 解決より前に、画面に影響する React state を一切変更しない」という順序を `closeWindow()` 自身に強制させる設計に統一したことで、個別ガード（`closingRef`）や個別の呼び出し順序の工夫（`recordFrecency` を意図的に `await` せず発火する等）はすべて不要になり削除した。
-
-**再表示時（`cleanup` がまだ完了していない場合）の挙動方針**：`closeWindow()` の `cleanup` は `hideWindow()` の解決後に開始される。理論上、ユーザーが極めて素早く再度ウィンドウを表示した場合、`cleanup` の非同期部分（`recordFrecency` の store 書き込み、`search_files`/`get_recent_files` の再取得等）が完了していない状態で画面が見える可能性がある。検討した3方針：
-
-1. 再表示時、`cleanup` の完了を待ってから最新状態を描画する
-2. 再表示時点で未完了なら、その場で `cleanup` を即時実行してから描画する
-3. 再表示時は一旦ニュートラルな状態を先に描画し、`cleanup` の結果は次のクエリ変化まで気にしない
-
-採用したのは **3**。理由：
-- ウィンドウの再表示（グローバルホットキー／トレイ）は Rust 側が `window.center()` → `show()` を行うだけの経路で、JS 側の `cleanup` の完了と同期する仕組みを持たない。1・2 を実現するには新たな IPC 往復や `show()` 自体の待機処理が必要になり、体感速度（Alt+Space の反応速度）を犠牲にしてまで解消する価値のある問題ではない
-- `cleanup` の同期的な部分（`setQuery`／`setResults`／`bumpCloseRefreshTick` 等）は `hideWindow()` の解決直後、単一の JS 実行区間内でほぼ瞬時に完了する。人間の Alt+Space 打鍵と Rust 側の `show()` の IPC 往復がここに割り込む余地は事実上ない
-- 残る非同期部分（`recordFrecency` の store 書き込み、検索結果の再取得等）が再表示後もまだ解決していない場合に見える状態は、「クエリを変更した直後、結果が追いつくまでの一瞬のロード状態」と本質的に同じであり、通常のクエリ入力時から既に許容されている自然な UI 状態である。ここだけを特別扱いして待たせる理由がない
-
-**適用対象外の例外**：OCR プレビューの「コピーして閉じる」（`App.tsx` の `handleOcrCopyAndClose`）は、`closeWindow()` を経由せず独自に 180ms のフェードアウト演出を挟んでから `hideWindow()` を呼ぶ。これはウィンドウが可視のまま意図的に見せる演出であり、「隠れるまで state を変更しない」という本節の原則とは目的が異なる（詳細は「フロントエンド」節の OCR 関連記述を参照）。同様に `Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない
-
-### "/" プレフィックスモードの内部アーキテクチャ（フロントエンド）
-
-`/recent`・`/cb` 等、"/" プレフィックスを持つモードが増えるたびに個別対応が積み重なり、フォーカス・非表示まわりのロジックが複雑化していた。以下の2パターンに集約することでこれを解消している（ウィンドウを閉じる処理自体の共通化は「ウィンドウを閉じる系アクションの共通設計」節を参照）。**新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する際は、必ずこの2パターンに乗せること。** 個別の ref・個別の `useEffect` 分岐を新設しない。
-
-- **世代ID管理（`asyncCallIdRef`、`useSearch.ts`）**：`search_files`・`get_recent_files` 等、非同期呼び出しの「自分が最新の呼び出しか」を判定する世代 ID を、モード名をキーにした単一の `Record<string, number>` にまとめている（`const asyncCallIdRef = useRef<Record<string, number>>({})`）。呼び出し直前に `beginAsyncCall(key)` で世代を進めて ID を取得し、`.then()` 側で `isLatestAsyncCall(key, id)` が `false` なら結果を破棄する。現在使用中のキーは `"search"`（`search_files`）と `"recent"`（`get_recent_files`）
-  - 【過去の教訓】この2つの世代 ID をかつて1本のカウンタで共有していたところ、「Shift+Enter でフォルダを開く → Explorer にフォーカスを奪われる → `/recent` モードのフォーカス回復リスナーが `get_recent_files` を呼んで共有カウンタを進める → 直後に解決した `search_files("")` の再取得が『もう自分は最新ではない』と誤判定され結果が握りつぶされる」という不具合が起きていた。**同一のカウンタを複数の非同期呼び出し系統（別コマンド）で共有しないこと**が教訓であり、それを構造的に強制するのがこの仕組み。新しいモードで pull型の非同期取得を追加する場合は、既存キーを使い回さず新しいキー名を割り当てて `beginAsyncCall`/`isLatestAsyncCall` を呼ぶこと
-- **フォーカス回復時再取得テーブル（`focusRegainTableRef`、`useSearch.ts`）**：push型（OS 通知等で非表示中も自動的に最新化される。例：クリップボード履歴）ではない pull型モードは、モード遷移時の1回きりの取得のままだと非表示中の変化（ファイルを開く／削除する等）が反映されない。これに対応するため、`focusRegainTableRef.current`（`Record<string, { active: boolean; refetch: () => void }>`）へレンダーのたびに最新の `active`／`refetch` を書き込み、単一の `onFocusChanged` リスナーがフォーカス回復時にテーブルを走査して `active` なモードだけ `refetch()` を呼ぶ。リスナー自体は特定モードを知らない汎用ロジックのみを持つ
-  - 現在のエントリは `recent` の1つ（`/recent` モード、`fetchRecentFiles("focus-regain")`）。新しい pull型モードを追加する場合は、この `focusRegainTableRef.current` の代入にエントリを1つ追加するだけでよく、`onFocusChanged` リスナー自体やモード専用の鏡ref（かつての `recentModeRef` のようなもの）を新設する必要はない
-  - この `onFocusChanged` リスナーは `App.tsx` 側のフォーカスアウト自動非表示・フォーカスイン再フォーカス用のリスナー（「ウィンドウ」節を参照）とは別に `useSearch.ts` 内で独立して登録している。責務（ウィンドウ全体のフォーカス管理 vs. モードごとのデータ鮮度管理）が明確に分かれているため、意図的に統合していない
-
-### ファイル起動（Rust）
-
-- Win32 API `ShellExecuteW` を直接呼び出し、拡張子に応じたデフォルトアプリで開く
-  - `cmd /C start "" <path>` は cmd.exe が `/C` 以降の引数を連結して1つのコマンドラインとして再パースするため、ファイル名に `&` `|` `^` 等の文字が含まれる場合にコマンドインジェクションが発生し得る（検索対象フォルダに攻撃者が任意のファイル名のファイルを置けるケースが脅威モデルになる）。`ShellExecuteW` はファイルパスをコマンドラインとして解釈せず、開く対象のファイルパスとして丸ごと1つの文字列で渡すだけのため、この種のインジェクションが発生しない
-  - 実装は `open_file(path: &str)`（`#[cfg(windows)]`）。`hwnd` は `None`、`lpoperation`/`lpparameters`/`lpdirectory` は `PCWSTR::null()`（既定の動作に委譲）、`lpfile` にのみ対象パスの UTF-16 文字列を渡す
-  - 戻り値の `HINSTANCE` は ShellExecute の仕様上、成功時は 32 を超える値、失敗時は 32 以下のエラーコードを返すため、`<= 32` で失敗判定する
-  - `#[cfg(not(windows))]` 側は `cargo build` を非Windows環境でも通すためのフォールバック（このアプリ自体は Windows 専用）
-  - 必要な `windows` クレートの feature（`Win32_UI_Shell`・`Win32_UI_WindowsAndMessaging`）はシェルアイコン取得・クリップボード機能で既に有効化済みのため追加不要
-
-### OCR機能（Rust）
-
-- 実装本体（Windows OCR API 呼び出し・行ソート・単語間スペース挿入ロジック等）は「Tauri コマンド」節の `ocr_from_clipboard` を参照
-- **前処理による精度改善の検証結果（却下・見送り確定）**：クリップボード画像に対する2〜3倍拡大＋グレースケール化＋コントラスト補正の前処理を追加すれば OCR 精度が上がるのではという仮説を、検証用テストバイナリ（`ocr_tune`。使い捨ての検証用コードでありリポジトリには残していない）を使って比較実験した
-  - 結果：濁点/半濁点の誤認識、英数字の誤認識（`l` と `1` の混同等）は、どの前処理パターンでも改善しなかった。3倍拡大＋グレースケール＋コントラスト補正の組み合わせでは、パターンによっては素の状態より悪化する結果も観測された
-  - 原因：検証に使った画像の解像度は元々 Windows OCR エンジンにとって十分であり、誤認識は前処理不足ではなく Windows OCR エンジン自体の認識能力の限界に起因すると判明した
-  - 結論：前処理による精度改善は見送りとし、実装は前処理なし（クリップボード画像をそのまま `Windows.Media.Ocr` に渡す）の状態を維持する。今後の精度向上手段として現実的なのは PP-OCR 系モデルのオプトイン導入（任意ダウンロード方式）のみと判断している。**同じ検証を将来繰り返さないための記録として残す**
-
-### システムトレイ
-
-- Tauri v2 の `tray-icon` 機能を使用
-- トレイアイコンは `icons/32x32.png`（`npm run tauri icon` で生成されるアプリアイコン）を `include_bytes!` でコンパイル時に埋め込み、`image` クレートで RGBA にデコードして使用する
-  - `include_bytes!` はファイル内容をビルドの依存関係として記録するため、アイコン差し替え後は次の `cargo build` で自動的に再コンパイルされる（手動で `build.rs` を touch する必要はない）
-- トレイメニューの項目構成（この順で配置）
-  - 「Show WinLauncher」：左クリック / メニュークリックでウィンドウ表示（`window.center()` → `show()` → `set_focus()`）
-  - 「Check for Updates」：ウィンドウを表示（「Show WinLauncher」と同じ `center()` → `show()` → `set_focus()`）したうえで `"check-for-update-requested"` イベントを emit する。実際のチェック処理（`check_for_update` の呼び出し・結果に応じたダイアログ表示）はフロントエンド（`useUpdater`）が行う（詳細は「自動アップデート機能」節を参照）
-  - 「Start with Windows」：チェック付きメニュー項目。現在の自動起動状態を反映し、クリックで `tauri-plugin-autostart` の有効/無効をトグルしてチェック状態を更新
-  - 「Restart」：`app.request_restart()`（`tauri-plugin-process` プラグイン登録後に `AppHandle` が持つメソッド）でアプリケーションを再起動する。トレイトのインポートは不要
-  - 「Quit」：`app.exit(0)` でアプリケーションを終了する
-- ツールチップは `"WinLauncher — {hotkey}"` 形式（`{hotkey}` は `appSettings.hotkey`）
-  - トレイは `TrayIconBuilder::with_id("main-tray")` で構築するため、`app.tray_by_id("main-tray")` で後から `TrayIcon` ハンドルを取得できる
-  - アプリ起動時（`setup`）：登録した起動ホットキー文字列（パース失敗時はデフォルトへフォールバック後の値）でツールチップを組み立てて `.tooltip(...)` に渡す
-  - `set_hotkey` コマンドでホットキー変更が成功した直後、`app.tray_by_id("main-tray")` を取得して `set_tooltip(Some(...))` を呼び、新しいホットキー文字列でツールチップを即時更新する
-
-### 自動起動
-
-- `tauri-plugin-autostart` でレジストリ登録
-- 起動時に `is_enabled()` で現在の状態を取得し、トレイメニューのチェック状態に反映
-- トレイメニューの「Start with Windows」クリックで `enable()` / `disable()` をトグル
-
-### 自動アップデート機能（Rust / フロントエンド）
-
-- `tauri-plugin-updater` を使用。配信方式は GitHub Releases + 静的 `latest.json`（`tauri.conf.json` の `plugins.updater.endpoints` に URL を設定）
-- 署名鍵は `tauri signer generate`（minisign 方式）で生成し、秘密鍵は `src-tauri/keys/`（`.gitignore` 対象、コミットしない）に保存する。公開鍵（`.pub` ファイルの中身をそのまま）を `tauri.conf.json` の `plugins.updater.pubkey` に設定する
-- `tauri.conf.json` の `plugins.updater.windows.installMode` は `"passive"`（進捗バーのみ表示する無人インストール）
-- `tauri.conf.json` の `bundle.createUpdaterArtifacts: true` により、`npm run tauri build` 時に NSIS インストーラー本体（`.exe`）に対して署名済み `.exe.sig` が直接生成される（現行の `@tauri-apps/cli` v2 は Windows 向け updater アーティファクトとして zip ラッピングを行わない）。この成果物から `latest.json` を生成し GitHub Releases へアップロードするリリース手順の詳細は「リリース手順」節を参照
-- Rust コマンド
-  - `check_for_update()`：`app.updater().check()` を呼び、`{ available, version, notes }`（`UpdateCheckResult`）を返す。見つかった `tauri_plugin_updater::Update` は次の `download_and_install_update` 呼び出しに備えて `PendingUpdate`（`Mutex<Option<Update>>`、`app.manage()` で管理）に保持する（再チェックを避けるため）
-  - `download_and_install_update()`：`PendingUpdate` から取り出した `Update` の `download_and_install()` を呼ぶ。Windows 実装は内部でダウンロード完了後にインストーラーを起動し `std::process::exit(0)` でプロセスごと終了するため、成功時はこの呼び出しから制御が戻らない（＝フロントエンドの `invoke` の Promise は解決されない）
-  - `on_before_exit` フックは明示的な上書きを行わない。`UpdaterExt::updater_builder()`（`app.updater()` の内部実装）が既定で `AppHandle::cleanup_before_exit()` を呼ぶよう配線済みであり、これがトレイアイコン（`TrayIconBuilder::with_id("main-tray")` で登録した単一アイコン）・各ウィンドウ・リソーステーブルの後片付けを行う。個別のトレイ後片付けコードは不要と判断した
-  - ダウンロード進捗のコールバック（`download_and_install` の `on_chunk`/`on_download_finish` 引数）は no-op（フロントエンドへの進捗通知は行わない。UI 側はスピナー表示のみ）
-- 設定：`appSettings.checkUpdateOnStartup`（デフォルト `true`）。`set_check_update_on_startup(enabled)` は他の `set_*` と同一パターンで実装する
-- 起動時チェック（フロントエンド）：`useSettings` が公開する `settingsLoaded` フラグが `true` になった時点（＝ `get_app_settings` の初回取得完了時）で一度だけ、`appSettings.checkUpdateOnStartup` が `true` の場合のみ `useUpdater().runCheck({ silent: true })` を呼ぶ（`App.tsx` の `didStartupUpdateCheckRef` で一度きりに制御。`appSettings` は他の設定変更でも更新されるため、変更の度に再実行されないようにするため）
-  - `silent: true` はチェック失敗時・「更新なし」時のダイアログ表示を抑制する（コンソールログのみ）。新しいバージョンが見つかった場合は `silent` に関わらずダイアログを表示する
-- 手動チェック（トレイ）：トレイの「Check for Updates」クリックで Rust が emit する `"check-for-update-requested"` イベントを `useUpdater` が `listen` で受信し、`runCheck({ silent: false })` を呼ぶ（＝見つからなかった場合や失敗時も結果をダイアログで表示する）
-- `useUpdater` フックが返す `dialog` state（`UpdateDialogState`：`checking` / `upToDate` / `error` / `available` / `installing` の判別共用体）を `UpdateDialog` コンポーネントが描画する。表示は `SystemCommandModal` と同じオーバーレイ＋カードの見た目（`absolute inset-0 bg-black/30 backdrop-blur-sm` ＋白いカード）を踏襲し、新規デザインパターンは作らない
-  - `available`：新バージョン番号とリリースノート（GitHub Releases の本文をそのまま、長い場合は内部スクロール）を表示し、「後で」（ダイアログを閉じるのみ）と「今すぐ更新」（`download_and_install_update` を呼ぶ）の2ボタンを出す
-  - `installing`：スピナー＋「ダウンロード中です…」「完了後、更新を適用するためアプリを再起動します。」を表示する。ダウンロード完了後は Rust 側でプロセスごと終了するため、これ以降の画面遷移は作り込まない（`invoke` が正常応答を返すことはない前提のため、成功パスの後処理コードは書かない）
-  - `checking` / `upToDate` / `error` は手動チェック時のみ経由する（起動時チェックは `silent: true` のためこれらの state を経由しない）
+- 新しいダイアログ・ポップアップ的なUIをTauriプラグインで実装する場合、`alwaysOnTop: true` のメインウィンドウとの重なりが問題にならないか必ず確認する。フロントエンドのJS APIに親ウィンドウ指定の手段がない場合はRust側のTauriコマンドとして実装し直す。 → 詳細: [dependencies.md](docs/design/dependencies.md#dialog-plugin-parent-window)
+- Windows固有の機能を実装する際は、まずWindows標準API（Win32／WinRT／COM）で直接実装できないかを検討し、サードパーティクレートは標準APIでの実装が著しく煩雑になる場合の代替手段として扱う。 → 詳細: [dependencies.md](docs/design/dependencies.md#windows-api-first-policy)
+- 依存の更新保留（`glib` 等）は、保留理由（上流の制約）を明記したまま残す。理由を書かずに「保留中」とだけ記録しない。 → 詳細: [dependencies.md](docs/design/dependencies.md#dependency-update-status)
 
 ## Tauri コマンド
 
@@ -1109,10 +338,10 @@ const closeWindow = useCallback(
 | `paste_clipboard_image(id)` | `ClipboardImageCache` から `id` に対応する画像バイナリを取得し、Win32 API でクリップボードへ直接書き込む |
 | `set_recent_files_enabled(enabled)` | 最近使ったファイル一覧機能の ON/OFF を切り替えて `AppSettings` を返す |
 | `set_recent_keyword(keyword)` | 最近使ったファイル一覧の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の4キーワードのいずれかと重複する場合はエラーを返して保存しない |
-| `set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）をまとめて保存して `AppSettings` を返す。`FolderEntry` とは独立した /recent 機能全体のグローバル設定。拡張子タグの正規化は `set_folder_settings` と同じ `normalize_extensions` を使う（詳細は「/recent の表示対象設定」節を参照） |
-| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件）。「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を反映する（詳細は「/recent の表示対象設定」節を参照） |
+| `set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）をまとめて保存して `AppSettings` を返す。`FolderEntry` とは独立した /recent 機能全体のグローバル設定。拡張子タグの正規化は `set_folder_settings` と同じ `normalize_extensions` を使う（詳細は [recent-files.md](docs/design/recent-files.md#recent-display-settings) を参照） |
+| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件）。「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を反映する（詳細は [recent-files.md](docs/design/recent-files.md#recent-display-settings) を参照） |
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
-| `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（`chars().all(|c| c.is_ascii_alphanumeric())`）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
+| `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（各文字が `is_ascii_alphanumeric()` を満たすか `chars().all(...)` で判定）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
 | `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |
 | `check_for_update()` | GitHub Releases（`latest.json`）に対してアップデートの有無を確認し、`{ available, version, notes }` を返す。見つかった更新は次の `download_and_install_update` 呼び出しに備えて Rust 側に保持する |
 | `download_and_install_update()` | 保持しておいた更新をダウンロード＆インストールする。成功時は内部でアプリを終了するため呼び出し元に制御は戻らない |
@@ -1129,29 +358,22 @@ const closeWindow = useCallback(
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
-  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード（`clipboardMode`/`clipboardFilterText`）・最近使ったファイル一覧モード（`recentMode`/`recentFilterText`、`get_recent_files` の呼び出しとフィルタ）の判定もここで行う（クエリとプレフィックスのみに依存し、履歴データには依存しないため）。パス貼り付けによる検索フォルダ管理（`pathPasteCandidate`/`pathPasteWizardMode`/`wizardStep` 等、機能1・機能2のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクション（`addSearchFolderFromPaste`/`confirmShortcut`）を持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している（`pathPasteWizardMode` は検索用 `useEffect` の排他判定にも必要なため、`useSearch` の外に出すと相互依存になる）
-    - 選択インデックスの操作を「キーボード操作（`setSelected`）」と「マウスホバー（`selectFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する（`selectFromHover`）
-      1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
-      2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
-    - 非同期呼び出し（`search_files`／`get_recent_files`）の世代 ID 管理とフォーカス回復時の再取得（`focusRegainTableRef`）はモードを横断する共通の仕組みとして「"/" プレフィックスモードの内部アーキテクチャ」節に、ウィンドウを閉じる処理（`closeWindow`）は「ウィンドウを閉じる系アクションの共通設計」節にまとめて記載している（過去の不具合の経緯を含む）。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれの節の規約に従うこと
-    - ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化でも、`fileSearchEnabled` が `true` なら通常通り `search_files("")` を呼ぶ（抑止しない）。この呼び出しは `hideWindow()` でウィンドウが非表示になった後（ユーザーからは見えない状態）に解決するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、常に最新の frecency 順一覧（通常表示）が即座に見える状態になる。かつてはこの空クエリへの変化を「ウィンドウを閉じるだけなら不要な処理」として `suppressNextSearchRef` で1回分だけ抑止していたが、抑止した分を再取得するタイミングがどこにも存在せず、次にウィンドウを再表示した時に検索結果エリアが空のまま固まって見える不具合（クエリを何か入力するまで復旧しない）を引き起こしていたため、このフラグ自体を廃止した
-  - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う（詳細は「ウィンドウを閉じる系アクションの共通設計」節を参照）
-  - `useUpdater()`：アップデートダイアログの状態（`checking`/`upToDate`/`error`/`available`/`installing`）管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は「自動アップデート機能」節を参照）
-  - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ（frecency・clipboardHistory の初期値も `App.tsx` の読み込み完了時に各フックの `setInitial*` で反映する）
+  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード・最近使ったファイル一覧モードの判定もここで行う。パス貼り付けによる検索フォルダ管理（機能1・機能2のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクションを持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している
+    - 選択インデックスの操作を「キーボード操作」と「マウスホバー」で分離しているロジック（ホバー抑制）は [result-list-and-selection.md](docs/design/result-list-and-selection.md#hover-suppression) を参照
+    - 非同期呼び出しの世代 ID 管理とフォーカス回復時の再取得は [window-lifecycle.md](docs/design/window-lifecycle.md#prefix-mode-architecture) を、ウィンドウを閉じる処理は [window-lifecycle.md](docs/design/window-lifecycle.md#close-window-common-design) を参照。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれのポインタ先の規約に従うこと
+    - ファイル起動やコピー等でウィンドウを閉じる直前の空クエリへの変化でも `search_files("")` を抑止しない設計の経緯は [window-lifecycle.md](docs/design/window-lifecycle.md#suppress-next-search-ref-removed) を参照
+  - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う
+  - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](docs/design/tray-autostart-updater.md#auto-update) を参照）
+  - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
-- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+S` で設定パネルを開く、`Ctrl+D` でクエリを全クリア（詳細は次項）
-- `Ctrl+D`：`Ctrl+S`（設定パネルの開閉トグル）と同じ `window` への `keydown` イベントリスナー（`App.tsx`、`useEffect`）で一括処理する（input のローカルハンドラだと WebView2 のブラウザ既定動作の影響で発火しないことがあるため、という理由も `Ctrl+S` と共通）。OCR プレビュー表示中（`ocrActive`）は「閉じる」ボタンと全く同じハンドラ（`handleOcrClose`）をそのまま呼び出し、それ以外の全モードでは現在のモードに関わらず `search.setQuery("")` でクエリを完全に空文字へ戻す（ウィンドウは閉じないため `closeWindow()` は経由しない。`closeRefreshTick` の加算も不要：`query` 自体が変化するため検索用 `useEffect` は通常通り再トリガーされる）。設定パネル表示中（`showSettings`）は対象外とする
-- クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（他のモードは単一カラムのまま。詳細は「クリップボード履歴」節を参照）
-- OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。`App.tsx` で `ocrActive` を導出し、条件付きレンダリングで制御する
-- `OcrPreview` の「閉じる」「コピーして閉じる」ボタンはそれぞれ独立したコールバック（`onClose` / `onCopyAndClose`）を `App.tsx` から受け取り、ボタン内部では invoke やウィンドウ制御を行わない（表示専用コンポーネントの原則を維持するため）
-  - 「閉じる」（`onClose` = `handleOcrClose`）：`ocr.clearOcr()` で OCR state をリセットしたうえで、`requestAnimationFrame` 経由で `inputRef.current?.focus()` を呼び検索ボックスへフォーカスを戻す（`SearchBox` は `ocrActive` に関わらず常にマウントされているため、フォーカス移動のみで足りる）
-  - 「コピーして閉じる」（`onCopyAndClose` = `handleOcrCopyAndClose`）：`copy_to_clipboard` invoke → ルートコンテナに `ocrClosing` state で opacity 0 へのフェードアウト（Tailwind `transition-opacity duration-[180ms]`、180ms はホットキー等による他の非表示処理とは別に、この操作専用の視覚効果として追加するもの）を適用 → 180ms 待機後に `hideWindow()` → `ocrClosing` を戻しつつ `ocr.clearOcr()` で state をリセットする。ホットキー再表示やフォーカスアウトによる非表示にはこのフェードは適用しない（既存の即時 `hide()` のまま）
-  - いずれの経路でも `ocr.clearOcr()` を通るため、次回ウィンドウ表示時は `ocrActive` が `false`（通常の検索画面）に戻っている
-- `OcrPreview` は `flex-1` でウィンドウ残高を占有する（検索ボックスの直下からウィンドウ下端まで全高を使う）。テキスト表示時はテキストエリアを `flex-1 min-h-0 overflow-y-auto` にして内部スクロール可能にし、ボタン行は `flex-shrink-0` で下端に固定する。ローディング・エラー時はコンテンツ高さのみ使用し残高は空白になる
-- 設定パネル：タブ構成。カテゴリ一覧は「設定画面」節を参照。`Ctrl+S` または Esc で検索 UI に戻る
+- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+S` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
+- `Ctrl+D`：`Ctrl+S`（設定パネルの開閉トグル）と同じ `window` への `keydown` イベントリスナーで一括処理する。OCR プレビュー表示中は「閉じる」ボタンと同じハンドラを呼び出し、それ以外の全モードでは `search.setQuery("")` でクエリを完全に空文字へ戻す。設定パネル表示中は対象外
+- クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（詳細は [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#clipboard-history) を参照）
+- OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。閉じる／コピーして閉じるの挙動詳細は [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#ocr-feature) を参照
+- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#settings-tabs-list) を参照。`Ctrl+S` または Esc で検索 UI に戻る
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
 - `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` / `check-for-update-requested` イベントを受信する
-- `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス
+- `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス（詳細は [window-lifecycle.md](docs/design/window-lifecycle.md#focus-out-auto-hide) を参照）
 
 ## コマンド実行時の注意
 

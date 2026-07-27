@@ -4,13 +4,13 @@ A fast, keyboard-driven launcher for Windows 11 — built with Tauri v2, React, 
 
 For a detailed introduction and screenshots, visit the [introduction site](https://hidecode365.github.io/win-launcher-site/).
 
-![WinLauncher](docs/screenshot-search.png)
+![WinLauncher](docs/assets/screenshot-search.png)
 
 ## Screenshots
 
 | File Search | Settings | Clipboard History | OCR |
 | ------------- | ---------- | ------------------ | ---- |
-| ![Search](docs/screenshot-search.png) | ![Settings](docs/screenshot-settings.png) | ![Clipboard](docs/screenshot-clipboard.png) | ![OCR](docs/screenshot-ocr.png) |
+| ![Search](docs/assets/screenshot-search.png) | ![Settings](docs/assets/screenshot-settings.png) | ![Clipboard](docs/assets/screenshot-clipboard.png) | ![OCR](docs/assets/screenshot-ocr.png) |
 
 ## Features
 
