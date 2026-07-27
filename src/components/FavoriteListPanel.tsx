@@ -1,0 +1,347 @@
+import { useRef } from "react";
+import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
+import { Tooltip } from "./Tooltip";
+import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
+import { FavoriteTreeRow, FileEntry } from "../types";
+
+// フォルダ削除アイコン。FileSearchSettings.tsx の「このフォルダを検索対象から
+// 削除」ボタンと同じゴミ箱アイコン・配色（グレー→ホバーで赤）を流用し、既存の
+// 削除操作の見た目に揃える。
+const TRASH_ICON_PATH =
+  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
+
+// 「上へ移動」「下へ移動」用のシェブロンアイコン（Heroicons outline の
+// chevron-up/chevron-down）。段階3のドラッグ&ドロップ実装までの暫定手段のため、
+// 意匠に凝らず既存の他アイコンと同じ線画スタイルのものをそのまま使う。
+const CHEVRON_UP_PATH = "M4.5 15.75l7.5-7.5 7.5 7.5";
+const CHEVRON_DOWN_PATH = "M19.5 8.25l-7.5 7.5-7.5-7.5";
+
+// 「上へ移動」「下へ移動」ボタン。フォルダ見出し行・アイテム行の両方から使う
+// 共通部品。先頭/末尾では disabled にする（依頼内容に基づく：一番上/一番下の
+// ノードではそれぞれ無効化する）。行全体の onClick（折りたたみ切替・起動）に
+// 伝播させないよう stopPropagation する。
+//
+// アイテム行は選択中に青背景（bg-blue-500）になるため、フォルダ見出し行と同じ
+// 固定のグレー配色だと選択時に視認できなくなる。`selected` を受け取り、
+// ToggleIcons.tsx の PinToggleButton 等と同じ考え方（選択中は白、非選択中は
+// グレー）で色を切り替える。フォルダ見出し行は選択対象ではないため常に
+// selected=false で呼ぶ。
+function MoveButton({
+  direction,
+  disabled,
+  selected,
+  onClick,
+}: {
+  direction: "up" | "down";
+  disabled: boolean;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const colorClass = disabled
+    ? selected
+      ? "text-white/30 cursor-default"
+      : "text-gray-200 cursor-default"
+    : selected
+      ? "text-white/80 hover:bg-white/20"
+      : "text-gray-400 hover:text-gray-700 hover:bg-gray-100";
+  return (
+    <Tooltip
+      label={direction === "up" ? "上へ移動" : "下へ移動"}
+      className="flex-shrink-0"
+    >
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!disabled) onClick();
+        }}
+        className={`p-1 rounded ${colorClass}`}
+      >
+        <svg
+          className="w-4 h-4"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d={direction === "up" ? CHEVRON_UP_PATH : CHEVRON_DOWN_PATH}
+          />
+        </svg>
+      </button>
+    </Tooltip>
+  );
+}
+
+// フォルダの折りたたみ・展開を示す▼/▶アイコン（マウスクリックのみで操作する。
+// キーボードでは操作しない。REQUIREMENTS.md「/favorite モード」節を参照）。
+// フォルダ見出し行の視認性を強めるため、アイテム行のアイコン類と同じ16px
+// （w-4 h-4）に統一する（以前は w-3.5 h-3.5 でやや控えめだった）。
+function FolderChevron({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 flex-shrink-0 transition-transform ${
+        collapsed ? "-rotate-90" : ""
+      }`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 9l-7 7-7-7"
+      />
+    </svg>
+  );
+}
+
+// フォルダアイコン（見出し行用）。検索結果行の汎用ドキュメントアイコンと視覚的に
+// 区別するため、既存のパス貼り付け機能2の候補行等で使われているフォルダ形状の
+// パスを流用する。アイテム行のファイルアイコンは輪郭線（stroke）で描くのに対し、
+// こちらは塗りつぶし（fill）にすることで「見出し行である」ことの主張を強める
+// （エクスプローラー等でフォルダアイコンが実体を持つ塗りつぶし表現になっている
+// ことが多いのに倣う）。ピン・★アイコンの「輪郭=未登録/塗りつぶし=登録済み」と
+// いう状態表現の規約とは無関係（フォルダ/ファイルという種別の違いを表すだけで、
+// 登録状態を表すものではない）。
+const FOLDER_ICON_PATH =
+  "M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z";
+
+// インデントの1段あたりの増分。フォルダ見出し行・アイテム行で共通の値を使う
+// （階層は depth の値だけで表現し、種別によって基準位置をずらすと「兄弟なのに
+// 縦位置がずれる」誤解を生むため）。以前の 1.25rem では段差がやや分かりにくかった
+// ため 1.5rem に広げた。
+const INDENT_STEP_REM = 1.5;
+const INDENT_BASE_REM = 1;
+
+// /favorite モードの一覧（フォルダ見出し行＋アイテム行のツリー表示）。REQUIREMENTS.md
+// 「お気に入り機能」節「/favorite モード」「/favorite モードでの★アイコン」を参照。
+//
+// ResultList.tsx とは別の専用コンポーネントにしている理由：ResultList の
+// `rows: ResultRow[]` はフラットな1階層の判別可能 Union であり、フォルダ見出し行
+// （選択不可・インデントの起点）という概念を持たない。ツリー構造を無理に既存の
+// Union へ押し込めるより、ClipboardPanel.tsx・PathPasteWizard.tsx と同様に
+// モード専用の描画コンポーネントとして独立させる方が既存の設計と一貫する。
+export function FavoriteListPanel({
+  tree,
+  selected,
+  onSelectRowByKey,
+  onToggleCollapse,
+  onToggleFavorite,
+  onLaunchFile,
+  onRequestDeleteFolder,
+  onMoveNode,
+}: {
+  tree: FavoriteTreeRow[];
+  // アイテム行のみを対象にした選択インデックス（フォルダ見出し行を除いた番号。
+  // useSearch.ts の favoriteSelectionItems 上の位置と一致する。詳細は
+  // FavoriteTreeRow["itemIndex"] のコメントを参照）。
+  selected: number;
+  onSelectRowByKey: (key: string, clientX: number, clientY: number) => void;
+  onToggleCollapse: (folderId: string) => void;
+  onToggleFavorite: (file: FileEntry) => void;
+  onLaunchFile: (path: string) => void;
+  // フォルダ削除（動作確認用の最小限のコア機能。段階3の本格的なツリー編集UIの
+  // 前倒しではない）。確認要否の判定・実際の削除呼び出しは呼び出し側
+  // （useSearch.ts）が行うため、ここではフォルダIDと表示名を渡すだけでよい。
+  onRequestDeleteFolder: (folderId: string, name: string) => void;
+  // 「上へ移動」「下へ移動」（段階3のドラッグ&ドロップ実装までの暫定手段）。
+  // フォルダ見出し行・アイテム行のどちらからも同じコールバックを使う。
+  onMoveNode: (id: string, direction: "up" | "down") => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useScrollSelectedIntoView(containerRef, selected);
+
+  return (
+    <div ref={containerRef} className="flex-1 overflow-y-auto">
+      {tree.length === 0 && (
+        <div className="flex items-center justify-center text-gray-400 text-sm py-6">
+          お気に入りはありません
+        </div>
+      )}
+      {tree.map((row) => {
+        // インデント幅はフォルダ見出し行・アイテム行で共通の1段あたりの量とする
+        // （REQUIREMENTS.md「フォルダ配下のアイテム行はインデントを1段下げる」。
+        // 階層は depth のみで表現し、種別ごとに基準位置をずらさない。同じ depth の
+        // フォルダ見出し行とアイテム行は兄弟として同じ横位置から始まる）。
+        const indentStyle = {
+          paddingLeft: `${row.depth * INDENT_STEP_REM + INDENT_BASE_REM}rem`,
+        };
+
+        if (row.kind === "folder") {
+          // 削除アイコン（ボタン）を内部に持たせるため、行自体は <button> ではなく
+          // <div role="button"> にする（ResultList.tsx の行と同じ理由・同じ
+          // パターン。ボタンの入れ子はHTML上不正なため。詳細は CLAUDE.md
+          // 「結果行の DOM 構造」節を参照）。
+          //
+          // アイテム行との視覚的な区別は、フォルダアイコンの塗りつぶし・
+          // インデントの深さ・件数バッジの3点のみで表現する（背景帯・太字化・
+          // 余白追加は実機確認の結果「なぜここだけ違うのか」という別の違和感を
+          // 生んだため撤回した）。行自体の背景・文字の太さ・余白はアイテム行と
+          // 同じ扱いのままにする。
+          return (
+            <div
+              key={row.key}
+              role="button"
+              style={indentStyle}
+              className="w-full flex items-center py-2 pr-2 text-left text-gray-500 hover:bg-gray-50"
+              onClick={() => onToggleCollapse(row.node.id)}
+            >
+              <FolderChevron collapsed={row.collapsed} />
+              <svg
+                className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d={FOLDER_ICON_PATH} />
+              </svg>
+              <span className="text-xs font-medium truncate flex-1">
+                {row.node.name}
+              </span>
+              {/* 直下（孫は含めない）のノード数を示す件数バッジ。
+                  ExtensionFilterEditor.tsx のタグ表示（rounded-full bg-gray-100
+                  text-gray-700）と同系統のピル型だが、装飾的な補助情報のため
+                  ひとまわり小さく・薄くしている。 */}
+              <span className="ml-2 flex-shrink-0 inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500">
+                {row.directChildCount}
+              </span>
+              {/* 「上へ移動」「下へ移動」（段階3のドラッグ&ドロップ実装までの
+                  暫定手段）。既存の削除アイコンと並べて配置する。 */}
+              <MoveButton
+                direction="up"
+                disabled={row.isFirstSibling}
+                selected={false}
+                onClick={() => onMoveNode(row.node.id, "up")}
+              />
+              <MoveButton
+                direction="down"
+                disabled={row.isLastSibling}
+                selected={false}
+                onClick={() => onMoveNode(row.node.id, "down")}
+              />
+              {/* 段階3の本格的なツリー編集UIまでの最小限の削除手段。
+                  FileSearchSettings.tsx の検索フォルダ削除ボタンと同じ見た目・
+                  配色に揃える。行全体のクリック（折りたたみ切替）に伝播させない
+                  よう stopPropagation する。アイコンサイズは★・ピンアイコンと
+                  同じ16px（w-4 h-4）に揃える（以前は w-3.5 h-3.5 で他アイコンより
+                  明らかに小さく表示されていた）。 */}
+              <Tooltip label="このフォルダを削除" className="flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestDeleteFolder(row.node.id, row.node.name);
+                  }}
+                  className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d={TRASH_ICON_PATH}
+                    />
+                  </svg>
+                </button>
+              </Tooltip>
+            </div>
+          );
+        }
+
+        const isSelected = row.itemIndex === selected;
+        const item = row.file;
+        return (
+          <div
+            key={row.key}
+            role="button"
+            data-index={row.itemIndex}
+            style={indentStyle}
+            className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
+              isSelected
+                ? "bg-blue-500 text-white"
+                : "text-gray-700 hover:bg-gray-100"
+            }`}
+            onClick={() => onLaunchFile(item.path)}
+            onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+          >
+            <div
+              className={`flex items-center min-w-0 flex-1 ${
+                !row.exists ? "opacity-50" : ""
+              }`}
+            >
+              {item.icon ? (
+                <img
+                  src={item.icon}
+                  alt=""
+                  className="w-4 h-4 mr-3 flex-shrink-0"
+                />
+              ) : (
+                <svg
+                  className="w-4 h-4 mr-3 flex-shrink-0 opacity-60"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{item.name}</div>
+                <div
+                  className={`text-xs truncate ${
+                    isSelected ? "text-blue-100" : "text-gray-400"
+                  }`}
+                >
+                  {item.path}
+                </div>
+              </div>
+            </div>
+            {!row.exists && <WarningIcon selected={isSelected} />}
+            {/* 「上へ移動」「下へ移動」（段階3のドラッグ&ドロップ実装までの
+                暫定手段）。既存の★トグルと並べて配置する。 */}
+            <MoveButton
+              direction="up"
+              disabled={row.isFirstSibling}
+              selected={isSelected}
+              onClick={() => onMoveNode(row.node.id, "up")}
+            />
+            <MoveButton
+              direction="down"
+              disabled={row.isLastSibling}
+              selected={isSelected}
+              onClick={() => onMoveNode(row.node.id, "down")}
+            />
+            {/* /favorite モードの一覧内の項目はすべて登録済みのため active は
+                常に固定（塗りつぶし表示）。表示条件自体は、通常の検索結果行・
+                ピン止めブロックと同じ「selected のときのみ表示」に揃える
+                （登録済みかどうかの判定が不要なだけで、選択されていない行では
+                アイコン自体を表示しない、という表示条件のパターンは他の一覧と
+                共通にする）。押下で即座に解除する
+                （REQUIREMENTS.md「/favorite モードでの★アイコン」節を参照）。 */}
+            {isSelected && (
+              <FavoriteToggleButton
+                active
+                selected={isSelected}
+                onToggle={() => onToggleFavorite(item)}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

@@ -3,6 +3,11 @@ import { formatWithCommas } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { Tooltip } from "./Tooltip";
 import {
+  WarningIcon,
+  PinToggleButton,
+  FavoriteToggleButton,
+} from "./ToggleIcons";
+import {
   FileEntry,
   PrefixCommand,
   ResultRow,
@@ -20,33 +25,9 @@ const PREFIX_COMMAND_ICON_PATH: Record<PrefixCommand["kind"], string> = {
   clipboard:
     "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
   recent: "M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  favorite:
+    "M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z",
 };
-
-// ピン（画鋲）アイコンのシルエット。単色・グラデーションなし・装飾なしのフラット
-// なSVG素材（ICOOON MONO「押しピンのアイコン素材」。
-// D:\ai_work\dev_win\assets\win-launcher\icon\02_ピン止めアイコン\
-// 押しピンのアイコン素材.svg）のジオメトリ（viewBox 0 0 512 512、頭部用 path・
-// 針用 polygon の2パーツ）をそのまま流用する。
-//
-// 描画は fill="currentColor" の単色塗りのみで行い、輪郭線（stroke）は持たない
-// （元データが `fill:#4B4B4B` の単色フラットシルエットとして設計されているため。
-// 輪郭線＋本体の二色構成を後付けすると素材本来の設計から外れる、という判断の
-// 経緯は CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。ピン止め済みか
-// どうかは色（濃淡）で表現し、形状・fill/strokeの切り替えでは表現しない
-// （詳細は PinToggleButton を参照）。
-const PIN_HEAD_PATH =
-  "M335.719,0l-49.953,49.953l26.453,26.438c0,0-20.563,20.578-55.844,55.828c-61.688,61.703-133.813,48.891-165.859,16.828l-45.406,45.406l272.438,272.453l45.406-45.422c-32.047-32.047-44.859-104.172,16.828-165.859c35.25-35.266,55.828-55.828,55.828-55.828l26.438,26.438L512,176.297L335.719,0z";
-const PIN_NEEDLE_POINTS =
-  "138.594,325.328 3.719,460.234 0,512 51.781,508.297 186.672,373.422 162.625,349.375";
-
-// 実体が存在しないピン止め項目に付与する警告アイコン（塗りつぶし三角形＋「!」）。
-// 外側の三角形と「!」（縦棒＋点の2つの小さな矩形）を1つの path にまとめ、
-// fillRule="evenodd" で「!」部分を三角形の塗りに対する穴として抜く。穴の部分は
-// 常に行の背景色がそのまま透けて見えるため、行の背景（白／青ハイライト／
-// グレーアウト）がどれであっても「!」の視認性が背景色に左右されない
-// （視認性改善の詳細は CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
-const WARNING_ICON_PATH =
-  "M12 2L23 21H1Z M11 8H13V14H11Z M11 16H13V18H11Z";
 
 // ピン止めブロックのドラッグハンドル用に確保する左端の幅。通常のファイル検索結果行にも
 // 同じ幅の空要素を確保し、ピン止めブロックと通常一覧でアイコン・ファイル名の横位置を
@@ -54,122 +35,12 @@ const WARNING_ICON_PATH =
 // 「ピン止め・お気に入り・メモ機能」節の「並び替え操作」を参照）。
 const DRAG_HANDLE_GUTTER_CLASS = "w-4 mr-2 flex-shrink-0 text-center";
 
-// 警告アイコン（塗りつぶし三角形）の縁取りに使う、背景色に関わらず視認できる
-// 半透明の暗色。SVG の既定の描画順（fill → stroke）ではストロークがパスの境界線上に
-// 重なって描かれるため、塗り本体の色を変えずに輪郭だけくっきりさせられる（詳細は
-// CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
-const FILLED_ICON_OUTLINE_COLOR = "rgba(0,0,0,0.35)";
-
-// ピン（画鋲）アイコン本体。fill="currentColor" の単色塗りのみで描画し、色や
-// 濃淡は呼び出し元（PinToggleButton）が className で制御する。サイズは
-// 20px（w-5）から18pxへ引き下げている（単色シルエットは、以前の輪郭線＋本体の
-// 二色構成より視覚的な重さが増すため。Tailwind既定のサイズ刻みに18pxが無いため
-// 任意値クラス `w-[18px] h-[18px]` を使う）。
-function PinIcon() {
-  return (
-    <svg className="w-[18px] h-[18px]" viewBox="0 0 512 512" fill="currentColor">
-      <path d={PIN_HEAD_PATH} />
-      <polygon points={PIN_NEEDLE_POINTS} />
-    </svg>
-  );
-}
-
-// 実体が存在しないピン止め項目に付与する警告アイコン（塗りつぶし三角形＋「!」）。
-// 「!」部分は fillRule="evenodd" による穴抜きのため常に背景色が透けて見える
-// （WARNING_ICON_PATH のコメントを参照）。三角形の輪郭にも PinIcon と同じ半透明の
-// 縁取りを添え、背景色によらず形状の境界が視認できるようにする。
-//
-// ツールチップ（「実体が見つかりません」）は SVG の <title> 要素ではなく共通
-// コンポーネント Tooltip を使う（SVG <title> も HTML の title 属性と同じ表示遅延・
-// 表示位置の問題を持つブラウザ既定の仕組みのため。詳細は Tooltip.tsx・CLAUDE.md
-// 「ピン止め・お気に入り・メモ機能」節を参照）。レイアウトに関わるクラス
-// （mr-1 flex-shrink-0）は Tooltip のラッパー側に持たせる。
-function WarningIcon({ selected }: { selected: boolean }) {
-  return (
-    <Tooltip label="実体が見つかりません" className="mr-1 flex-shrink-0">
-      <svg
-        className={selected ? "w-5 h-5 text-amber-200" : "w-5 h-5 text-amber-600"}
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        stroke={FILLED_ICON_OUTLINE_COLOR}
-        strokeWidth={0.5}
-      >
-        <path fillRule="evenodd" clipRule="evenodd" d={WARNING_ICON_PATH} />
-      </svg>
-    </Tooltip>
-  );
-}
-
-// ピン止め済みかどうかを色の濃淡で表現する（色相ではなく濃淡で状態を表現する。
-// 検索結果行におけるピンアイコンの役割はあくまで「操作部品」であり、色を持つのは
-// コンテンツ（ファイルアイコン）だけという原則に揃えるため、高彩度の固定パレットは
-// 使わず、行の文字色に追従するニュートラルな階調のみを使う）。
-// - 非選択・ピン止め済み → gray-600（白背景に対して十分な濃さのニュートラルグレー）
-// - 選択中・未ピン止め   → 白・opacity 0.55（「押せば付く」を薄い白で示す）
-// - 選択中・ピン止め済み → 白・opacity 1.0（「押せば外れる」を濃い白で示す）
-// 非選択・未ピン止めの組み合わせは呼び出し側がそもそもこのコンポーネントを
-// 描画しない（PinToggleButton 自体は「表示するときにどう塗るか」だけを持つ）。
-// 詳細・判断根拠は CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照。
-function pinIconColorClass(active: boolean, selected: boolean): string {
-  if (selected) {
-    return active ? "text-white" : "text-white opacity-[0.55]";
-  }
-  return "text-gray-600";
-}
-
-// ピンのクリックによる ON/OFF トグルボタン。行全体の onClick（起動）に伝播させない
-// よう stopPropagation する。
-//
-// 行の状態は「非選択」「選択中」の2つのみで扱う。本アプリはマウスホバーで選択行
-// そのものが移動する（onMouseEnter が onSelect を呼ぶ）ため、「ホバー中」と
-// 「選択中」は同一の状態であり、ホバー専用のスタイル分岐は持たない（過去に
-// 選択中の行へ opacity-60 のホバー用スタイルが誤って波及した不具合があったため、
-// この2状態モデルに統一して構造的に再発しないようにしている）。
-//
-// アイコン単体へのマウスホバーには、行の選択とは独立した反応として、背景に淡い
-// 円形のハイライトを表示する（クリック可能であることを示すための、アイコン専用の
-// ホバー効果。行の選択状態そのものは変えない）。白背景の行では黒6%、青背景の行
-// （selected）では白20%の半透明を使う。
-//
-// ツールチップ（「ピン止めする」/「ピン止めを解除」）は title 属性ではなく
-// 共通コンポーネント Tooltip を使う（title は表示遅延・表示位置を制御できない
-// ため。詳細は Tooltip.tsx・CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
-// レイアウトに関わるクラス（ml-2 flex-shrink-0）は Tooltip のラッパー側に持たせ、
-// button 自身は見た目（丸み・パディング・色）のみを持つ。
-function PinToggleButton({
-  active,
-  onToggle,
-  selected,
-}: {
-  active: boolean;
-  onToggle: () => void;
-  selected: boolean;
-}) {
-  return (
-    <Tooltip
-      label={active ? "ピン止めを解除" : "ピン止めする"}
-      className="ml-2 flex-shrink-0"
-    >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-        className={`rounded-full p-1 transition-colors ${
-          selected ? "hover:bg-white/20" : "hover:bg-black/[6%]"
-        } ${pinIconColorClass(active, selected)}`}
-      >
-        <PinIcon />
-      </button>
-    </Tooltip>
-  );
-}
-
 export function ResultList({
   rows,
   pinIconVisible,
+  favoriteIconVisible,
   onTogglePin,
+  onToggleFavorite,
   onReorderPinned,
   prefixCommandMode,
   prefixCommandCandidates,
@@ -193,7 +64,9 @@ export function ResultList({
   // 参照）で、App.tsx がそれをそのままこの props として渡す。
   rows: ResultRow[];
   pinIconVisible: boolean;
+  favoriteIconVisible: boolean;
   onTogglePin: (file: FileEntry) => void;
+  onToggleFavorite: (file: FileEntry) => void;
   onReorderPinned: (fromIndex: number, toIndex: number) => void;
   prefixCommandMode: boolean;
   prefixCommandCandidates: PrefixCommand[];
@@ -283,6 +156,7 @@ export function ResultList({
               case "pinned": {
                 const item = row.file;
                 const exists = row.exists;
+                const favorited = row.favorited;
                 return (
                   <div
                     key={row.key}
@@ -390,6 +264,18 @@ export function ResultList({
                         active
                         selected={isSelected}
                         onToggle={() => onTogglePin(item)}
+                      />
+                    )}
+                    {/* お気に入りはピン止めと異なりブロック内の全行が登録済みとは
+                        限らないため（独立した機能）、通常のファイル検索結果行と
+                        同じ表示条件（登録済み、または選択中）で判断する。
+                        favoriteIconVisible（favoriteEnabled）が false の場合は
+                        ピンアイコンの pinIconVisible と同様、表示自体を行わない。 */}
+                    {favoriteIconVisible && (favorited || isSelected) && (
+                      <FavoriteToggleButton
+                        active={favorited}
+                        selected={isSelected}
+                        onToggle={() => onToggleFavorite(item)}
                       />
                     )}
                   </div>
@@ -570,6 +456,7 @@ export function ResultList({
               case "file": {
                 const item = row.file;
                 const pinned = pinIconVisible && row.pinned;
+                const favorited = row.favorited;
                 return (
                   <div
                     key={row.key}
@@ -624,6 +511,17 @@ export function ResultList({
                         active={pinned}
                         selected={isSelected}
                         onToggle={() => onTogglePin(item)}
+                      />
+                    )}
+                    {/* 未登録・非選択の組み合わせではアイコン自体を表示しない
+                        （ピンアイコンと同じ表示条件）。favoriteIconVisible
+                        （favoriteEnabled）が false の場合は pinIconVisible と
+                        同様、表示自体を行わない。 */}
+                    {favoriteIconVisible && (favorited || isSelected) && (
+                      <FavoriteToggleButton
+                        active={favorited}
+                        selected={isSelected}
+                        onToggle={() => onToggleFavorite(item)}
                       />
                     )}
                   </div>

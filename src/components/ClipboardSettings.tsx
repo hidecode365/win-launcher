@@ -31,6 +31,19 @@ export function ClipboardSettings({
 
   const isDirty = prefixDirty || maxItemsDirty;
 
+  // 入力値を変更した時点でエラー表示をクリアする。保存失敗後に値を編集し直しても
+  // （元の値に戻した場合を含む）古いエラーメッセージが残り続けないようにするため
+  // （詳細は CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
+  const handlePrefixChange = (value: string) => {
+    setPrefixDraft(value);
+    setError(null);
+  };
+
+  const handleMaxItemsChange = (value: string) => {
+    setMaxItemsInput(value);
+    setError(null);
+  };
+
   // 直列保存で打ち切り式にする理由は SystemCommandSettings と同じ
   // （error は2フィールド共有の単一エラー文字列のため、後続の成功で先行フィールドの
   // 失敗表示を上書き・消去しないようにするため）。
@@ -65,7 +78,7 @@ export function ClipboardSettings({
             <input
               type="text"
               value={prefixDraft}
-              onChange={(e) => setPrefixDraft(e.target.value)}
+              onChange={(e) => handlePrefixChange(e.target.value)}
               className={draftInputClassName(prefixDirty)}
             />
           </div>
@@ -80,7 +93,7 @@ export function ClipboardSettings({
             min={1}
             max={200}
             value={maxItemsInput}
-            onChange={(e) => setMaxItemsInput(e.target.value)}
+            onChange={(e) => handleMaxItemsChange(e.target.value)}
             className={draftInputClassName(maxItemsDirty)}
           />
           <div className="text-xs text-gray-400 mt-1">1〜200件</div>

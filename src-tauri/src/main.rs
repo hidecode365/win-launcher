@@ -32,6 +32,7 @@ const DEFAULT_SLEEP_KEYWORD: &str = "sleep";
 const DEFAULT_CLIPBOARD_PREFIX: &str = "cb";
 const DEFAULT_CLIPBOARD_MAX_ITEMS: u32 = 50;
 const DEFAULT_RECENT_KEYWORD: &str = "recent";
+const DEFAULT_FAVORITE_KEYWORD: &str = "favorite";
 // 最近使ったファイル一覧専用の保持期間（日数）・表示件数上限のデフォルト値。
 // いずれも設定画面から変更可能（`AppSettings.recent_max_age_days` /
 // `recent_max_results`）。
@@ -831,6 +832,260 @@ fn check_paths_exist(paths: Vec<String>) -> Vec<bool> {
     paths.iter().map(|p| Path::new(p).exists()).collect()
 }
 
+// ==================== お気に入り機能（段階2 ①） ====================
+//
+// お気に入りは「お気に入り」予約フォルダ配下にツリー構造（folder型ノードを挟んだ
+// 入れ子）で整理できる点がピン止め（フラット構造）と異なる。そのため、ある
+// FavoriteNode が「お気に入り」ツリーに属するかどうかは、parentId を1つ辿るだけの
+// ピン止め（`parent_id == PINNED_FOLDER_ID`）とは違い、祖先を再帰的に辿って判定する
+// 必要がある（詳細は REQUIREMENTS.md「お気に入り機能」節を参照）。
+
+static FAVORITE_NODE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// 新規 FavoriteNode の id を生成する。`generate_clipboard_image_id` と同じ
+/// 「現在時刻 + プロセス内カウンタ」方式（新規のUUID等のクレート依存を増やさない）。
+fn generate_favorite_node_id() -> String {
+    let n = FAVORITE_NODE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    format!("fav-{}-{}", now_ms(), n)
+}
+
+/// `parent_id` から祖先を辿り、`ancestor_id` に到達するかどうかを判定する。
+/// ユーザー操作で循環参照を作れる経路は現状存在しないが、防御的に探索深さの
+/// 上限を設けている。
+fn is_descendant_of(favorites: &[FavoriteNode], parent_id: &str, ancestor_id: &str) -> bool {
+    let mut current = parent_id.to_string();
+    for _ in 0..64 {
+        if current == ancestor_id {
+            return true;
+        }
+        match favorites.iter().find(|f| f.id == current) {
+            Some(parent) => current = parent.parent_id.clone(),
+            None => return false,
+        }
+    }
+    false
+}
+
+/// 指定したパス文字列が、「お気に入り」ツリー配下に既に登録済みかどうかを判定する。
+/// 実体の同一性ではなく、パス文字列の完全一致で判定する（REQUIREMENTS.md
+/// 「お気に入り機能」節「★アイコン」の重複判定基準を参照。ピン止め機能の
+/// 「/recent からのピン止め」節と同様、取得元によってパス文字列が異なれば
+/// 別エントリとして扱うため、実体単位ではなくパス文字列単位で判定する）。
+fn is_path_favorited(favorites: &[FavoriteNode], path: &str) -> bool {
+    favorites.iter().any(|f| {
+        f.node_type == FavoriteNodeType::File
+            && f.value == path
+            && is_descendant_of(favorites, &f.parent_id, FAVORITES_FOLDER_ID)
+    })
+}
+
+#[tauri::command]
+fn is_favorited(app: AppHandle, path: String) -> bool {
+    is_path_favorited(&load_favorites(&app), &path)
+}
+
+/// 「お気に入り」予約フォルダ配下のノードを、フォルダ構造込みでフラットに取得する
+/// （`folder`型・`file`型の両方を含む。ツリー構造自体は既存の `parentId` を辿ることで
+/// 呼び出し側が再構築する）。予約フォルダ自体（ルートコンテナ）は含まない。
+#[tauri::command]
+fn get_favorite_nodes(app: AppHandle) -> Vec<FavoriteNode> {
+    let favorites = load_favorites(&app);
+    let mut nodes: Vec<FavoriteNode> = favorites
+        .iter()
+        .filter(|f| is_descendant_of(&favorites, &f.parent_id, FAVORITES_FOLDER_ID))
+        .cloned()
+        .collect();
+    nodes.sort_by_key(|f| f.order);
+    nodes
+}
+
+/// 指定したパス文字列・表示名・保存先フォルダIDで `file` 型ノードを1件追加する。
+/// 同一パス文字列が「お気に入り」ツリー配下に既に登録済みの場合は何もせず、
+/// 現在の配列をそのまま返す（`add_folder` の「既に登録済みなら追加しない」実装と
+/// 同じ、既存の冪等な追加パターンを踏襲）。
+#[tauri::command]
+fn add_favorite(
+    app: AppHandle,
+    path: String,
+    name: String,
+    folder_id: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    let mut favorites = load_favorites(&app);
+    if !is_path_favorited(&favorites, &path) {
+        let max_order = favorites
+            .iter()
+            .filter(|f| f.parent_id == folder_id)
+            .map(|f| f.order)
+            .max();
+        favorites.push(FavoriteNode {
+            id: generate_favorite_node_id(),
+            parent_id: folder_id,
+            node_type: FavoriteNodeType::File,
+            name,
+            value: path,
+            order: max_order.map(|m| m + 1).unwrap_or(0),
+        });
+        save_favorites(&app, &favorites)?;
+    }
+    Ok(favorites)
+}
+
+/// 登録ダイアログの「新規フォルダ作成」から呼ばれる。指定した親フォルダの直下に
+/// `folder` 型ノードを1件追加する（`add_favorite` と同じ「Rust側でid・orderを
+/// 採番し、更新後の配列を返す」パターン）。空文字列はエラーとし保存しない
+/// （他の `set_*` コマンドの空文字列バリデーションと同様、フロントエンドだけでなく
+/// Rust側でも検証する）。
+#[tauri::command]
+fn add_favorite_folder(
+    app: AppHandle,
+    name: String,
+    parent_id: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("フォルダ名を入力してください".to_string());
+    }
+    let mut favorites = load_favorites(&app);
+    // 同一 parent_id 配下での重複フォルダ名チェック。名前の一致判定（前後空白の
+    // トリム＋大文字小文字を区別しない）は既存の validate_unique_keyword
+    // （プレフィックスキーワードの重複チェック）と同じ方針に揃える。file 型の
+    // 兄弟ノードとの重複は対象外（フォルダ同士の重複のみを禁止する）。
+    let duplicate = favorites.iter().any(|f| {
+        f.parent_id == parent_id
+            && f.node_type == FavoriteNodeType::Folder
+            && f.name.trim().to_lowercase() == trimmed.to_lowercase()
+    });
+    if duplicate {
+        return Err("同じ名前のフォルダが既に存在します".to_string());
+    }
+    let max_order = favorites
+        .iter()
+        .filter(|f| f.parent_id == parent_id)
+        .map(|f| f.order)
+        .max();
+    favorites.push(FavoriteNode {
+        id: generate_favorite_node_id(),
+        parent_id,
+        node_type: FavoriteNodeType::Folder,
+        name: trimmed.to_string(),
+        value: String::new(),
+        order: max_order.map(|m| m + 1).unwrap_or(0),
+    });
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
+/// 指定したノードIDのエントリを削除する（1件のみ。子孫を持つ folder 型ノードの
+/// カスケード削除は未対応。folder 型ノードを削除するUI自体が現時点では存在せず
+/// （新規フォルダ作成のみ）、実際に発生し得ない状況のため今回は対応しない）。
+#[tauri::command]
+fn remove_favorite(app: AppHandle, id: String) -> Result<Vec<FavoriteNode>, String> {
+    let mut favorites = load_favorites(&app);
+    favorites.retain(|f| f.id != id);
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
+/// /favorite モードのフォルダ削除（段階3の本格的なツリー編集UIの前倒しではなく、
+/// 動作確認に必要な最小限のコア機能）。指定したフォルダノード自身と、その配下
+/// （再帰。サブフォルダ・ファイルエントリを問わない）を丸ごと削除する。
+/// 既存の `is_descendant_of`（祖先を辿るヘルパー）をそのまま再利用し、削除対象の
+/// 判定ロジックを重複させない。
+///
+/// これは「お気に入りへの登録情報（参照）」を削除するだけであり、実ファイル自体は
+/// 一切操作しない（`FavoriteNode.value` が指すパスには触れない）。
+///
+/// 予約フォルダ（ピン止め／お気に入り／メモの3つのルート）は削除対象に含めない
+/// （`enforce_reserved_folders` と同様、UI側の制限だけでなくRust側でも防御する）。
+#[tauri::command]
+fn remove_favorite_folder(app: AppHandle, id: String) -> Result<Vec<FavoriteNode>, String> {
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+        return Err("予約フォルダは削除できません".to_string());
+    }
+    let favorites = load_favorites(&app);
+    let target_is_folder = favorites
+        .iter()
+        .any(|f| f.id == id && f.node_type == FavoriteNodeType::Folder);
+    if !target_is_folder {
+        return Err("指定したフォルダが見つかりません".to_string());
+    }
+    let kept: Vec<FavoriteNode> = favorites
+        .iter()
+        .filter(|f| f.id != id && !is_descendant_of(&favorites, &f.parent_id, &id))
+        .cloned()
+        .collect();
+    save_favorites(&app, &kept)?;
+    Ok(kept)
+}
+
+/// /favorite モードの簡易並び替え（段階3で予定しているドラッグ&ドロップ実装までの
+/// 暫定コア機能）。指定したノードと、同じ parent_id を共有する兄弟のうち直前
+/// （`direction == "up"`）または直後（`direction == "down"`）のノードの `order` 値を
+/// 入れ替えるだけの単純な実装（振り直しは行わない）。フォルダをまたいだ移動（親の
+/// 変更）は対象外。既に先頭/末尾で移動先が無い場合は何もせず現在の配列をそのまま
+/// 返す（UI側でボタンを無効化する想定だが、Rust側でも同様に防御する）。
+///
+/// 予約フォルダ（ピン止め／お気に入り／メモの3つのルート）は移動対象に含めない
+/// （`remove_favorite_folder` と同様、UI側の制限だけでなくRust側でも防御する）。
+#[tauri::command]
+fn move_favorite_node(
+    app: AppHandle,
+    id: String,
+    direction: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+        return Err("予約フォルダは移動できません".to_string());
+    }
+    let mut favorites = load_favorites(&app);
+    let target_index = favorites
+        .iter()
+        .position(|f| f.id == id)
+        .ok_or_else(|| "指定したノードが見つかりません".to_string())?;
+    let parent_id = favorites[target_index].parent_id.clone();
+
+    // 同じ parent_id を共有する兄弟を order 昇順で並べ、元の配列上のインデックスの
+    // 列として持つ（favorites 自体は parent_id ごとにソートされているとは限らない
+    // ため、ここで都度組み立てる）。
+    let mut sibling_indices: Vec<usize> = favorites
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.parent_id == parent_id)
+        .map(|(i, _)| i)
+        .collect();
+    sibling_indices.sort_by_key(|&i| favorites[i].order);
+
+    let pos = sibling_indices
+        .iter()
+        .position(|&i| i == target_index)
+        .ok_or_else(|| "内部エラー: 兄弟ノードの特定に失敗しました".to_string())?;
+
+    let swap_pos = match direction.as_str() {
+        "up" => {
+            if pos == 0 {
+                return Ok(favorites);
+            }
+            pos - 1
+        }
+        "down" => {
+            if pos + 1 >= sibling_indices.len() {
+                return Ok(favorites);
+            }
+            pos + 1
+        }
+        _ => return Err("directionは up または down を指定してください".to_string()),
+    };
+
+    let a = sibling_indices[pos];
+    let b = sibling_indices[swap_pos];
+    let order_a = favorites[a].order;
+    let order_b = favorites[b].order;
+    favorites[a].order = order_b;
+    favorites[b].order = order_a;
+
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
 // 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで
 // 保存された settings.json（このフィールドを持たない）の読み込み時に
 // deserialize が失敗し、AppSettings 全体が Default::default() にフォールバックして
@@ -857,6 +1112,10 @@ fn default_sleep_keyword() -> String {
 
 fn default_recent_keyword() -> String {
     DEFAULT_RECENT_KEYWORD.to_string()
+}
+
+fn default_favorite_keyword() -> String {
+    DEFAULT_FAVORITE_KEYWORD.to_string()
 }
 
 fn default_recent_max_age_days() -> u32 {
@@ -914,6 +1173,10 @@ struct AppSettings {
     path_paste_enabled: bool,
     #[serde(default = "default_true")]
     pin_enabled: bool,
+    #[serde(default = "default_true")]
+    favorite_enabled: bool,
+    #[serde(default = "default_favorite_keyword")]
+    favorite_keyword: String,
 }
 
 impl Default for AppSettings {
@@ -945,26 +1208,30 @@ impl Default for AppSettings {
             recent_whitelist_extensions: Vec::new(),
             path_paste_enabled: true,
             pin_enabled: true,
+            favorite_enabled: true,
+            favorite_keyword: DEFAULT_FAVORITE_KEYWORD.to_string(),
         }
     }
 }
 
-// システムコマンド3キーワード＋クリップボード呼び出しキーワードは、"/" に続く文字列として
-// 互いに重複してはならない（重複すると前方一致判定でどちらのモードか一意に決まらないため）。
-// `changing` には変更しようとしているフィールドの識別子（"shutdown"/"restart"/"sleep"/
-// "clipboard"）を渡し、自分自身は比較対象から除外する。大文字小文字の区別は、フロントエンド
-// の前方一致判定ロジック（`toLowerCase()` による比較）に合わせて行わない。
+// システムコマンド3キーワード＋クリップボード／最近使ったファイル／お気に入りの
+// 呼び出しキーワードは、"/" に続く文字列として互いに重複してはならない（重複すると
+// 前方一致判定でどちらのモードか一意に決まらないため）。`changing` には変更しようと
+// しているフィールドの識別子（"shutdown"/"restart"/"sleep"/"clipboard"/"recent"/
+// "favorite"）を渡し、自分自身は比較対象から除外する。大文字小文字の区別は、
+// フロントエンドの前方一致判定ロジック（`toLowerCase()` による比較）に合わせて行わない。
 fn validate_unique_keyword(
     settings: &AppSettings,
     changing: &str,
     new_value: &str,
 ) -> Result<(), String> {
-    let entries: [(&str, &str); 5] = [
+    let entries: [(&str, &str); 6] = [
         ("shutdown", settings.shutdown_keyword.as_str()),
         ("restart", settings.restart_keyword.as_str()),
         ("sleep", settings.sleep_keyword.as_str()),
         ("clipboard", settings.clipboard_prefix.as_str()),
         ("recent", settings.recent_keyword.as_str()),
+        ("favorite", settings.favorite_keyword.as_str()),
     ];
     let conflict = entries
         .iter()
@@ -1186,6 +1453,27 @@ fn set_path_paste_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, 
 fn set_pin_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.pin_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_favorite_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.favorite_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_favorite_keyword(app: AppHandle, keyword: String) -> Result<AppSettings, String> {
+    let trimmed = keyword.trim();
+    if trimmed.is_empty() {
+        return Err("キーワードを入力してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    validate_unique_keyword(&settings, "favorite", trimmed)?;
+    settings.favorite_keyword = trimmed.to_string();
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -2254,7 +2542,16 @@ fn main() {
             get_favorites,
             set_favorites,
             get_pinned_files,
-            check_paths_exist
+            check_paths_exist,
+            is_favorited,
+            get_favorite_nodes,
+            add_favorite,
+            add_favorite_folder,
+            remove_favorite,
+            remove_favorite_folder,
+            move_favorite_node,
+            set_favorite_enabled,
+            set_favorite_keyword
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

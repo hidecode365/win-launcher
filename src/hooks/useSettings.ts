@@ -255,6 +255,33 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  const setFavoriteEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_favorite_enabled", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
+  // 「お気に入り」タブ末尾の単一保存ボタンから、未保存の場合のみ呼ばれる。成功時は
+  // `null`、失敗時はエラーメッセージ文字列を返す理由は setClipboardPrefix/
+  // setRecentKeyword と同じ（一括保存の直列実行を制御する。ただし本タブは
+  // フィールドが1つのみのため直列実行自体は発生しない）。エラー表示用の state は
+  // このフックでは持たない。
+  const setFavoriteKeyword = useCallback(
+    async (keyword: string): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_favorite_keyword", {
+          keyword,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
+
   const addFolder = useCallback(async () => {
     const path = await invoke<string | null>("pick_folder").catch(() => null);
     if (!path) return;
@@ -334,6 +361,8 @@ export function useSettings(showSettings: boolean) {
     setCheckUpdateOnStartup,
     setPathPasteEnabled,
     setPinEnabled,
+    setFavoriteEnabled,
+    setFavoriteKeyword,
     addFolder,
     toggleFolder,
     removeFolder,

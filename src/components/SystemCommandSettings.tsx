@@ -73,6 +73,25 @@ export function SystemCommandSettings({
 
   const isDirty = shutdownDirty || restartDirty || sleepDirty;
 
+  // 入力値を変更した時点で、そのコマンド自身のエラー表示のみをクリアする（他コマンドの
+  // エラーは独立しているため巻き込まない）。保存失敗後に値を編集し直しても（元の値に
+  // 戻した場合を含む）古いエラーメッセージが残り続けないようにするため（詳細は
+  // CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
+  const handleShutdownChange = (value: string) => {
+    setShutdownDraft(value);
+    setErrors((prev) => ({ ...prev, shutdown: null }));
+  };
+
+  const handleRestartChange = (value: string) => {
+    setRestartDraft(value);
+    setErrors((prev) => ({ ...prev, restart: null }));
+  };
+
+  const handleSleepChange = (value: string) => {
+    setSleepDraft(value);
+    setErrors((prev) => ({ ...prev, sleep: null }));
+  };
+
   // 直列で1件ずつ保存する。あるコマンドの保存が失敗した時点で打ち切り、そのエラー
   // 表示を維持する（後続コマンドの保存成功が先行コマンドのエラー表示を巻き戻さない
   // ようにするため。3コマンドの `errors` はコマンドごとに独立しているが、保存自体は
@@ -106,21 +125,21 @@ export function SystemCommandSettings({
         <KeywordField
           label="シャットダウン"
           value={shutdownDraft}
-          onChange={setShutdownDraft}
+          onChange={handleShutdownChange}
           isDirty={shutdownDirty}
           error={errors.shutdown}
         />
         <KeywordField
           label="再起動"
           value={restartDraft}
-          onChange={setRestartDraft}
+          onChange={handleRestartChange}
           isDirty={restartDirty}
           error={errors.restart}
         />
         <KeywordField
           label="スリープ"
           value={sleepDraft}
-          onChange={setSleepDraft}
+          onChange={handleSleepChange}
           isDirty={sleepDirty}
           error={errors.sleep}
         />

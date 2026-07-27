@@ -9,6 +9,7 @@ export function StatusFooter({
   pathPasteWizardStep,
   prefixCommandMode,
   selectedRowKind,
+  favoriteItemSelected,
 }: {
   pendingCommand: boolean;
   webSearchVisible: boolean;
@@ -20,6 +21,10 @@ export function StatusFooter({
   // ない場合（clipboardMode・prefixCommandMode・Web検索行選択中・範囲外等）は
   // null。並び順・rows の詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照。
   selectedRowKind: ResultRow["kind"] | null;
+  // /favorite モードでアイテム行が選択中かどうか。/favorite モードは rows を
+  // 使わない専用一覧のため selectedRowKind では判定できず、別途渡す
+  // （Shift+Enter フォルダを開くヒントの表示条件に使う）。
+  favoriteItemSelected: boolean;
 }) {
   return (
     <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400">
@@ -54,7 +59,9 @@ export function StatusFooter({
                       ? "Enter コピー"
                       : "Enter 起動"}
           </span>
-          {(selectedRowKind === "pinned" || selectedRowKind === "file") && (
+          {(selectedRowKind === "pinned" ||
+            selectedRowKind === "file" ||
+            favoriteItemSelected) && (
             <span>Shift+Enter フォルダを開く</span>
           )}
           <span>Ctrl+D クリア</span>

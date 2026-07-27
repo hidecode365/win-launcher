@@ -76,6 +76,40 @@ export function RecentFilesSettings({
   // （詳細は CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
   const [error, setError] = useState<string | null>(null);
 
+  // 入力値を変更した時点でエラー表示をクリアする。保存失敗後に値を編集し直しても
+  // （元の値に戻した場合を含む）古いエラーメッセージが残り続けないようにするため
+  // （詳細は CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。「フォルダを
+  // 対象に含める」トグルは即時保存で毎回エラーを上書きするため対象外。
+  const handleKeywordChange = (value: string) => {
+    setKeywordDraft(value);
+    setError(null);
+  };
+
+  const handleMaxAgeDaysChange = (value: string) => {
+    setMaxAgeDaysInput(value);
+    setError(null);
+  };
+
+  const handleMaxResultsChange = (value: string) => {
+    setMaxResultsInput(value);
+    setError(null);
+  };
+
+  const handleFilterModeChange = (mode: ExtensionFilterMode) => {
+    setFilterModeDraft(mode);
+    setError(null);
+  };
+
+  const handleAddExtension = (ext: string) => {
+    setActiveExtensionsDraft([...activeExtensionsDraft, ext]);
+    setError(null);
+  };
+
+  const handleRemoveExtension = (ext: string) => {
+    setActiveExtensionsDraft(activeExtensionsDraft.filter((e) => e !== ext));
+    setError(null);
+  };
+
   // 「フォルダを対象に含める」はトグルのため、操作した時点で即時保存する
   // （CLAUDE.md「設定画面」節の「保存モデル」を参照）。拡張子フィルタリングの
   // ドラフト（未保存の可能性がある）は巻き込まず、保存済みの現在値を使う。
@@ -141,7 +175,7 @@ export function RecentFilesSettings({
             <input
               type="text"
               value={keywordDraft}
-              onChange={(e) => setKeywordDraft(e.target.value)}
+              onChange={(e) => handleKeywordChange(e.target.value)}
               className={draftInputClassName(keywordDirty)}
             />
           </div>
@@ -156,7 +190,7 @@ export function RecentFilesSettings({
             min={1}
             max={3650}
             value={maxAgeDaysInput}
-            onChange={(e) => setMaxAgeDaysInput(e.target.value)}
+            onChange={(e) => handleMaxAgeDaysChange(e.target.value)}
             className={draftInputClassName(maxAgeDaysDirty)}
           />
           <div className="text-xs text-gray-400 mt-1">
@@ -170,7 +204,7 @@ export function RecentFilesSettings({
             min={1}
             max={200}
             value={maxResultsInput}
-            onChange={(e) => setMaxResultsInput(e.target.value)}
+            onChange={(e) => handleMaxResultsChange(e.target.value)}
             className={draftInputClassName(maxResultsDirty)}
           />
           <div className="text-xs text-gray-400 mt-1">1〜200件</div>
@@ -186,14 +220,10 @@ export function RecentFilesSettings({
             <div className="text-sm font-medium text-gray-800 mb-2">拡張子フィルタリング</div>
             <ExtensionFilterEditor
               mode={filterModeDraft}
-              onModeChange={setFilterModeDraft}
+              onModeChange={handleFilterModeChange}
               extensions={activeExtensionsDraft}
-              onAddExtension={(ext) =>
-                setActiveExtensionsDraft([...activeExtensionsDraft, ext])
-              }
-              onRemoveExtension={(ext) =>
-                setActiveExtensionsDraft(activeExtensionsDraft.filter((e) => e !== ext))
-              }
+              onAddExtension={handleAddExtension}
+              onRemoveExtension={handleRemoveExtension}
             />
           </div>
         </SettingsGroup>

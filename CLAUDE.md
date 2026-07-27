@@ -258,7 +258,7 @@ win-launcher/
 ### ピン止め・お気に入り・メモ機能（Rust / フロントエンド）
 
 - 要件・仕様の詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照。本節は実装上の設計判断・注意点のみを記す
-- 今回実装したのは「ピン止め」のみ。「お気に入り」「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装
+- 段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装のまま（詳細は「お気に入り機能の実装（段階2）」節を参照）
 
 #### データ構造（`FavoriteNode`）
 
@@ -316,6 +316,46 @@ win-launcher/
   - ピン止め解除の分岐は元々キー `file:<path>` を対象にしており、解除後は常に「file」kind に戻ることを前提にしていたため、`pinnedVisible` の真偽に関わらずそのまま正しく動作していた（変更不要）
 - **今後の指針**：`/recent` に対して★（お気に入り）・ノート（メモ）等の同種の行アクションを追加する場合も、`rows` 構築ロジック・行アクションのハンドラ側では `recentMode` を理由にした除外分岐を新設しないこと。表示可否を切り替える必要がある場合は、既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を機械的に再利用し、`recentMode` 単体を条件式に個別に書き足さない（今回 `pinIconVisible` から `&& !recentMode` を削除するだけで済んだこと自体が、rows ベースの設計が由来を区別しない形で既に一般化されていたことの証左）
 
+#### お気に入り機能の実装（段階2）
+
+段階2「★登録 + `/favorite` 呼び出し」で「お気に入り」機能本体を実装した。データ構造そのもの（`FavoriteNode`・隣接リスト方式・予約フォルダの基本設計）は「データ構造（`FavoriteNode`）」節・「予約フォルダ（固定ID）」節に既に記載済みのためここでは繰り返さない。本節はお気に入り機能が**ピン止めとは異なりツリー構造を実際に利用する**ことで生じた設計判断のみを記す。
+
+##### ピン止め（フラット構造）との違い：お気に入りは実際にツリーを組む
+
+- ピン止めは `PINNED_FOLDER_ID` の直下にしかノードを追加しない運用のため、データ構造上は隣接リストだが実質的にはフラットな1階層リストとして機能してきた。お気に入りは `FAVORITES_FOLDER_ID` 配下に `type: "folder"` のノードを中間ノードとして自由に作成・ネストできる、初めて「実際に木を組む」機能である
+- この違いにより、以下の3つはお気に入り実装で新規に必要になったもので、ピン止めには存在しない
+  - `is_descendant_of(favorites, parent_id, ancestor_id)`（Rust, `main.rs`）とそのフロントエンド鏡 `isDescendantOfFolder`（`useSearch.ts`）：あるノードが特定の祖先の子孫かどうかを祖先チェーンをたどって判定する。フォルダ削除時の子孫巻き込み判定・重複登録判定（`/favorite` からの★追加時、既に同じ実体が `FAVORITES_FOLDER_ID` の子孫に存在するか）の両方で使う。任意の深さを想定するため、無限ループ防止の深さ上限ガード（64）を持たせている（ピン止めは常に深さ1のため元々この種のガードが不要だった）
+  - `src/lib/nodeTree.ts` の `groupNodesByParent`/`walkGroupedTree`：`parentId` でグルーピングしてから深さ優先で辿る、ツリーの平坦化ロジック共通部分。詳細・切り出しの経緯は次項「同一階層内の同名フォルダ作成を禁止するバリデーション」を参照
+  - 登録ダイアログ（`RegisterEntryDialog.tsx`）の配置先フォルダ選択：ピン止めには「配置先を選ぶ」という概念自体が存在しない（常に `PINNED_FOLDER_ID` 直下に追加するだけ）のに対し、お気に入りは登録の都度どのフォルダ配下に置くかをユーザーが選択する
+- 今後「メモ」機能を実装する場合も、メモを単純な一覧（ピン止め型）にするか、フォルダ分類を持つツリー（お気に入り型）にするかで、上記のうちどれが必要になるかが変わる。フォルダ分類を持たせるなら、この3つ（`is_descendant_of`／`groupNodesByParent`+`walkGroupedTree`／配置先選択 UI）はそのまま再利用できる設計にしてある
+
+##### 同一階層内の同名フォルダ作成を禁止するバリデーション
+
+- `add_favorite_folder`（Rust）に、同一の親フォルダ配下で同名（トリム後・大小文字区別なし）のフォルダを重複作成できないバリデーションを追加した。判定の作法は `validate_unique_keyword`（システムコマンド機能のキーワード重複チェック）と同じ「トリム＋小文字化して比較」の慣習にそのまま合わせている
+- **経緯**：`/favorite` モードでの表示順序が意図と異なるという不具合報告を受けて調査した。まずツリー平坦化アルゴリズム自体（`favoriteTree` の構築ロジック）を、実際の `order` 値を使った複数パターンのスタンドアロン検証スクリプトで確認したところ、アルゴリズム自体は変更前後どちらの実装（重複前の実装・`nodeTree.ts` へ切り出した後の実装）でも一貫して正しく、`order` 値が示す通りの順序をそのまま再現していた。合わせて、この調査の過程で無関係の実在バグ（`createFavoriteFolder` がフォルダ作成後に `rawFavoriteNodes` を再取得しておらず、直後の表示が古いままになる）を1件発見し修正した
+- アルゴリズム自体に不整合は見つからなかった一方、**同一階層に同名フォルダが複数存在すると、ユーザーが登録ダイアログのフォルダ選択プルダウンで区別がつかず、意図と異なる方のフォルダを選んでしまう**（結果として「順序がおかしい」ように見える）ことが、表示上の不整合の実態として説明のつく原因だった。アルゴリズムのバグとして再現・特定するよりも、そもそも同名フォルダが作成できてしまうこと自体を防ぐ方が、再発防止として確実かつシンプルと判断し、上記のバリデーションを追加した
+- **今後の指針**：ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」といった報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、**同名・同一表示内容のノードが複数存在してユーザーが取り違えていないか**を先に確認すること。表示上の識別性（一意な名前）が担保されていないツリーは、アルゴリズムが正しくてもユーザー体感としての「順序の不整合」を生む
+
+##### `/favorite` モードの並び順方針（フォルダ/ファイルの混在を許可）と視覚的区別の設計
+
+- `/favorite` の一覧はファイル検索結果のような機械的な並び替え（frecency・アルファベット順等）を一切行わず、`order` フィールドが示す通りの並び順をそのまま表示する。**フォルダとファイルを種別ごとにグルーピングせず、同一階層内で自由に混在・入れ替え可能な設計を意図的に採用した**
+- **理由**：お気に入りは「少数を厳選して登録する」用途であることを前提にすると、機械的な整列（種別ごとにまとめる等）はユーザーが意図して行った手動の並び替え（後述の上下移動）を無意味化してしまう。ファイル検索結果のような「大量の項目から目的のものを見つける」用途とは異なり、お気に入りではユーザー自身が並び順そのものに意味を持たせたいはずだという判断から、システム側で並び順を再解釈・再整列しない方針にした
+- **視覚的な区別の設計変遷**：フォルダ見出し行とアイテム行を区別しやすくするため、当初は背景色（`bg-gray-100/80`／`hover:bg-gray-200/70`）・上マージン（`mt-2`）・太字＋字間（`font-semibold tracking-wide`）を追加した。しかし実機で確認したところ、「フォルダらしさが伝わる」効果よりも「なぜここだけ背景が違うのか」という別の違和感の方が大きいという判断に至り、これらは全て撤回した。参考にした Vivaldi のブックマークパネルも、背景色や文字装飾ではなく、フォルダアイコンの主張（塗りつぶし）・インデント・件数バッジの3点だけでフォルダを識別させている構成だったため、最終的にこの3点のみに絞った
+  - 残した／採用した表現：フォルダアイコンの塗りつぶし化（`fill="currentColor"`、輪郭線なし）、インデント幅の拡大（`INDENT_STEP_REM` を1.25rem→1.5remへ）、シェブロン（開閉アイコン）のサイズ拡大、そしてフォルダの直下の子ノード数を示す件数バッジ（`ExtensionFilterEditor.tsx` のタグピルより一段小さい `text-[11px]` のグレーの丸バッジ）を新規追加
+  - **一般原則（今後この一覧に手を入れる際に踏まえること）**：行の種別を区別する装飾は、背景色や太字のような「行全体の主張を強める」手段ではなく、アイコンの形状変化・インデント・小さなバッジといった「情報量を追加するが主張は強めない」手段に留めること。過度な装飾はかえって「なぜここだけ違うのか」という別の違和感を生み、可読性を落とす（本節の経緯がその実例）
+
+##### ★・ピンアイコンの表示条件の統一（selected のときのみ表示）
+
+- ピン止めブロックの★（実際はピンアイコン）は元々「選択中（`isSelected`。ホバーによる選択を含む）のときのみ表示」という条件になっていた（理由は「現在の実装」節の記載を参照：全行が既にピン止め済みのブロックでは、常時表示すると状態を区別しない単なる装飾になるため）
+- `/favorite` 一覧の★アイコンは、実装当初は常時表示（条件分岐なし）にしていたが、これをピン止めブロックと同じ「selected のときのみ表示」に変更した。`/favorite` に並ぶ項目もお気に入りブロック同様「一覧に出ている時点で必ず登録済み」であるため、常時表示は同じ理由（状態を区別しない単なる装飾になる）で不要と判断し、既存のピン止めブロックの判断をそのまま踏襲した
+- これにより、ピン止めブロック・`/favorite` 一覧・通常の検索結果行（こちらは元々「選択中、またはピン止め/お気に入り済み」の条件）の3箇所すべてで、アイコンの表示条件の考え方が統一された：**「登録済みかどうかを見せる必要がない文脈（一覧の全項目が登録済みであることが自明な文脈）では selected のときだけ見せる」**というルールとして今後も踏襲すること
+
+##### `/favorite` モードに前倒し実装した「上下移動」「フォルダ削除」は暫定実装
+
+- `move_favorite_node(id, direction)`・`remove_favorite_folder(id)`（いずれも Rust コマンド）と、`/favorite` 一覧内の上下移動ボタン・削除アイコンは、段階3で予定している設定画面側のドラッグ&ドロップによるツリー編集 UI が完成する**前**に、動作確認・実運用を進めるための最小限の暫定実装として前倒しで追加したものである
+- **設計意図（今後の作業者が必ず踏まえること）**：段階3で設定画面のツリー編集 UI（並び替え・リネーム・削除・フォルダ作成をまとめて扱う想定）が完成した時点で、`/favorite` モード内のこれら暫定機能（上下移動ボタン・削除アイコン・関連する確認モーダル）は**撤去**し、メンテナンス系操作（並び替え・リネーム・削除・フォルダ作成）は設定画面側に一本化する方針である。`/favorite` モードは本来、`/recent` と同様に「呼び出して選ぶだけ」の一覧に留める想定であり、今回の上下移動・削除はそのための恒久機能ではない
+- `move_favorite_node`/`remove_favorite_folder` の Rust コマンド自体（予約フォルダの保護ガード・`order` の部分更新等のロジック）は、設定画面のツリー編集 UI からも同じ操作（並び替え・削除）の裏側として再利用できる可能性が高いため、コマンド自体を段階3実装時に無条件で削除してよいわけではない。**撤去対象は `/favorite` モード側の呼び出し口（UI）であり、Rust コマンドの要否は段階3の設計時に改めて判断すること**
+
 #### 実装後に発見された不具合と修正（知見）
 
 ##### Tauri の `dragDropEnabled` と HTML5 Drag and Drop の競合
@@ -366,6 +406,8 @@ win-launcher/
 
 ###### 現在の実装（`PinIcon`／`PinToggleButton`、`ResultList.tsx`）
 
+**【v0.10.x時点（ピン止め機能のみ）の実装。段階2（お気に入り機能）で下記の通り一部変更されている。最新の状態は本項末尾の「【追記・段階2】」を参照】**
+
 - ジオメトリ：提供SVG素材（viewBox `0 0 512 512`）の `<path>`（頭部＋軸の花形シルエット）と `<polygon>`（針）をそのまま `PIN_HEAD_PATH`／`PIN_NEEDLE_POINTS` の座標データとして流用している（変更なし）。素材自体が最初から斜めの向きで描かれているため、`<g transform="rotate(...)">` による回転は不要
 - 描画：`PinIcon` は `fill="currentColor"` の単色塗りのみで、輪郭線（`stroke`）を持たない。色・濃淡はすべて呼び出し元（`PinToggleButton`）が `className` で制御する。以前の「塗りつぶし＝固定パレットの二色、アウトライン＝`currentColor`」という fill/stroke の切り替えによる状態表現はやめ、状態はすべて色の濃淡のみで表現する
 - サイズ：`w-5 h-5`（20px）から `w-[18px] h-[18px]`（18px、Tailwindの既定刻みに無いため任意値クラスを使用）へさらに一段引き下げた。単色の塗りつぶしシルエットは、同じ寸法でも輪郭線＋本体の二色構成より視覚的な重さ（面積として感じる大きさ）が増すため
@@ -379,6 +421,14 @@ win-launcher/
 - ツールチップ：共通コンポーネント `Tooltip`（`src/components/Tooltip.tsx`）で「ピン止めを解除」（ピン止め済み）／「ピン止めする」（未ピン止め）を表示する。当初は `title` 属性を使っていたが、表示遅延・表示位置の両方を制御できない問題があり独自実装に置き換えた（経緯・仕様は次項「ツールチップ表示（`Tooltip` 共通コンポーネント）」を参照）
 - アイコン単体のホバー反応：行の選択とは独立して、マウスカーソルがアイコンそのものの上に乗ったときだけ、`rounded-full` の背景をうっすら表示する（`hover:bg-black/[6%]`＝白系行、`hover:bg-white/20`＝選択中の青ハイライト行）。行の選択状態（背景色・`isSelected`）そのものは変えない、アイコン単体への視覚フィードバック
 - 確認方法：本番の `npm run tauri dev` は起動せず、同じ SVG マークアップを抜き出したスタンドアロン HTML をヘッドレス Edge で画像化し、各状態・各行背景で目視確認した（「選択中・未ピン止め」と「選択中・ピン止め済み」の opacity 差（0.55 と 1.0）が、18px相当のサイズでも判別できることを含めて確認済み）
+
+**【追記・段階2（お気に入り機能実装時）】** REQUIREMENTS.md「アイコンによる状態表現の共通規則」節の仕様変更に伴い、ピン止め済みかどうかの表現を上記の「色の濃淡（3値）」から「形状（輪郭／塗りつぶし）」に変更した。これはピン止めだけでなく、同時に新設したお気に入りの★アイコンとも共通のルールである。
+
+- `PinIcon` は `filled: boolean` prop を受け取り、塗りつぶし版（上記のジオメトリを `fill="currentColor"` のみで描画。変更なし）と、輪郭版（同じ素材の線画版 `押しピンのアイコン素材_線画.svg` のジオメトリを使用し、`viewBox="-20 -20 552 552"`・`stroke="currentColor"`・`stroke-width="40"`・`fill="none"` で描画）を切り替える。輪郭版の viewBox が塗りつぶし版（`0 0 512 512`）と異なるのは、線幅40の輪郭線が図形の外側にはみ出す分を吸収するための意図的な指定であり、塗りつぶし版に合わせて書き換えてはならない
+- サイズ：18px（`w-[18px] h-[18px]`）から `w-4 h-4`（16px、Tailwindの既定クラス）へさらに一段引き下げた。**理由はサイズ自体の視覚的な重さの調整ではなく、同じ行に並ぶ★アイコン（お気に入り）と描画サイズを完全に統一するため。** viewBox が異なる2つの形状（ピンの輪郭版・塗りつぶし版）を同じ表示サイズで揃えるには、CSS上の `width`/`height` 相当のクラスを両方に明示的に同じ値で指定する必要がある点に注意（`viewBox` を揃えても表示サイズが揃うわけではない）
+- 状態と配色（`toggleIconColorClass`。ピン・★共通の名称に変更済み）：色は状態の表現に使わなくなったため、「非選択→`text-gray-600`」「選択中→`text-white`」の2値のみに簡素化した（旧・選択中の「未ピン止め＝`opacity-[0.55]`／ピン止め済み＝不透明」という2段階の白の使い分けは廃止。状態は `PinIcon`/`FavoriteIcon` の `filled` prop（形状）が担うため、色側で重ねて表現する必要がなくなったため）
+- ツールチップ文言も「ピン止めする」／「ピン止めを解除」から「ピン止めに追加」／「ピン止めから削除」に変更した（お気に入りの「お気に入りに追加」／「お気に入りから削除」と表現を統一するため）
+- 実装詳細は `src/components/ResultList.tsx` の `PinIcon`／`FavoriteIcon`／`toggleIconColorClass`／`PinToggleButton`／`FavoriteToggleButton` を参照
 
 ###### 一般原則（今後アイコンを追加・変更する際に踏まえること）
 
@@ -628,7 +678,7 @@ D-2完了後の事前調査（D-3着手前）で、この (2) の存在と、そ
 
 ### 設定画面（Rust / フロントエンド）
 
-- 設定パネルは左にカテゴリナビ（全般／ファイル検索／パス貼り付け／計算・変換／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR／このアプリについて）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）。**カテゴリ一覧の正本はこの箇条書きであり、他の節から言及する場合はここへの参照に留める（詳細は「変更時の同期チェックリスト」節を参照）**
+- 設定パネルは左にカテゴリナビ（全般／ファイル検索／お気に入り／パス貼り付け／計算・変換／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR／このアプリについて）、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）。**カテゴリ一覧の正本はこの箇条書きであり、他の節から言及する場合はここへの参照に留める（詳細は「変更時の同期チェックリスト」節を参照）**
 - 設定パネルは検索ボックス右の歯車アイコンのクリック、または `Ctrl+S` でトグル開閉する（検索 UI 表示中なら開く、設定パネル表示中なら閉じる）
 - 設定パネル表示中は `Ctrl+S` または `Esc` のどちらでも検索 UI に戻る
 - `Ctrl+S` の開閉トグルは input 要素のローカル `onKeyDown` ではなく、`window` への `keydown` イベントリスナー（`useEffect`）で一括処理する
@@ -636,7 +686,7 @@ D-2完了後の事前調査（D-3着手前）で、この (2) の存在と、そ
 - 設定変更後（パネルを閉じた時点）に検索結果を再評価する
 - 永続化は `tauri-plugin-store` の `settings.json` に集約する
   - `folders: { path, enabled, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions }[]`（ファイル検索カテゴリの検索フォルダ一覧。`maxDepth`/`includeFolders`/`extensionFilterMode`/`blacklistExtensions`/`whitelistExtensions` はフォルダごとの詳細設定。詳細は「検索フォルダごとの詳細設定」節を参照）
-  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, recentFilesEnabled, recentKeyword, recentMaxAgeDays, recentMaxResults, recentIncludeFolders, recentExtensionFilterMode, recentBlacklistExtensions, recentWhitelistExtensions, ocrEnabled, checkUpdateOnStartup, pathPasteEnabled }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、最近使ったファイル一覧の呼び出しキーワード、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。5つのキーワードは互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照）。`recentIncludeFolders`/`recentExtensionFilterMode`/`recentBlacklistExtensions`/`recentWhitelistExtensions` は `/recent` の「表示対象設定」で、デフォルトはそれぞれ `false`/`"blacklist"`/空配列/空配列（詳細は「/recent の表示対象設定」節を参照））
+  - `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled, checkUpdateOnStartup, urlConvertEnabled, urlConvertKeepSpaceEncoded, recentFilesEnabled, recentKeyword, recentMaxAgeDays, recentMaxResults, recentIncludeFolders, recentExtensionFilterMode, recentBlacklistExtensions, recentWhitelistExtensions, pathPasteEnabled, pinEnabled, favoriteEnabled, favoriteKeyword }`（全般のホットキー、各機能の ON/OFF、システムコマンド3つ（shutdown/restart/sleep）それぞれの呼び出しキーワード、計算結果コピー時のカンマ区切り、クリップボード履歴の呼び出しキーワードと最大件数、OCR機能 ON/OFF、起動時アップデートチェック ON/OFF、URLエンコード/デコード機能の ON/OFF とスペースのエンコード維持可否、最近使ったファイル一覧の呼び出しキーワード、パス貼り付け機能・ピン止め・お気に入りの ON/OFF とお気に入りの呼び出しキーワード。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix`（呼び出しキーワード。フィールド名は据え置き）のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`、`favoriteKeyword` のデフォルトは `"favorite"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。6つのキーワード（shutdown/restart/sleep/clipboard/recent/favorite）は互いに重複できない（詳細は「システムコマンド機能」節の `validate_unique_keyword` を参照）。`recentIncludeFolders`/`recentExtensionFilterMode`/`recentBlacklistExtensions`/`recentWhitelistExtensions` は `/recent` の「表示対象設定」で、デフォルトはそれぞれ `false`/`"blacklist"`/空配列/空配列（詳細は「/recent の表示対象設定」節を参照）。`pinEnabled`/`favoriteEnabled` はそれぞれピン止め・お気に入り機能の ON/OFF（詳細は「ピン止め・お気に入り・メモ機能」節を参照）。フィールドの並び順は `src/types.ts` の `AppSettings` interface の宣言順と一致させている）
   - `frecency: { [path]: { count, lastUsed } }`（ファイル起動履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「ファイル検索結果の frecency ランキング」節を参照）
   - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（プレフィックスコマンド候補の使用履歴。`frecency` と同形式・同方式で、キーがファイルパスではなく呼び出し文字列（`/shutdown` 等）になる。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は「プレフィックスコマンド候補表示」節を参照）
   - `clipboardHistory: ClipboardTextEntry[]`（クリップボードのテキスト履歴。設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。画像エントリは含まない。詳細は「クリップボード履歴」節を参照）

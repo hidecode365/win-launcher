@@ -67,6 +67,26 @@ export interface FavoriteNode {
 // PINNED_FOLDER_ID 等の定数と値を一致させること（値そのものを変更する場合は
 // 両方を同時に更新する）。
 export const PINNED_FOLDER_ID = "__pinned__";
+export const FAVORITES_FOLDER_ID = "__favorites__";
+
+// 登録ダイアログ（RegisterEntryDialog）の「保存先フォルダ」プルダウン1件分。
+// お気に入り・メモ（いずれも予約フォルダ配下に folder 型ノードで階層整理できる）で
+// 共通の形として使う。`label` は呼び出し側がツリー階層をフラット化する際にインデント・
+// 区切り記号を含めた表示用文字列を組み立てて渡す（詳細は useSearch.ts
+// `favoriteFolderOptions` を参照）。
+export interface RegisterFolderOption {
+  id: string;
+  label: string;
+}
+
+// RegisterEntryDialog の「新規フォルダ作成」の結果。`folder` が非nullなら成功
+// （作成されたフォルダの id/label。即座に保存先として選択するために使う）、
+// `error` が非nullなら失敗時のエラーメッセージ（表示名の空チェックと同じ形式で
+// 表示する。フォルダ名の重複等、Rust側のバリデーションメッセージをそのまま渡す）。
+export interface CreateFolderResult {
+  folder: RegisterFolderOption | null;
+  error: string | null;
+}
 
 // /recent の「表示対象設定」の入力値。保存ボタン押下時に `set_recent_display_settings`
 // へまとめて渡す。`FolderDetailSettings` から `maxDepth`（/recent には検索階層の概念が
@@ -110,6 +130,8 @@ export interface AppSettings {
   recentWhitelistExtensions: string[];
   pathPasteEnabled: boolean;
   pinEnabled: boolean;
+  favoriteEnabled: boolean;
+  favoriteKeyword: string;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -139,6 +161,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   recentWhitelistExtensions: [],
   pathPasteEnabled: true,
   pinEnabled: true,
+  favoriteEnabled: true,
+  favoriteKeyword: "favorite",
 };
 
 // Rust の `check_for_update` コマンドの戻り値。
@@ -166,7 +190,7 @@ export interface SystemCommand {
 // フィールドごとに独立して表示するため、単一の文字列ではなくコマンドごとに保持する。
 export type SystemCommandKeywordErrors = Record<SystemCommandAction, string | null>;
 
-export type PrefixCommandKind = "system" | "clipboard" | "recent";
+export type PrefixCommandKind = "system" | "clipboard" | "recent" | "favorite";
 
 // 「/」候補一覧（プレフィックスコマンド候補表示）の1件分。
 // keyword は「/」+ キーワード全体（例: "/shutdown"）。選択・実行時の分岐と
@@ -232,9 +256,50 @@ export type ClipboardChangedPayload =
 // Web検索行（webSearchVisible）はこの Union には含めない（複数モードにまたがって
 // 末尾に追加される特殊な行のため、フェーズEで別途扱う）。
 export type ResultRow =
-  | { kind: "pinned"; key: string; file: FileEntry; exists: boolean }
+  | { kind: "pinned"; key: string; file: FileEntry; exists: boolean; favorited: boolean }
   | { kind: "pathPasteShortcut"; key: string; candidate: PastedPathInfo }
   | { kind: "pathPasteAddFolder"; key: string; candidate: PastedPathInfo }
   | { kind: "calc"; key: string; result: string }
   | { kind: "urlConvert"; key: string; result: UrlConvertResult }
-  | { kind: "file"; key: string; file: FileEntry; pinned: boolean };
+  | { kind: "file"; key: string; file: FileEntry; pinned: boolean; favorited: boolean };
+
+// `/favorite` モードの一覧の1行分。フォルダ見出し行（folder）とアイテム行（item）の
+// 判別可能 Union（詳細は REQUIREMENTS.md「お気に入り機能」節「/favorite モード」・
+// useSearch.ts の `favoriteTree` を参照）。
+//
+// `key` は他の行種別と同様、React key・選択の識別子（intent の key）の両方に使う
+// 安定した文字列（`favoriteFolder:<id>`/`favoriteItem:<id>`。FavoriteNode.id は
+// 一意なため、行番号ではなくこれを識別子にする）。
+// `depth` はインデント段数（ルート「お気に入り」直下の項目は 0）。
+// `itemIndex` はアイテム行のみが持つ、アイテム行だけを抜き出した配列
+// （useSearch.ts の `favoriteSelectionItems`）上での位置。↑↓キーによる選択移動・
+// `data-index` によるスクロール追従は、フォルダ見出し行を除いたこの番号を使う。
+// `isFirstSibling`/`isLastSibling` は、段階3のドラッグ&ドロップ実装までの暫定的な
+// 「上へ移動」「下へ移動」操作のための判定。同じ parentId を共有する兄弟ノード
+// （order 昇順。横断検索によるフィルタ表示の影響を受けない、実際の全兄弟基準）の
+// 先頭・末尾かどうかを表す（先頭なら「上へ移動」、末尾なら「下へ移動」を無効化する）。
+// `directChildCount`（folder のみ）は、そのフォルダの直接の子ノード数（孫は含めない。
+// 折りたたみ状態・横断検索によるフィルタ表示には依存しない、常に実際の全直下件数）。
+// 件数バッジの表示に使う。
+export type FavoriteTreeRow =
+  | {
+      kind: "folder";
+      key: string;
+      node: FavoriteNode;
+      depth: number;
+      collapsed: boolean;
+      isFirstSibling: boolean;
+      isLastSibling: boolean;
+      directChildCount: number;
+    }
+  | {
+      kind: "item";
+      key: string;
+      node: FavoriteNode;
+      depth: number;
+      file: FileEntry;
+      exists: boolean;
+      itemIndex: number;
+      isFirstSibling: boolean;
+      isLastSibling: boolean;
+    };

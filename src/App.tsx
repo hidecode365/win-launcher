@@ -15,6 +15,8 @@ import { PathPasteWizard } from "./components/PathPasteWizard";
 import { ClipboardPanel } from "./components/ClipboardPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
+import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
+import { FavoriteListPanel } from "./components/FavoriteListPanel";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
@@ -205,7 +207,11 @@ export default function App() {
         e.stopPropagation();
         if (showSettings) {
           closeSettings();
-        } else if (!search.pendingCommand) {
+        } else if (
+          !search.pendingCommand &&
+          !search.favoriteDialogTarget &&
+          !search.pendingDeleteFavoriteFolder
+        ) {
           openSettings();
         }
       } else if (e.key === "Escape" && showSettings) {
@@ -251,6 +257,16 @@ export default function App() {
             search.confirmShortcut();
           }
         }
+      } else if (!showSettings && search.pendingDeleteFavoriteFolder) {
+        // 削除確認モーダルはマウス操作（キャンセル/削除ボタン）のみを主とするが、
+        // Escape だけは他のモーダル（システムコマンド確認等）と同様にキャンセル
+        // 扱いにする。モーダルを開いたトリガー（ゴミ箱アイコンボタン）がクリック後
+        // フォーカスを持つため、SearchBox の React onKeyDown ではなくこの window
+        // レベルのリスナーで処理する（パス貼り付けウィザードと同じ理由）。
+        if (e.key === "Escape") {
+          e.preventDefault();
+          search.cancelDeleteFavoriteFolder();
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -258,6 +274,8 @@ export default function App() {
   }, [
     showSettings,
     search.pendingCommand,
+    search.favoriteDialogTarget,
+    search.pendingDeleteFavoriteFolder,
     openSettings,
     closeSettings,
     ocrActive,
@@ -271,6 +289,7 @@ export default function App() {
     search.wizardBack,
     search.selectWizardFolder,
     search.confirmShortcut,
+    search.cancelDeleteFavoriteFolder,
   ]);
 
   // ピンアイコンはファイル検索結果の行、および /recent（最近使ったファイル一覧）の
@@ -280,6 +299,9 @@ export default function App() {
   // recentMode による特例分岐はここでは不要（REQUIREMENTS.md「ピン止め・お気に入り・
   // メモ機能」節「ピンアイコン」「/recent からのピン止め」を参照）。
   const pinIconVisible = settings.appSettings.pinEnabled;
+  // ★アイコンの表示条件。pinIconVisible と同じ考え方（favoriteEnabled が false の
+  // 場合は検索結果行・/recent・ピン止めブロックのいずれでも★を表示しない）。
+  const favoriteIconVisible = settings.appSettings.favoriteEnabled;
   // Web検索行は rows に含まれない（rows・並び順の正本は useSearch.ts。詳細は
   // CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。baseLength は「Web検索行を
   // 除いた、現在アクティブな一覧の件数」を表す値で、通常モードでは rows の並び順が
@@ -297,12 +319,15 @@ export default function App() {
         ? search.wizardStep === "folderSelect"
           ? search.wizardFolders.length
           : 0
-        : search.rows.length;
+        : search.favoriteMode
+          ? search.favoriteSelectionItems.length
+          : search.rows.length;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
     !search.clipboardMode &&
-    !search.pathPasteWizardMode;
+    !search.pathPasteWizardMode &&
+    !search.favoriteMode;
   const listLength = baseLength + (webSearchVisible ? 1 : 0);
 
   // 通常モードで現在選択中の行（rows[selected]）。rows に該当する行がない場合
@@ -310,6 +335,11 @@ export default function App() {
   // キーヒント表示・handleKeyDown の Enter/Shift+Enter 分岐の両方で、この行の
   // kind を見て判定する（詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。
   const selectedRow = search.rows[search.selected] ?? null;
+  // /favorite モード専用の選択中アイテム（favoriteSelectionItems は itemIndex 順に
+  // 並んでいるため、search.selected をそのまま添字として使える）。
+  const selectedFavoriteItem = search.favoriteMode
+    ? (search.favoriteSelectionItems[search.selected] ?? null)
+    : null;
 
   // R-1 フェーズD-2: ↑↓キーによる選択は、通常モード（rows）・clipboardMode
   // （clipboard.clipboardEntries）については intent の更新のみで表現する
@@ -338,6 +368,15 @@ export default function App() {
         }
         return;
       }
+      if (search.favoriteMode) {
+        // フォルダ見出し行を除いたアイテム行のみを対象に移動する
+        // （REQUIREMENTS.md「/favorite モード」節を参照）。
+        const item = search.favoriteSelectionItems[nextIndex];
+        if (item) {
+          search.selectRowByKeyboard(item.key);
+        }
+        return;
+      }
       if (webSearchVisible && nextIndex === baseLength) {
         // Web検索行は rows に含まれない（フェーズEの対象）。今回は現状の
         // 生インデックス書き込みのまま維持する。
@@ -356,6 +395,8 @@ export default function App() {
       search.setSelected,
       search.clipboardMode,
       clipboard.clipboardEntries,
+      search.favoriteMode,
+      search.favoriteSelectionItems,
       search.selectRowByKeyboard,
       webSearchVisible,
       baseLength,
@@ -384,6 +425,18 @@ export default function App() {
         // コメントを参照）。
         return;
       }
+      if (search.favoriteDialogTarget) {
+        // 登録ダイアログ表示中は、ダイアログ自身の入力欄（マウント時に focus()
+        // 済み）が Enter/Escape を含むキー操作を自己完結で処理する（RegisterEntryDialog
+        // 自身の onKeyDown を参照）。SearchBox 側では何もしない。
+        return;
+      }
+      if (search.pendingDeleteFavoriteFolder) {
+        // フォルダ削除確認モーダル表示中は、window レベルの keydown リスナー
+        // （Escape=キャンセル）が処理する。SearchBox 側では何もしない
+        // （パス貼り付けウィザードと同じ理由）。
+        return;
+      }
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -396,12 +449,17 @@ export default function App() {
         case "Enter": {
           if (e.shiftKey) {
             // Shift+Enter は格納フォルダを開く操作専用。ピン止めブロック・
-            // ファイル検索結果（rows の kind "pinned"/"file"）以外（パス貼り付け
-            // 候補・計算結果・URLエンコード/デコード結果・システムコマンド候補・
-            // クリップボード履歴・プレフィックスコマンド候補・Web検索行）は
-            // ファイルパスを持たないため、該当する場合のみ実行する
-            // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
-            if (
+            // ファイル検索結果（rows の kind "pinned"/"file"）・/favorite モードの
+            // アイテム行以外（パス貼り付け候補・計算結果・URLエンコード/デコード
+            // 結果・システムコマンド候補・クリップボード履歴・プレフィックスコマンド
+            // 候補・Web検索行）はファイルパスを持たないため、該当する場合のみ実行する
+            // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節・
+            // 「格納フォルダを開く（Shift+Enter）」節を参照）。
+            if (search.favoriteMode) {
+              if (selectedFavoriteItem) {
+                search.openContainingFolder(selectedFavoriteItem.file.path);
+              }
+            } else if (
               selectedRow &&
               (selectedRow.kind === "pinned" || selectedRow.kind === "file")
             ) {
@@ -422,6 +480,10 @@ export default function App() {
               search.selectPrefixCommand(
                 search.prefixCommandCandidates[search.selected]
               );
+            }
+          } else if (search.favoriteMode) {
+            if (selectedFavoriteItem) {
+              search.launchFile(selectedFavoriteItem.file.path);
             }
           } else if (selectedRow) {
             switch (selectedRow.kind) {
@@ -474,6 +536,10 @@ export default function App() {
       search.pathPasteWizardMode,
       search.startShortcutWizard,
       search.addSearchFolderFromPaste,
+      search.favoriteDialogTarget,
+      search.pendingDeleteFavoriteFolder,
+      search.favoriteMode,
+      selectedFavoriteItem,
     ]
   );
 
@@ -561,6 +627,8 @@ export default function App() {
         onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
         onSetPathPasteEnabled={settings.setPathPasteEnabled}
         onSetPinEnabled={settings.setPinEnabled}
+        onSetFavoriteEnabled={settings.setFavoriteEnabled}
+        onSetFavoriteKeyword={settings.setFavoriteKeyword}
         folders={settings.folders}
         onAddFolder={settings.addFolder}
         onToggleFolder={settings.toggleFolder}
@@ -597,12 +665,66 @@ export default function App() {
         />
       )}
 
+      {/* お気に入り登録ダイアログ（★を押した未登録行から開く。段階5の /memo でも
+          同じ RegisterEntryDialog を再利用する想定のため、お気に入り固有の文言・
+          データはすべてここで props として与える）。 */}
+      {search.favoriteDialogTarget && (
+        <RegisterEntryDialog
+          title="お気に入りに登録"
+          initialName={search.favoriteDialogTarget.name}
+          folderOptions={search.favoriteFolderOptions}
+          initialFolderId={search.lastFavoriteFolderId}
+          onCancel={search.closeFavoriteDialog}
+          onSave={search.confirmFavoriteDialog}
+          onCreateFolder={search.createFavoriteFolder}
+        />
+      )}
+
+      {/* /favorite モードのフォルダ削除確認モーダル（配下が空でない場合のみ表示。
+          既存の SystemCommandModal・FileSearchSettings.tsx の削除確認モーダルと
+          同じ見た目のパターンを踏襲する。動作確認用の最小限のコア機能のため、
+          専用コンポーネントへの切り出しは行わずここにインラインで実装する）。 */}
+      {search.pendingDeleteFavoriteFolder && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="w-72 rounded-xl bg-white p-5 shadow-2xl">
+            <div className="text-sm font-medium text-gray-800">
+              「{search.pendingDeleteFavoriteFolder.name}」を削除しますか？
+            </div>
+            <div className="mt-1 text-xs text-gray-400">
+              フォルダ内の{search.pendingDeleteFavoriteFolder.descendantCount}
+              件の登録情報が削除されます。実ファイルは削除されません。
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={search.cancelDeleteFavoriteFolder}
+                className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={search.confirmDeleteFavoriteFolder}
+                className="rounded bg-red-500 px-3 py-1.5 text-sm text-white hover:bg-red-600"
+              >
+                削除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SearchBox
         inputRef={inputRef}
         query={search.query}
         onQueryChange={search.setQuery}
         onKeyDown={handleKeyDown}
-        disabled={search.pendingCommand !== null || search.pathPasteWizardMode}
+        disabled={
+          search.pendingCommand !== null ||
+          search.pathPasteWizardMode ||
+          search.favoriteDialogTarget !== null ||
+          search.pendingDeleteFavoriteFolder !== null
+        }
         onOpenSettings={openSettings}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
@@ -662,11 +784,24 @@ export default function App() {
             name={search.wizardName}
             onNameChange={search.setWizardName}
           />
+        ) : search.favoriteMode ? (
+          <FavoriteListPanel
+            tree={search.favoriteTree}
+            selected={search.selected}
+            onSelectRowByKey={search.selectRowFromHover}
+            onToggleCollapse={search.toggleFavoriteFolderCollapsed}
+            onToggleFavorite={search.toggleFavorite}
+            onLaunchFile={search.launchFile}
+            onRequestDeleteFolder={search.requestDeleteFavoriteFolder}
+            onMoveNode={search.moveFavoriteNode}
+          />
         ) : (
           <ResultList
             rows={search.rows}
             pinIconVisible={pinIconVisible}
+            favoriteIconVisible={favoriteIconVisible}
             onTogglePin={search.togglePin}
+            onToggleFavorite={search.toggleFavorite}
             onReorderPinned={search.reorderPinned}
             prefixCommandMode={search.prefixCommandMode}
             prefixCommandCandidates={search.prefixCommandCandidates}
@@ -699,6 +834,7 @@ export default function App() {
           }
           prefixCommandMode={search.prefixCommandMode}
           selectedRowKind={selectedRow?.kind ?? null}
+          favoriteItemSelected={selectedFavoriteItem !== null}
         />
       )}
     </div>

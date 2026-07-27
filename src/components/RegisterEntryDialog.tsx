@@ -1,0 +1,221 @@
+import { useEffect, useRef, useState } from "react";
+import { CreateFolderResult, RegisterFolderOption } from "../types";
+
+// ★（お気に入り）・ノート（メモ、段階5で実装予定）の登録で共通利用する想定の
+// 登録ダイアログ。「表示名」「保存先フォルダ（プルダウン）」「新規フォルダ作成」の
+// 3要素のみを扱う汎用コンポーネントとし、「お気に入り」「メモ」固有の文言・
+// ロジックは一切持たない（呼び出し側が title・folderOptions・保存/フォルダ作成の
+// コールバックを props で与える）。REQUIREMENTS.md「お気に入り機能」節
+// 「登録ダイアログ」を参照。
+//
+// オーバーレイのスタイルは既存の FolderDetailSettingsModal / SystemCommandModal と
+// 同じ `absolute inset-0 z-10` パターンを踏襲する。
+export function RegisterEntryDialog({
+  title,
+  initialName,
+  folderOptions,
+  initialFolderId,
+  onCancel,
+  onSave,
+  onCreateFolder,
+}: {
+  title: string;
+  initialName: string;
+  folderOptions: RegisterFolderOption[];
+  initialFolderId: string;
+  onCancel: () => void;
+  onSave: (name: string, folderId: string) => void;
+  onCreateFolder: (
+    parentId: string,
+    name: string
+  ) => Promise<CreateFolderResult>;
+}) {
+  // 呼び出し側は favoriteDialogTarget 等が非 null のときだけこのコンポーネントを
+  // 条件付きレンダリングする想定（FolderDetailSettingsModal と同じ「開くたびに
+  // 新規マウントされる」前提）。そのため各 state は毎回このマウント時点の props から
+  // 初期化するだけでよく、props の変化を追う useEffect は不要（詳細は CLAUDE.md
+  // 「設定画面」節「エラー状態の保持場所」を参照。同じ原則をこのダイアログにも適用）。
+  const [name, setName] = useState(initialName);
+  const [folderId, setFolderId] = useState(initialFolderId);
+  const [error, setError] = useState<string | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [folderError, setFolderError] = useState<string | null>(null);
+
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
+
+  // ダイアログを開いた瞬間に表示名フィールドへフォーカスし、テキストを全選択状態にする。
+  useEffect(() => {
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, []);
+
+  // 新規フォルダ作成のインライン入力に切り替わった時点でそちらへフォーカスを移す。
+  useEffect(() => {
+    if (creatingFolder) {
+      newFolderInputRef.current?.focus();
+    }
+  }, [creatingFolder]);
+
+  const handleSave = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("表示名を入力してください");
+      return;
+    }
+    onSave(trimmed, folderId);
+  };
+
+  const handleCreateFolder = async () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) {
+      setFolderError("フォルダ名を入力してください");
+      return;
+    }
+    const result = await onCreateFolder(folderId, trimmed);
+    if (result.folder) {
+      setFolderId(result.folder.id);
+      setCreatingFolder(false);
+      setNewFolderName("");
+      setFolderError(null);
+    } else {
+      // 同名フォルダの重複等、Rust側のバリデーションエラーメッセージをそのまま
+      // 表示する（表示名が空のときのバリデーションエラー表示と同じ形式）。
+      setFolderError(result.error ?? "フォルダの作成に失敗しました");
+    }
+  };
+
+  return (
+    <div
+      className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      onKeyDown={(e) => {
+        // Escape はダイアログのみを閉じる（ランチャーウィンドウ自体は閉じない）。
+        // Enter は保存するが、IME変換確定のEnterと衝突しないよう変換中
+        // （isComposing）は無視する。新規フォルダ作成用の input は自身の
+        // onKeyDown で Enter/Escape を stopPropagation して個別に処理するため、
+        // ここには伝播してこない。
+        //
+        // stopPropagation も呼ぶのは、App.tsx の window レベル keydown リスナー
+        // （Ctrl+S 等）へこのダイアログのキー操作が漏れ、ダイアログ表示中に
+        // 設定画面が開いてしまう等の意図しない相互作用を防ぐため。
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          onCancel();
+        } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleSave();
+        }
+      }}
+    >
+      <div className="w-96 rounded-xl bg-white p-5 shadow-2xl">
+        <div className="text-sm font-medium text-gray-800">{title}</div>
+
+        <div className="mt-4">
+          <div className="text-xs text-gray-500 mb-1">表示名</div>
+          <input
+            ref={nameInputRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800 outline-none focus:border-blue-400"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {error && <div className="text-xs text-red-500 mt-1">{error}</div>}
+        </div>
+
+        <div className="mt-4">
+          <div className="text-xs text-gray-500 mb-1">保存先フォルダ</div>
+          <select
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm text-gray-800 outline-none focus:border-blue-400 bg-white"
+          >
+            {folderOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {creatingFolder ? (
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                ref={newFolderInputRef}
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setCreatingFolder(false);
+                    setNewFolderName("");
+                    setFolderError(null);
+                  } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handleCreateFolder();
+                  }
+                }}
+                placeholder="新しいフォルダ名"
+                className="flex-1 rounded border border-gray-300 px-2 py-1 text-sm text-gray-800 outline-none focus:border-blue-400"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                onClick={handleCreateFolder}
+                className="rounded px-2 py-1 text-xs text-blue-600 hover:bg-blue-50"
+              >
+                作成
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatingFolder(false);
+                  setNewFolderName("");
+                  setFolderError(null);
+                }}
+                className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100"
+              >
+                キャンセル
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreatingFolder(true)}
+              className="mt-2 text-xs text-blue-600 hover:underline"
+            >
+              + 新規フォルダ作成
+            </button>
+          )}
+          {folderError && (
+            <div className="text-xs text-red-500 mt-1">{folderError}</div>
+          )}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

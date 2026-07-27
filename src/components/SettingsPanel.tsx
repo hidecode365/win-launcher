@@ -9,6 +9,7 @@ import {
 } from "../types";
 import { GeneralSettings } from "./GeneralSettings";
 import { FileSearchSettings } from "./FileSearchSettings";
+import { FavoriteSettings } from "./FavoriteSettings";
 import { PathPasteSettings } from "./PathPasteSettings";
 import { ConvertSettings } from "./ConvertSettings";
 import { SystemCommandSettings } from "./SystemCommandSettings";
@@ -22,6 +23,7 @@ import { Tooltip } from "./Tooltip";
 type SettingsTab =
   | "general"
   | "fileSearch"
+  | "favorite"
   | "pathPaste"
   | "convert"
   | "systemCommand"
@@ -34,6 +36,7 @@ type SettingsTab =
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "全般" },
   { id: "fileSearch", label: "ファイル検索" },
+  { id: "favorite", label: "お気に入り" },
   { id: "pathPaste", label: "パス貼り付け" },
   { id: "convert", label: "計算・変換" },
   { id: "systemCommand", label: "システムコマンド" },
@@ -67,6 +70,8 @@ export function SettingsPanel({
   onSetCheckUpdateOnStartup,
   onSetPathPasteEnabled,
   onSetPinEnabled,
+  onSetFavoriteEnabled,
+  onSetFavoriteKeyword,
   folders,
   onAddFolder,
   onToggleFolder,
@@ -102,6 +107,8 @@ export function SettingsPanel({
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
   onSetPathPasteEnabled: (checked: boolean) => void;
   onSetPinEnabled: (checked: boolean) => void;
+  onSetFavoriteEnabled: (checked: boolean) => void;
+  onSetFavoriteKeyword: (keyword: string) => Promise<string | null>;
   folders: FolderEntry[];
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
@@ -192,6 +199,14 @@ export function SettingsPanel({
               onRemoveFolder={onRemoveFolder}
               onOpenFolder={onOpenFolder}
               onSaveFolderSettings={onSaveFolderSettings}
+            />
+          )}
+          {tab === "favorite" && (
+            <FavoriteSettings
+              enabled={appSettings.favoriteEnabled}
+              onToggle={onSetFavoriteEnabled}
+              keyword={appSettings.favoriteKeyword}
+              onChangeKeyword={onSetFavoriteKeyword}
             />
           )}
           {tab === "pathPaste" && (

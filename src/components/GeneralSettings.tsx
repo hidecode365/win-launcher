@@ -87,8 +87,17 @@ export function GeneralSettings({
     setMainKey(parsed.mainKey);
   }, [hotkey]);
 
+  // 入力値を変更した時点でエラー表示をクリアする。保存失敗後に組み合わせを変更し
+  // 直しても（元の組み合わせに戻した場合を含む）古いエラーメッセージが残り続けない
+  // ようにするため（詳細は CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
   const toggleMod = (key: keyof ModifierState) => {
     setMods((m) => ({ ...m, [key]: !m[key] }));
+    setError(null);
+  };
+
+  const handleMainKeyChange = (value: string) => {
+    setMainKey(value);
+    setError(null);
   };
 
   const preview = buildAccelerator(mods, mainKey);
@@ -126,7 +135,7 @@ export function GeneralSettings({
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={mainKey}
-              onChange={(e) => setMainKey(e.target.value)}
+              onChange={(e) => handleMainKeyChange(e.target.value)}
               className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
             >
               {MAIN_KEY_OPTIONS.map((k) => (
