@@ -2,15 +2,7 @@
 
 ## 開発フロー
 
-要件を変更する場合は、以下の順序で進めること。
-
-1. **`REQUIREMENTS.md` の修正**（基本的にユーザが行う）
-2. **本ファイル（`CLAUDE.md`）の設計方針の修正**（要件変更を踏まえてアーキテクチャ・技術選定・挙動仕様を更新）
-3. **ソースコードの改修**（更新後の設計方針に基づいて実装）
-
-ソースを直接変更する前に、変更内容が要件・設計方針と矛盾しないか確認し、矛盾があれば先に `CLAUDE.md` を更新してから着手する。
-
-設計判断の詳細（現状仕様のフルテキスト・経緯・却下案・不具合の記録）は `docs/design/*.md` に分割して置いている。本ファイルの「設計原則ダイジェスト」節は、そこから抽出した再利用可能な原則の短い箇条書きのみを保持する。実装に着手する前に、該当する `docs/design/*.md` のポインタ先を必ず確認すること（原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある）。
+詳細は [WORKFLOW.md](WORKFLOW.md) を参照。
 
 ## 変更時の同期チェックリスト
 
@@ -149,11 +141,11 @@ win-launcher/
 ├── scripts/
 │   └── generate-latest-json.ps1  # リリース時に latest.json（Tauri Updater 用）を生成する
 ├── docs/
-│   └── design/               # 設計判断の詳細（現状仕様・経緯・却下案・不具合の記録）。詳細は「設計原則ダイジェスト」節を参照
-├── .claude/
-│   └── skills/
-│       └── release-flow/SKILL.md  # リリース手順（詳細は「リリース手順」節を参照）
-├── REQUIREMENTS.md          # 要件定義（ユーザ管理）
+│   ├── design/               # 設計判断の詳細（現状仕様・経緯・却下案・不具合の記録）。詳細は「設計原則ダイジェスト」節を参照
+│   └── process/              # 開発工程ごとのCC実施要領。詳細は WORKFLOW.md を参照
+├── REQUIREMENTS.md          # 要件定義
+├── WORKFLOW.md               # 開発工程定義（役割分担・実施要領インデックス）
+├── DESIGN_LOG.md             # 設計協議の一時記録（トピック単位、反映後にクリア）
 └── CLAUDE.md                # 本ファイル（設計方針）
 ```
 
@@ -402,7 +394,7 @@ npm run tauri build
 
 ## リリース手順
 
-詳細な手順（バージョン bump → 署名付きビルド → `latest.json` 生成 → リリースノート更新 → git commit/tag/push → `gh release create` → アセットアップロード、およびリリース後の動作確認チェックリスト）は `.claude/skills/release-flow/SKILL.md` を参照。「リリースして」「新バージョンを公開して」等の依頼時はこのスキルを使う。
+詳細な手順（バージョン bump → 署名付きビルド → `latest.json` 生成 → リリースノート更新 → git commit/tag/push → `gh release create` → アセットアップロード、およびリリース後の動作確認チェックリスト）は [docs/process/cc_app_600_release.md](docs/process/cc_app_600_release.md) を参照。600_リリース工程（詳細は [WORKFLOW.md](WORKFLOW.md) を参照）として、CA からの実行指示を受けて着手する。
 
 ## WinGetパッケージの新バージョン申請手順
 

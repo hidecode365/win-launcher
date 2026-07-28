@@ -40,7 +40,7 @@ Tauri v2 の `tray-icon` 機能を使用。トレイアイコンは `icons/32x32
 
 - 署名鍵は `tauri signer generate`（minisign 方式）で生成し、秘密鍵は `src-tauri/keys/`（`.gitignore` 対象、コミットしない）に保存する。公開鍵（`.pub` ファイルの中身をそのまま）を `tauri.conf.json` の `plugins.updater.pubkey` に設定する
 - `tauri.conf.json` の `plugins.updater.windows.installMode` は `"passive"`（進捗バーのみ表示する無人インストール）
-- `tauri.conf.json` の `bundle.createUpdaterArtifacts: true` により、`npm run tauri build` 時に NSIS インストーラー本体（`.exe`）に対して署名済み `.exe.sig` が直接生成される（現行の `@tauri-apps/cli` v2 は Windows 向け updater アーティファクトとして zip ラッピングを行わない）。この成果物から `latest.json` を生成し GitHub Releases へアップロードするリリース手順の詳細は `.claude/skills/release-flow/SKILL.md` を参照
+- `tauri.conf.json` の `bundle.createUpdaterArtifacts: true` により、`npm run tauri build` 時に NSIS インストーラー本体（`.exe`）に対して署名済み `.exe.sig` が直接生成される（現行の `@tauri-apps/cli` v2 は Windows 向け updater アーティファクトとして zip ラッピングを行わない）。この成果物から `latest.json` を生成し GitHub Releases へアップロードするリリース手順の詳細は `docs/process/cc_app_600_release.md` を参照
 
 **Rust コマンド**：
 
