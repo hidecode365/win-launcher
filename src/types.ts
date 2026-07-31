@@ -61,6 +61,9 @@ export interface FavoriteNode {
   name: string;
   value: string;
   order: number;
+  // フォルダの開閉状態（軸3）。folder 型ノードのみ意味を持つ。/favorite ブラウジング・
+  // お気に入り編集ビューの両方が同じ値を共有する（別々の開閉状態を持たない）。
+  collapsed: boolean;
 }
 
 // ルート直下に生成される3つの予約フォルダの固定ID。Rust側 main.rs の

@@ -142,11 +142,13 @@ function CreateFolderRow({
 // 際の絞り込み文字列・選択位置・フォルダ展開状態の保持は、この仕組み自体から自動的に
 // 得られる（専用の保存・復元コードをここに持たせる必要はない）。
 //
-// ツリーのデータソース（favoriteTree）・折りたたみ状態（onToggleCollapse）・
-// フォルダ作成/削除の実コマンド呼び出し（createFavoriteFolder/
-// requestDeleteFavoriteFolder 等）は /favorite ブラウジング（useSearch.ts）と
-// そのまま共有する。選択状態のみ、useFavoriteEditSelection による独立した
-// ドメインを App.tsx 側で持つ（props で selected/onSelectRowByKey として受け取る）。
+// ツリーのデータソース（favoriteTree）・折りたたみ状態（onToggleCollapse）は
+// /favorite ブラウジングとそのまま共有する（データ・collapsed の永続化ともに
+// 単一の実体）。フォルダ作成/削除/リネーム/移動の実コマンド呼び出し
+// （createFavoriteFolder/requestDeleteFavoriteFolder 等、useSearch.ts に定義）は
+// 編集ビュー専用（/favorite ブラウジング側の暫定UIは撤去済み）。選択状態のみ、
+// useFavoriteEditSelection による独立したドメインを App.tsx 側で持つ（props で
+// selected/onSelectRowByKey として受け取る）。
 export function FavoriteEditView({
   tree,
   selected,

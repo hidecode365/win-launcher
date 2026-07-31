@@ -1015,8 +1015,6 @@ export default function App() {
             onToggleCollapse={search.toggleFavoriteFolderCollapsed}
             onToggleFavorite={search.toggleFavorite}
             onLaunchFile={search.launchFile}
-            onRequestDeleteFolder={search.requestDeleteFavoriteFolder}
-            onMoveNode={search.moveFavoriteNode}
           />
         ) : (
           <ResultList

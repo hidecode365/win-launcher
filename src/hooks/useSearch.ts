@@ -859,24 +859,43 @@ export function useSearch(
     fetchFavoriteNodes("mode-enter");
   }, [favoriteMode, fetchFavoriteNodes]);
 
-  // /favorite モードのフォルダ折りたたみ状態（マウスの▼クリックのみで変更する。
-  // キーボードでは操作しない。REQUIREMENTS.md「/favorite モード」節を参照）。
-  // モード再突入時にも維持する（明示的にリセットする理由がないため）。
-  const [collapsedFavoriteFolderIds, setCollapsedFavoriteFolderIds] = useState<
-    Set<string>
-  >(new Set());
+  // フォルダの開閉状態（軸3）は FavoriteNode.collapsed としてRust側へ永続化し、
+  // /favorite ブラウジング・お気に入り編集ビューの両方でそのまま共有する
+  // （クライアント専用の Set 状態は廃止した。別々の開閉状態は持たせない。
+  // REQUIREMENTS.md「フォルダの開閉状態（collapsed）の永続化と絞り込みとの関係」節を
+  // 参照）。
+  const setFavoriteFolderCollapsed = useCallback(
+    (folderId: string, collapsed: boolean) => {
+      invoke<FavoriteNode[]>("set_favorite_folder_collapsed", {
+        id: folderId,
+        collapsed,
+      })
+        .then((saved) => {
+          favoritesRef.current = saved;
+          setFavoritesState(saved);
+          fetchFavoriteNodes("set-collapsed");
+        })
+        .catch(console.error);
+    },
+    [fetchFavoriteNodes]
+  );
 
-  const toggleFavoriteFolderCollapsed = useCallback((folderId: string) => {
-    setCollapsedFavoriteFolderIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(folderId)) {
-        next.delete(folderId);
-      } else {
-        next.add(folderId);
-      }
-      return next;
-    });
-  }, []);
+  // フォルダ見出し行の開閉トグル。/favorite ブラウジング（▼クリック・Enterキー）・
+  // お気に入り編集ビュー（▼クリック・Enterキー）のいずれからも、この同じ関数を
+  // 呼ぶ（軸1・4b双方の呼び出し元が既にこの関数経由のため、ここに1箇所ガードを
+  // 足すだけで両方に適用される）。絞り込み（横断検索）文字列が1文字以上入力されて
+  // いる間は無効化する（no-op）。絞り込みでヒットしたフォルダは favoriteTree 側で
+  // 表示上強制展開されるだけで永続化された collapsed は書き換わらないため、
+  // 絞り込み中に操作を許すと「見えている状態」と「実際に保存される状態」が
+  // 食い違ってしまうため（REQUIREMENTS.md同節を参照）。
+  const toggleFavoriteFolderCollapsed = useCallback(
+    (folderId: string) => {
+      if ((favoriteFilterText ?? "").length > 0) return;
+      const current = rawFavoriteNodes.find((n) => n.id === folderId);
+      setFavoriteFolderCollapsed(folderId, !(current?.collapsed ?? false));
+    },
+    [favoriteFilterText, rawFavoriteNodes, setFavoriteFolderCollapsed]
+  );
 
   // pull型モード（get_recent_files 等、プッシュ通知を持たない取得）のうち、フォーカス
   // 回復時に再取得が必要なものをキーで宣言するテーブル。クリップボード履歴は OS の
@@ -1028,9 +1047,7 @@ export function useSearch(
         if (filtering && !folderHasMatch(node.id)) {
           return { skipChildren: true };
         }
-        const collapsed = filtering
-          ? false
-          : collapsedFavoriteFolderIds.has(node.id);
+        const collapsed = filtering ? false : node.collapsed;
         rows.push({
           kind: "folder",
           key: favoriteFolderRowKey(node.id),
@@ -1063,12 +1080,7 @@ export function useSearch(
       // clipboard/command 型は今回未実装のため対象外（メモ機能実装時に追加）。
     });
     return rows;
-  }, [
-    rawFavoriteNodes,
-    favoriteFilterText,
-    collapsedFavoriteFolderIds,
-    favoriteExistence,
-  ]);
+  }, [rawFavoriteNodes, favoriteFilterText, favoriteExistence]);
 
   // favoriteTree からアイテム行のみを抜き出したもの。軸1で↑↓キーによる選択移動・
   // intent ベースの選択解決（resolveSelected）の対象一覧は favoriteTree（フォルダ
@@ -1427,6 +1439,7 @@ export function useSearch(
           name: file.name,
           value: file.path,
           order: maxOrder + 1,
+          collapsed: false,
         };
         updated = [...current, newNode];
       }
@@ -1464,11 +1477,9 @@ export function useSearch(
 
   // フォルダ削除確認モーダルの表示対象（配下が空でない場合のみセットされる。
   // 空の場合は確認を挟まず即座に削除するため、このstateを経由しない）。
-  // /favorite ブラウジングの暫定UI・お気に入り編集ビュー（4c）の両方から共有する
-  // 単一のstate。`onRemoved` に削除確定後の後処理（選択状態のリセット）を
-  // 呼び出し元ごとに持たせることで、それぞれ別ドメインの選択状態
-  // （ブラウジング側の intent／編集ビューの useFavoriteEditSelection）を混同せずに
-  // 済むようにしている（詳細は requestDeleteFavoriteFolder のコメントを参照）。
+  // お気に入り編集ビューが使う（/favorite ブラウジング側の暫定削除UIは撤去済み）。
+  // `onRemoved` に削除確定後の選択状態のリセットを呼び出し元から渡す
+  // （詳細は requestDeleteFavoriteFolder のコメントを参照）。
   const [pendingDeleteFavoriteFolder, setPendingDeleteFavoriteFolder] = useState<{
     id: string;
     name: string;
@@ -1610,15 +1621,13 @@ export function useSearch(
     [fetchFavoriteNodes]
   );
 
-  // フォルダ削除（/favorite ブラウジングの暫定UI・お気に入り編集ビュー4cの両方が
-  // 使う共通処理。段階3の本格的なツリー編集UIの前倒し実装だった頃の名残の
-  // コメントは、4cで編集ビュー側の正式な削除実装になったため更新した）。
+  // フォルダ削除（お気に入り編集ビューが使う。/favorite ブラウジング側の暫定
+  // 削除UIは編集ビュー完成に伴い撤去済み）。
   //
   // 実際に Rust コマンドを呼んで削除を確定する内部処理。配下が空で確認不要な即時
   // 削除・確認ダイアログ経由の削除のいずれからも呼ばれる共通処理として1箇所に
-  // まとめる。削除確定後に選択状態をどう戻すか（`onRemoved`）は呼び出し元ごとに
-  // 異なるドメイン（ブラウジング側の intent／編集ビューの
-  // useFavoriteEditSelection）を持つため、呼び出し元から明示的に受け取る。
+  // まとめる。削除確定後の選択状態のリセット（`onRemoved`）は呼び出し元
+  // （useFavoriteEditSelection）から明示的に受け取る。
   const performRemoveFavoriteFolder = useCallback(
     (folderId: string, onRemoved: () => void) => {
       invoke<FavoriteNode[]>("remove_favorite_folder", { id: folderId })
@@ -1637,31 +1646,26 @@ export function useSearch(
   // rawFavoriteNodes から直接数える（表示中のフィルタ・折りたたみ状態には依存しない、
   // 実際に削除される総数を確認する必要があるため）。
   //
-  // `onRemoved` 省略時は /favorite ブラウジングの暫定UIの既存挙動（フォルダ削除は
-  // 配下のアイテムをまとめて取り除く操作であり、★解除（favorite-remove）のような
-  // 「次に隣接するアイテムへ選択を引き継ぐ」ロジックをそのまま適用できる単純な
-  // 1件削除ではないため、単純に先頭へ戻す）をデフォルトとする。お気に入り編集
-  // ビュー（4c）は自身の選択ドメインをリセットする関数を明示的に渡す。
+  // 呼び出し元（現在はお気に入り編集ビューのみ。/favorite ブラウジング側の暫定
+  // 削除UIは撤去済み）が、削除確定後に自身の選択ドメインをどう戻すか（`onRemoved`）
+  // を明示的に渡す。
   const requestDeleteFavoriteFolder = useCallback(
-    (folderId: string, name: string, onRemoved?: () => void) => {
-      const finish =
-        onRemoved ??
-        (() => updateIntent({ type: "top" }, "favorite-folder-remove"));
+    (folderId: string, name: string, onRemoved: () => void) => {
       const descendantCount = rawFavoriteNodes.filter((n) =>
         isDescendantOfFolder(rawFavoriteNodes, n.parentId, folderId)
       ).length;
       if (descendantCount === 0) {
-        performRemoveFavoriteFolder(folderId, finish);
+        performRemoveFavoriteFolder(folderId, onRemoved);
         return;
       }
       setPendingDeleteFavoriteFolder({
         id: folderId,
         name,
         descendantCount,
-        onRemoved: finish,
+        onRemoved,
       });
     },
-    [rawFavoriteNodes, performRemoveFavoriteFolder, updateIntent]
+    [rawFavoriteNodes, performRemoveFavoriteFolder]
   );
 
   const cancelDeleteFavoriteFolder = useCallback(() => {
@@ -1677,29 +1681,10 @@ export function useSearch(
     setPendingDeleteFavoriteFolder(null);
   }, [pendingDeleteFavoriteFolder, performRemoveFavoriteFolder]);
 
-  // /favorite モードの簡易並び替え（段階3のドラッグ&ドロップ実装までの暫定コア
-  // 機能）。フォルダ見出し行・アイテム行のどちらからも呼ばれる（対象は同じ
-  // parentId を共有する兄弟同士の前後入れ替えのみで、親をまたぐ移動は対象外）。
-  // 選択状態は変えない（並び替え対象の行がそのまま選択され続けることを想定した
-  // 暫定実装のため、intent の更新は行わない。段階3の本実装時に改めて検討する）。
-  const moveFavoriteNode = useCallback(
-    (id: string, direction: "up" | "down") => {
-      invoke<FavoriteNode[]>("move_favorite_node", { id, direction })
-        .then((saved) => {
-          favoritesRef.current = saved;
-          setFavoritesState(saved);
-          fetchFavoriteNodes("move-node");
-        })
-        .catch(console.error);
-    },
-    [fetchFavoriteNodes]
-  );
-
   // お気に入り編集ビューでのドラッグ&ドロップによる並び替え・再親化（4e）。
-  // moveFavoriteNode（隣接スワップ専用）とは別の新規Rustコマンド
-  // （move_favorite_node_to）を呼ぶ。移動はノードの識別子（id）を変えないため、
-  // 編集ビュー側の選択状態（useFavoriteEditSelection）は特別な復元処理なしで
-  // そのまま維持される（favoriteTree が再取得された後も同じ key で解決される）。
+  // 移動はノードの識別子（id）を変えないため、編集ビュー側の選択状態
+  // （useFavoriteEditSelection）は特別な復元処理なしでそのまま維持される
+  // （favoriteTree が再取得された後も同じ key で解決される）。
   // 重複名・循環参照・予約フォルダ保護等のバリデーションは Rust側で行い、失敗時は
   // エラーメッセージ文字列を返す契約に統一する（他の set_* 系フックコールバックと
   // 同じ Promise<string | null> の契約。docs/design/settings-panel-architecture.md
@@ -2234,7 +2219,6 @@ export function useSearch(
     requestDeleteFavoriteFolder,
     cancelDeleteFavoriteFolder,
     confirmDeleteFavoriteFolder,
-    moveFavoriteNode,
     moveFavoriteNodeTo,
     renameFavoriteNode,
     rows,

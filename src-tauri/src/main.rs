@@ -697,6 +697,12 @@ struct FavoriteNode {
     value: String,
     #[serde(default)]
     order: u32,
+    // フォルダの開閉状態（軸3）。folder 型ノードのみ意味を持つ（file 型では未使用の
+    // まま false 固定でよい）。デフォルト false（展開）。既存の settings.json
+    // （このキーを持たない）を読み込んだ際に deserialize が失敗しないよう
+    // #[serde(default)] を付与する（他の後方互換フィールドと同じ方針）。
+    #[serde(default)]
+    collapsed: bool,
 }
 
 fn load_favorites(app: &AppHandle) -> Vec<FavoriteNode> {
@@ -725,6 +731,7 @@ fn reserved_folder_definitions() -> [FavoriteNode; 3] {
             name: "ピン止め".to_string(),
             value: String::new(),
             order: 0,
+            collapsed: false,
         },
         FavoriteNode {
             id: FAVORITES_FOLDER_ID.to_string(),
@@ -733,6 +740,7 @@ fn reserved_folder_definitions() -> [FavoriteNode; 3] {
             name: "お気に入り".to_string(),
             value: String::new(),
             order: 1,
+            collapsed: false,
         },
         FavoriteNode {
             id: MEMO_FOLDER_ID.to_string(),
@@ -741,6 +749,7 @@ fn reserved_folder_definitions() -> [FavoriteNode; 3] {
             name: "メモ".to_string(),
             value: String::new(),
             order: 2,
+            collapsed: false,
         },
     ]
 }
@@ -924,6 +933,7 @@ fn add_favorite(
             name,
             value: path,
             order: max_order.map(|m| m + 1).unwrap_or(0),
+            collapsed: false,
         });
         save_favorites(&app, &favorites)?;
     }
@@ -991,6 +1001,7 @@ fn add_favorite_folder(
         name: trimmed.to_string(),
         value: String::new(),
         order: max_order.map(|m| m + 1).unwrap_or(0),
+        collapsed: false,
     });
     save_favorites(&app, &favorites)?;
     Ok(favorites)
@@ -1048,6 +1059,29 @@ fn rename_favorite_node(
     Ok(favorites)
 }
 
+/// フォルダの開閉状態（軸3）の永続化。/favorite ブラウジング・お気に入り編集ビューの
+/// 両方が同じ collapsed フィールドを共有する（別々の開閉状態を持たせない。
+/// REQUIREMENTS.md「フォルダの開閉状態（collapsed）の永続化と絞り込みとの関係」節を
+/// 参照）。フロント側は現在値をトグルした結果をそのまま渡す（この関数自体は
+/// トグルせず、指定された値をそのまま設定する単純な setter）。folder 型以外の
+/// ノードに対して呼ばれることは無い想定だが、値を設定するだけの安全な操作のため
+/// 型チェックは行わない。
+#[tauri::command]
+fn set_favorite_folder_collapsed(
+    app: AppHandle,
+    id: String,
+    collapsed: bool,
+) -> Result<Vec<FavoriteNode>, String> {
+    let mut favorites = load_favorites(&app);
+    let target = favorites
+        .iter_mut()
+        .find(|f| f.id == id)
+        .ok_or_else(|| "指定したノードが見つかりません".to_string())?;
+    target.collapsed = collapsed;
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
 /// 指定したノードIDのエントリを削除する（1件のみ。子孫を持つ folder 型ノードの
 /// カスケード削除は未対応。folder 型ノードを削除するUI自体が現時点では存在せず
 /// （新規フォルダ作成のみ）、実際に発生し得ない状況のため今回は対応しない）。
@@ -1091,77 +1125,11 @@ fn remove_favorite_folder(app: AppHandle, id: String) -> Result<Vec<FavoriteNode
     Ok(kept)
 }
 
-/// /favorite モードの簡易並び替え（段階3で予定しているドラッグ&ドロップ実装までの
-/// 暫定コア機能）。指定したノードと、同じ parent_id を共有する兄弟のうち直前
-/// （`direction == "up"`）または直後（`direction == "down"`）のノードの `order` 値を
-/// 入れ替えるだけの単純な実装（振り直しは行わない）。フォルダをまたいだ移動（親の
-/// 変更）は対象外。既に先頭/末尾で移動先が無い場合は何もせず現在の配列をそのまま
-/// 返す（UI側でボタンを無効化する想定だが、Rust側でも同様に防御する）。
-///
-/// 予約フォルダ（ピン止め／お気に入り／メモの3つのルート）は移動対象に含めない
-/// （`remove_favorite_folder` と同様、UI側の制限だけでなくRust側でも防御する）。
-#[tauri::command]
-fn move_favorite_node(
-    app: AppHandle,
-    id: String,
-    direction: String,
-) -> Result<Vec<FavoriteNode>, String> {
-    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
-        return Err("予約フォルダは移動できません".to_string());
-    }
-    let mut favorites = load_favorites(&app);
-    let target_index = favorites
-        .iter()
-        .position(|f| f.id == id)
-        .ok_or_else(|| "指定したノードが見つかりません".to_string())?;
-    let parent_id = favorites[target_index].parent_id.clone();
-
-    // 同じ parent_id を共有する兄弟を order 昇順で並べ、元の配列上のインデックスの
-    // 列として持つ（favorites 自体は parent_id ごとにソートされているとは限らない
-    // ため、ここで都度組み立てる）。
-    let mut sibling_indices: Vec<usize> = favorites
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| f.parent_id == parent_id)
-        .map(|(i, _)| i)
-        .collect();
-    sibling_indices.sort_by_key(|&i| favorites[i].order);
-
-    let pos = sibling_indices
-        .iter()
-        .position(|&i| i == target_index)
-        .ok_or_else(|| "内部エラー: 兄弟ノードの特定に失敗しました".to_string())?;
-
-    let swap_pos = match direction.as_str() {
-        "up" => {
-            if pos == 0 {
-                return Ok(favorites);
-            }
-            pos - 1
-        }
-        "down" => {
-            if pos + 1 >= sibling_indices.len() {
-                return Ok(favorites);
-            }
-            pos + 1
-        }
-        _ => return Err("directionは up または down を指定してください".to_string()),
-    };
-
-    let a = sibling_indices[pos];
-    let b = sibling_indices[swap_pos];
-    let order_a = favorites[a].order;
-    let order_b = favorites[b].order;
-    favorites[a].order = order_b;
-    favorites[b].order = order_a;
-
-    save_favorites(&app, &favorites)?;
-    Ok(favorites)
-}
-
 /// お気に入り編集ビューのドラッグ&ドロップによる並び替え・再親化（4e）。
-/// `move_favorite_node`（隣接スワップ専用、up/downのみ。/favorite ブラウジングの
-/// 暫定UIが引き続き使う）とは別コマンドとして扱う。1回の呼び出しで移動先の親
+/// 隣接スワップ専用（up/downのみ）の `move_favorite_node` を段階3当初の暫定実装
+/// として持っていたが、/favorite ブラウジング側の暫定UI撤去とともに呼び出し元が
+/// 無くなったため削除した（経緯は docs/design/favorites-data-model.md
+/// #favorite-mode-provisional-features を参照）。1回の呼び出しで移動先の親
 /// （`new_parent_id`）と、移動先の兄弟内での挿入位置（`target_index`。自分自身を
 /// 除いた兄弟一覧を order 昇順に並べたときの添字。同じ親内での並び替えも
 /// フォルダをまたぐ再親化も同じロジックで扱える）を同時に指定できる。
@@ -2713,8 +2681,8 @@ fn main() {
             remove_favorite,
             remove_favorite_folder,
             rename_favorite_node,
-            move_favorite_node,
             move_favorite_node_to,
+            set_favorite_folder_collapsed,
             set_favorite_enabled,
             set_favorite_keyword
         ])

@@ -1,14 +1,11 @@
-// フォルダ削除確認モーダル。/favorite ブラウジングの暫定UI（FavoriteListPanel.tsx
-// の削除アイコン）・お気に入り編集ビュー（FavoriteEditView.tsx。4c）の両方から
-// 共有する。既存の SystemCommandModal・FileSearchSettings.tsx の削除確認モーダルと
-// 同じ見た目のパターンを踏襲する。
+// フォルダ削除確認モーダル。お気に入り編集ビュー（FavoriteEditView.tsx。4c）が使う
+// （/favorite ブラウジング側の暫定削除UIは編集ビュー完成に伴い撤去済み。詳細は
+// docs/design/favorites-data-model.md#favorite-mode-provisional-features を参照）。
+// 既存の SystemCommandModal・FileSearchSettings.tsx の削除確認モーダルと同じ見た目の
+// パターンを踏襲する。
 //
 // 呼び出し側（App.tsx）が useSearch.ts の pendingDeleteFavoriteFolder/
 // cancelDeleteFavoriteFolder/confirmDeleteFavoriteFolder をそのまま props として渡す。
-// 状態自体は共有しているが、削除確定後にどちらの選択ドメイン（ブラウジング側の
-// intent／編集ビューの useFavoriteEditSelection）をリセットするかは、request 側
-// （requestDeleteFavoriteFolder の onRemoved 引数）で呼び出し元ごとに切り替え済みの
-// ため、このモーダル自体はどちらの文脈から開かれたかを意識しない。
 export function FavoriteFolderDeleteModal({
   target,
   onCancel,
