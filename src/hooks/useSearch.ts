@@ -15,6 +15,12 @@ import { hideWindow } from "../lib/window";
 import { formatWithCommas, makeId } from "../lib/format";
 import { groupNodesByParent, walkGroupedTree } from "../lib/nodeTree";
 import {
+  resolveSelected,
+  SelectableItem,
+  SelectIntent,
+  SELECT_INTENT_TIMEOUT_MS,
+} from "../lib/selectIntent";
+import {
   AppSettings,
   CreateFolderResult,
   FavoriteNode,
@@ -348,36 +354,11 @@ function sortPrefixCommandsByFrecency(
 // pathPasteWizardMode／Web検索行の+1特例には、こうした非同期書き込みを追加する
 // 具体的な予定が無いため、現状の生インデックス書き込み（setSelected／
 // selectFromHover）のまま維持する（詳細は CLAUDE.md「選択状態の維持」節を参照）。
-type SelectIntent =
-  | { type: "top" }
-  | { type: "key"; key: string; expiresAt?: number };
-
-// resolveSelected が受け取る「選択対象になりうる一覧」の共通形。ResultRow も
-// クリップボードエントリから変換したオブジェクトも、この形さえ満たせば対象にできる。
-interface SelectableItem {
-  key: string;
-}
-
-// 純粋関数：intent と現在の行一覧から選択インデックスを導出する。
-// - intent.type === "top" のときは常に 0
-// - intent.type === "key" のとき、items 内に一致する key があればそのインデックス。
-//   無ければ fallback（＝直前に導出できた選択インデックス）をそのまま返す
-//   （「見つからない」は「1行目へリセットする理由」ではなく「今探している対象が
-//   まだ rows に反映されていないだけ」を意味するため、見つかるかタイムアウトする
-//   まで現在の表示をそのまま維持する）
-function resolveSelected(
-  intent: SelectIntent,
-  items: SelectableItem[],
-  fallback: number
-): number {
-  if (intent.type === "top") return 0;
-  const index = items.findIndex((item) => item.key === intent.key);
-  return index === -1 ? fallback : index;
-}
-
-// 復元待ち（intent.type === "key" かつ expiresAt 付き）が一定時間 rows/
-// clipboardSelectionItems 上で解決しない場合にあきらめるまでの猶予（ms）。
-const SELECT_INTENT_TIMEOUT_MS = 1000;
+//
+// SelectIntent 型・resolveSelected・SELECT_INTENT_TIMEOUT_MS は
+// src/lib/selectIntent.ts に切り出し済み（お気に入り編集ビューの
+// useFavoriteEditSelection.ts が、/favorite ブラウジングとは独立した選択
+// ドメインとして同じ方式を再利用するため）。
 
 export function useSearch(
   appSettings: AppSettings,

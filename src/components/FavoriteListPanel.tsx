@@ -2,6 +2,13 @@ import { useRef } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { Tooltip } from "./Tooltip";
 import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
+import {
+  FolderChevron,
+  FileIcon,
+  FOLDER_ICON_PATH,
+  INDENT_STEP_REM,
+  INDENT_BASE_REM,
+} from "./FavoriteTreeVisuals";
 import { FavoriteTreeRow, FileEntry } from "../types";
 
 // フォルダ削除アイコン。FileSearchSettings.tsx の「このフォルダを検索対象から
@@ -76,49 +83,8 @@ function MoveButton({
   );
 }
 
-// フォルダの折りたたみ・展開を示す▼/▶アイコン。マウスの▼クリック（行全体の
-// onClick）、およびフォルダ見出し行を選択中の Enter キー（呼び出し側 App.tsx が
-// onToggleCollapse を直接呼ぶ）の両方で操作できる（REQUIREMENTS.md
-// 「/favorite モード」節を参照）。フォルダ見出し行の視認性を強めるため、
-// アイテム行のアイコン類と同じ16px
-// （w-4 h-4）に統一する（以前は w-3.5 h-3.5 でやや控えめだった）。
-function FolderChevron({ collapsed }: { collapsed: boolean }) {
-  return (
-    <svg
-      className={`w-4 h-4 flex-shrink-0 transition-transform ${
-        collapsed ? "-rotate-90" : ""
-      }`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M19 9l-7 7-7-7"
-      />
-    </svg>
-  );
-}
-
-// フォルダアイコン（見出し行用）。検索結果行の汎用ドキュメントアイコンと視覚的に
-// 区別するため、既存のパス貼り付け機能2の候補行等で使われているフォルダ形状の
-// パスを流用する。アイテム行のファイルアイコンは輪郭線（stroke）で描くのに対し、
-// こちらは塗りつぶし（fill）にすることで「見出し行である」ことの主張を強める
-// （エクスプローラー等でフォルダアイコンが実体を持つ塗りつぶし表現になっている
-// ことが多いのに倣う）。ピン・★アイコンの「輪郭=未登録/塗りつぶし=登録済み」と
-// いう状態表現の規約とは無関係（フォルダ/ファイルという種別の違いを表すだけで、
-// 登録状態を表すものではない）。
-const FOLDER_ICON_PATH =
-  "M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z";
-
-// インデントの1段あたりの増分。フォルダ見出し行・アイテム行で共通の値を使う
-// （階層は depth の値だけで表現し、種別によって基準位置をずらすと「兄弟なのに
-// 縦位置がずれる」誤解を生むため）。以前の 1.25rem では段差がやや分かりにくかった
-// ため 1.5rem に広げた。
-const INDENT_STEP_REM = 1.5;
-const INDENT_BASE_REM = 1;
+// フォルダの折りたたみ・展開を示す▼/▶アイコン、フォルダアイコン、インデント幅は
+// FavoriteTreeVisuals.tsx（お気に入り編集ビューと共有）を参照。
 
 // /favorite モードの一覧（フォルダ見出し行＋アイテム行のツリー表示）。REQUIREMENTS.md
 // 「お気に入り機能」節「/favorite モード」「/favorite モードでの★アイコン」を参照。
@@ -306,19 +272,7 @@ export function FavoriteListPanel({
                   className="w-4 h-4 mr-3 flex-shrink-0"
                 />
               ) : (
-                <svg
-                  className="w-4 h-4 mr-3 flex-shrink-0 opacity-60"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                  />
-                </svg>
+                <FileIcon className="w-4 h-4 mr-3 flex-shrink-0 opacity-60" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium truncate">{item.name}</div>

@@ -5,6 +5,7 @@ import { Store } from "@tauri-apps/plugin-store";
 import { useSettings } from "./hooks/useSettings";
 import { useHotkey } from "./hooks/useHotkey";
 import { useSearch } from "./hooks/useSearch";
+import { useFavoriteEditSelection } from "./hooks/useFavoriteEditSelection";
 import { useClipboard } from "./hooks/useClipboard";
 import { useOcr } from "./hooks/useOcr";
 import { useUpdater } from "./hooks/useUpdater";
@@ -57,6 +58,10 @@ export default function App() {
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
   const search = useSearch(settings.appSettings, settingsVersion, storeRef);
+  // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
+  // ドメイン。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。データソースは
+  // search.favoriteTree をそのまま共有する。
+  const favoriteEdit = useFavoriteEditSelection(search.favoriteTree);
   const ocr = useOcr();
   const updater = useUpdater();
   const clipboard = useClipboard(
@@ -260,10 +265,38 @@ export default function App() {
         }
       } else if (e.key === "Escape" && showSettings) {
         closeSettings();
-      } else if (e.key === "Escape" && favoriteEditOpen) {
-        // お気に入り編集ビューも設定パネルと同様、Esc で検索ビューへ戻る
-        // （ヘッダーの「戻る」ボタンと同じ操作）。
-        closeFavoriteEdit();
+      } else if (favoriteEditOpen) {
+        // お気に入り編集ビュー（4b：読み取り専用のツリー表示＋選択）のキー操作。
+        // パス貼り付けウィザードと同様、キー操作は window レベルのリスナーに
+        // 一本化し、個別コンポーネントのローカル onKeyDown とは併存させない
+        // （CLAUDE.md「複数ステップのウィザード形式インタラクション」節の考え方を
+        // ここにも適用する）。
+        switch (e.key) {
+          case "Escape":
+            // 設定パネルと同様、Esc で検索ビューへ戻る（ヘッダーの「戻る」
+            // ボタンと同じ操作）。
+            closeFavoriteEdit();
+            break;
+          case "ArrowDown":
+            e.preventDefault();
+            favoriteEdit.moveSelection(1);
+            break;
+          case "ArrowUp":
+            e.preventDefault();
+            favoriteEdit.moveSelection(-1);
+            break;
+          case "Enter": {
+            // フォルダ見出し行では開閉をトグルする（onToggleCollapse を直接
+            // 呼び出し、▼クリックのイベント発火を疑似的に模倣しない）。アイテム行
+            // では何もしない（このビューはファイルを起動する画面ではなく、構造を
+            // 閲覧・整理する画面のため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+            const row = search.favoriteTree[favoriteEdit.selected];
+            if (row?.kind === "folder") {
+              search.toggleFavoriteFolderCollapsed(row.node.id);
+            }
+            break;
+          }
+        }
       } else if (
         !showSettings &&
         !favoriteEditOpen &&
@@ -337,6 +370,10 @@ export default function App() {
     openSettings,
     closeSettings,
     closeFavoriteEdit,
+    favoriteEdit.selected,
+    favoriteEdit.moveSelection,
+    search.favoriteTree,
+    search.toggleFavoriteFolderCollapsed,
     ocrActive,
     handleOcrClose,
     search.setQuery,
@@ -710,7 +747,15 @@ export default function App() {
   }
 
   if (favoriteEditOpen) {
-    return <FavoriteEditView onClose={closeFavoriteEdit} />;
+    return (
+      <FavoriteEditView
+        tree={search.favoriteTree}
+        selected={favoriteEdit.selected}
+        onSelectRowByKey={favoriteEdit.selectByKey}
+        onToggleCollapse={search.toggleFavoriteFolderCollapsed}
+        onClose={closeFavoriteEdit}
+      />
+    );
   }
 
   return (
