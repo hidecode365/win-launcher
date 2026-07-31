@@ -1695,6 +1695,33 @@ export function useSearch(
     [fetchFavoriteNodes]
   );
 
+  // お気に入り編集ビューでのドラッグ&ドロップによる並び替え・再親化（4e）。
+  // moveFavoriteNode（隣接スワップ専用）とは別の新規Rustコマンド
+  // （move_favorite_node_to）を呼ぶ。移動はノードの識別子（id）を変えないため、
+  // 編集ビュー側の選択状態（useFavoriteEditSelection）は特別な復元処理なしで
+  // そのまま維持される（favoriteTree が再取得された後も同じ key で解決される）。
+  // 重複名・循環参照・予約フォルダ保護等のバリデーションは Rust側で行い、失敗時は
+  // エラーメッセージ文字列を返す契約に統一する（他の set_* 系フックコールバックと
+  // 同じ Promise<string | null> の契約。docs/design/settings-panel-architecture.md
+  // 「エラー状態の保持場所」を参照）。
+  const moveFavoriteNodeTo = useCallback(
+    (id: string, newParentId: string, targetIndex: number): Promise<string | null> => {
+      return invoke<FavoriteNode[]>("move_favorite_node_to", {
+        id,
+        newParentId,
+        targetIndex,
+      })
+        .then((saved) => {
+          favoritesRef.current = saved;
+          setFavoritesState(saved);
+          fetchFavoriteNodes("move-node-to");
+          return null;
+        })
+        .catch((err) => String(err));
+    },
+    [fetchFavoriteNodes]
+  );
+
   // お気に入り編集ビューでのリネーム（4d）。フォルダ・アイテムのどちらの
   // FavoriteNode.name も変更できる（重複チェック・予約フォルダ保護は Rust側
   // rename_favorite_node が行う）。他の set_* 系フックコールバックと同じ
@@ -2208,6 +2235,7 @@ export function useSearch(
     cancelDeleteFavoriteFolder,
     confirmDeleteFavoriteFolder,
     moveFavoriteNode,
+    moveFavoriteNodeTo,
     renameFavoriteNode,
     rows,
   };

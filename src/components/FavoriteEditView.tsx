@@ -159,6 +159,7 @@ export function FavoriteEditView({
   onCancelDeleteFolder,
   onConfirmDeleteFolder,
   onToggleFavorite,
+  onMoveNode,
   renamingNodeId,
   onStartRename,
   onCancelRename,
@@ -179,6 +180,11 @@ export function FavoriteEditView({
   onCancelDeleteFolder: () => void;
   onConfirmDeleteFolder: () => void;
   onToggleFavorite: (file: FileEntry) => void;
+  onMoveNode: (
+    id: string,
+    newParentId: string,
+    targetIndex: number
+  ) => Promise<string | null>;
   renamingNodeId: string | null;
   onStartRename: (id: string) => void;
   onCancelRename: () => void;
@@ -247,6 +253,7 @@ export function FavoriteEditView({
         onToggleCollapse={onToggleCollapse}
         onRequestDeleteFolder={onRequestDeleteFolder}
         onToggleFavorite={onToggleFavorite}
+        onMoveNode={onMoveNode}
         renamingNodeId={renamingNodeId}
         onStartRename={onStartRename}
         onCancelRename={onCancelRename}

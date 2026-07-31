@@ -1159,6 +1159,96 @@ fn move_favorite_node(
     Ok(favorites)
 }
 
+/// お気に入り編集ビューのドラッグ&ドロップによる並び替え・再親化（4e）。
+/// `move_favorite_node`（隣接スワップ専用、up/downのみ。/favorite ブラウジングの
+/// 暫定UIが引き続き使う）とは別コマンドとして扱う。1回の呼び出しで移動先の親
+/// （`new_parent_id`）と、移動先の兄弟内での挿入位置（`target_index`。自分自身を
+/// 除いた兄弟一覧を order 昇順に並べたときの添字。同じ親内での並び替えも
+/// フォルダをまたぐ再親化も同じロジックで扱える）を同時に指定できる。
+///
+/// バリデーション（フロント側の制限だけでなくRust側でも防御する）：
+/// - 予約フォルダ（ピン止め／お気に入り／メモ）自体は移動できない
+/// - 移動先の親は「お気に入り」ツリー配下（FAVORITES_FOLDER_ID 自身、または
+///   その子孫の folder 型ノード）でなければならない（ピン止め・メモへの移動を禁止）
+/// - 循環参照防止：フォルダを自分自身、または自分の子孫の中へ移動することはできない
+///   （既存の is_descendant_of を再利用する）
+/// - 移動先の親配下に、同じ node_type で同名（トリム＋大文字小文字を区別しない）の
+///   ノードが既に存在する場合は拒否する（add_favorite_folder・rename_favorite_node と
+///   同じ has_duplicate_favorite_name を共有し、取り違え防止の原則を一貫させる）
+///
+/// order の再計算は、移動先の兄弟（自分自身を除く）を order 昇順に並べたリストへ
+/// target_index の位置で挿入し、そのリスト全体の order を 0 始まりの連番へ振り直す
+/// ことで完結させる（フロント側で全量を計算して set_favorites へ渡す一括保存方式は
+/// 採らない。既存の「1操作＝1即時Rustコマンド呼び出し」方式を踏襲する）。
+#[tauri::command]
+fn move_favorite_node_to(
+    app: AppHandle,
+    id: String,
+    new_parent_id: String,
+    target_index: usize,
+) -> Result<Vec<FavoriteNode>, String> {
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+        return Err("予約フォルダは移動できません".to_string());
+    }
+    let mut favorites = load_favorites(&app);
+    let target_pos = favorites
+        .iter()
+        .position(|f| f.id == id)
+        .ok_or_else(|| "指定したノードが見つかりません".to_string())?;
+    let node_type = favorites[target_pos].node_type;
+    let node_name = favorites[target_pos].name.clone();
+
+    let parent_is_folder_in_favorites_tree = new_parent_id == FAVORITES_FOLDER_ID
+        || (favorites
+            .iter()
+            .any(|f| f.id == new_parent_id && f.node_type == FavoriteNodeType::Folder)
+            && is_descendant_of(&favorites, &new_parent_id, FAVORITES_FOLDER_ID));
+    if !parent_is_folder_in_favorites_tree {
+        return Err("移動先が不正です".to_string());
+    }
+
+    if node_type == FavoriteNodeType::Folder
+        && (new_parent_id == id || is_descendant_of(&favorites, &new_parent_id, &id))
+    {
+        return Err("フォルダを自分自身の中に移動することはできません".to_string());
+    }
+
+    if has_duplicate_favorite_name(&favorites, &new_parent_id, node_type, &node_name, Some(&id))
+    {
+        let message = if node_type == FavoriteNodeType::Folder {
+            "同じ名前のフォルダが既に存在します"
+        } else {
+            "同じ名前のファイルが既に存在します"
+        };
+        return Err(message.to_string());
+    }
+
+    let mut sibling_ids: Vec<String> = favorites
+        .iter()
+        .filter(|f| f.parent_id == new_parent_id && f.id != id)
+        .map(|f| f.id.clone())
+        .collect();
+    sibling_ids.sort_by_key(|sid| {
+        favorites
+            .iter()
+            .find(|f| &f.id == sid)
+            .map(|f| f.order)
+            .unwrap_or(0)
+    });
+    let insert_at = target_index.min(sibling_ids.len());
+    sibling_ids.insert(insert_at, id.clone());
+
+    favorites[target_pos].parent_id = new_parent_id;
+    for (order, sid) in sibling_ids.iter().enumerate() {
+        if let Some(node) = favorites.iter_mut().find(|f| &f.id == sid) {
+            node.order = order as u32;
+        }
+    }
+
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
 // 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで
 // 保存された settings.json（このフィールドを持たない）の読み込み時に
 // deserialize が失敗し、AppSettings 全体が Default::default() にフォールバックして
@@ -2624,6 +2714,7 @@ fn main() {
             remove_favorite_folder,
             rename_favorite_node,
             move_favorite_node,
+            move_favorite_node_to,
             set_favorite_enabled,
             set_favorite_keyword
         ])

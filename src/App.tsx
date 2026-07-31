@@ -874,6 +874,7 @@ export default function App() {
         onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}
         onConfirmDeleteFolder={search.confirmDeleteFavoriteFolder}
         onToggleFavorite={toggleFavoriteFromEditView}
+        onMoveNode={search.moveFavoriteNodeTo}
         renamingNodeId={renamingFavoriteNodeId}
         onStartRename={setRenamingFavoriteNodeId}
         onCancelRename={cancelRenameFavoriteNode}
