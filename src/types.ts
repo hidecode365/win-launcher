@@ -303,3 +303,14 @@ export type FavoriteTreeRow =
       isFirstSibling: boolean;
       isLastSibling: boolean;
     };
+
+// FavoriteTreeRow["key"] の組み立て。フォーマット（`favoriteFolder:<id>`/
+// `favoriteItem:<id>`）を1箇所にまとめ、useSearch.ts の favoriteTree 構築処理・
+// App.tsx（お気に入り編集ビューでのフォルダ作成後の選択移動等）の両方から
+// 参照する（同じフォーマット文字列をハードコードで2箇所に書かない）。
+export function favoriteFolderRowKey(id: string): string {
+  return `favoriteFolder:${id}`;
+}
+export function favoriteItemRowKey(id: string): string {
+  return `favoriteItem:${id}`;
+}

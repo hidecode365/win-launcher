@@ -24,6 +24,8 @@ import {
   AppSettings,
   CreateFolderResult,
   FavoriteNode,
+  favoriteFolderRowKey,
+  favoriteItemRowKey,
   FavoriteTreeRow,
   FAVORITES_FOLDER_ID,
   FileEntry,
@@ -1031,7 +1033,7 @@ export function useSearch(
           : collapsedFavoriteFolderIds.has(node.id);
         rows.push({
           kind: "folder",
-          key: `favoriteFolder:${node.id}`,
+          key: favoriteFolderRowKey(node.id),
           node,
           depth,
           collapsed,
@@ -1050,7 +1052,7 @@ export function useSearch(
         }
         rows.push({
           kind: "item",
-          key: `favoriteItem:${node.id}`,
+          key: favoriteItemRowKey(node.id),
           node,
           depth,
           file: { name: node.name, path: node.value, icon: null },
@@ -1460,12 +1462,18 @@ export function useSearch(
   // useRef で保持するのみ。再レンダリングのトリガーが不要な値のため useState にしない。
   const lastFavoriteFolderIdRef = useRef<string>(FAVORITES_FOLDER_ID);
 
-  // /favorite モードのフォルダ削除確認モーダルの表示対象（配下が空でない場合のみ
-  // セットされる。空の場合は確認を挟まず即座に削除するため、このstateを経由しない）。
+  // フォルダ削除確認モーダルの表示対象（配下が空でない場合のみセットされる。
+  // 空の場合は確認を挟まず即座に削除するため、このstateを経由しない）。
+  // /favorite ブラウジングの暫定UI・お気に入り編集ビュー（4c）の両方から共有する
+  // 単一のstate。`onRemoved` に削除確定後の後処理（選択状態のリセット）を
+  // 呼び出し元ごとに持たせることで、それぞれ別ドメインの選択状態
+  // （ブラウジング側の intent／編集ビューの useFavoriteEditSelection）を混同せずに
+  // 済むようにしている（詳細は requestDeleteFavoriteFolder のコメントを参照）。
   const [pendingDeleteFavoriteFolder, setPendingDeleteFavoriteFolder] = useState<{
     id: string;
     name: string;
     descendantCount: number;
+    onRemoved: () => void;
   } | null>(null);
 
   const toggleFavorite = useCallback((file: FileEntry) => {
@@ -1489,7 +1497,7 @@ export function useSearch(
       // false）は、行自体が消えずその場に残るため対象外（togglePin が通常行からの
       // ピン止めで intent を変更しないのと同じ理由）。
       if (favoriteMode) {
-        const removedKey = `favoriteItem:${existing.id}`;
+        const removedKey = favoriteItemRowKey(existing.id);
         const currentIndex = favoriteSelectionItems.findIndex(
           (item) => item.key === removedKey
         );
@@ -1595,46 +1603,58 @@ export function useSearch(
     [fetchFavoriteNodes]
   );
 
-  // /favorite モードのフォルダ削除（動作確認に必要な最小限のコア機能。段階3の
-  // 本格的なツリー編集UI――ドラッグ&ドロップ・F2リネーム等――の前倒しではない）。
+  // フォルダ削除（/favorite ブラウジングの暫定UI・お気に入り編集ビュー4cの両方が
+  // 使う共通処理。段階3の本格的なツリー編集UIの前倒し実装だった頃の名残の
+  // コメントは、4cで編集ビュー側の正式な削除実装になったため更新した）。
   //
   // 実際に Rust コマンドを呼んで削除を確定する内部処理。配下が空で確認不要な即時
   // 削除・確認ダイアログ経由の削除のいずれからも呼ばれる共通処理として1箇所に
-  // まとめる。
+  // まとめる。削除確定後に選択状態をどう戻すか（`onRemoved`）は呼び出し元ごとに
+  // 異なるドメイン（ブラウジング側の intent／編集ビューの
+  // useFavoriteEditSelection）を持つため、呼び出し元から明示的に受け取る。
   const performRemoveFavoriteFolder = useCallback(
-    (folderId: string) => {
+    (folderId: string, onRemoved: () => void) => {
       invoke<FavoriteNode[]>("remove_favorite_folder", { id: folderId })
         .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
           fetchFavoriteNodes("remove-folder");
-          // フォルダ削除は配下のアイテムをまとめて取り除く操作であり、★解除
-          // （favorite-remove）のような「次に隣接するアイテムへ選択を引き継ぐ」
-          // ロジックをそのまま適用できる単純な1件削除ではない（配下が複数階層・
-          // 複数件にまたがりうる）。今回は最小限のスコープのため、単純に先頭へ
-          // 戻す（段階3の本格的なツリー編集UIで改めて検討する）。
-          updateIntent({ type: "top" }, "favorite-folder-remove");
+          onRemoved();
         })
         .catch(console.error);
     },
-    [fetchFavoriteNodes, updateIntent]
+    [fetchFavoriteNodes]
   );
 
   // 削除確認が必要かどうかの判定用に、指定フォルダ配下（再帰）に存在するノード数を
   // rawFavoriteNodes から直接数える（表示中のフィルタ・折りたたみ状態には依存しない、
   // 実際に削除される総数を確認する必要があるため）。
+  //
+  // `onRemoved` 省略時は /favorite ブラウジングの暫定UIの既存挙動（フォルダ削除は
+  // 配下のアイテムをまとめて取り除く操作であり、★解除（favorite-remove）のような
+  // 「次に隣接するアイテムへ選択を引き継ぐ」ロジックをそのまま適用できる単純な
+  // 1件削除ではないため、単純に先頭へ戻す）をデフォルトとする。お気に入り編集
+  // ビュー（4c）は自身の選択ドメインをリセットする関数を明示的に渡す。
   const requestDeleteFavoriteFolder = useCallback(
-    (folderId: string, name: string) => {
+    (folderId: string, name: string, onRemoved?: () => void) => {
+      const finish =
+        onRemoved ??
+        (() => updateIntent({ type: "top" }, "favorite-folder-remove"));
       const descendantCount = rawFavoriteNodes.filter((n) =>
         isDescendantOfFolder(rawFavoriteNodes, n.parentId, folderId)
       ).length;
       if (descendantCount === 0) {
-        performRemoveFavoriteFolder(folderId);
+        performRemoveFavoriteFolder(folderId, finish);
         return;
       }
-      setPendingDeleteFavoriteFolder({ id: folderId, name, descendantCount });
+      setPendingDeleteFavoriteFolder({
+        id: folderId,
+        name,
+        descendantCount,
+        onRemoved: finish,
+      });
     },
-    [rawFavoriteNodes, performRemoveFavoriteFolder]
+    [rawFavoriteNodes, performRemoveFavoriteFolder, updateIntent]
   );
 
   const cancelDeleteFavoriteFolder = useCallback(() => {
@@ -1643,7 +1663,10 @@ export function useSearch(
 
   const confirmDeleteFavoriteFolder = useCallback(() => {
     if (!pendingDeleteFavoriteFolder) return;
-    performRemoveFavoriteFolder(pendingDeleteFavoriteFolder.id);
+    performRemoveFavoriteFolder(
+      pendingDeleteFavoriteFolder.id,
+      pendingDeleteFavoriteFolder.onRemoved
+    );
     setPendingDeleteFavoriteFolder(null);
   }, [pendingDeleteFavoriteFolder, performRemoveFavoriteFolder]);
 

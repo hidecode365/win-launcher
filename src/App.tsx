@@ -18,10 +18,12 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
 import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
 import { FavoriteListPanel } from "./components/FavoriteListPanel";
+import { FavoriteFolderDeleteModal } from "./components/FavoriteFolderDeleteModal";
 import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
+import { favoriteFolderRowKey } from "./types";
 import type { ClipboardTextEntry, FrecencyMap } from "./types";
 
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
@@ -225,6 +227,31 @@ export default function App() {
     setView("search");
   }, []);
 
+  // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移す
+  // （識別子ベースの intent。useFavoriteEditSelection の既存の仕組みに乗せる。
+  // REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  const handleFavoriteEditFolderCreated = useCallback(
+    (folderId: string) => {
+      favoriteEdit.selectByKey(favoriteFolderRowKey(folderId));
+    },
+    [favoriteEdit.selectByKey]
+  );
+
+  // 4c：編集ビューでのフォルダ削除要求。search.requestDeleteFavoriteFolder は
+  // /favorite ブラウジングの暫定UIとも共有する関数のため、削除確定後にどちらの
+  // 選択ドメインをリセットするかを明示的に渡す（編集ビューは favoriteEdit.resetToTop、
+  // ブラウジング側は既定値のまま）。
+  const requestDeleteFavoriteEditFolder = useCallback(
+    (folderId: string, name: string) => {
+      search.requestDeleteFavoriteFolder(
+        folderId,
+        name,
+        favoriteEdit.resetToTop
+      );
+    },
+    [search.requestDeleteFavoriteFolder, favoriteEdit.resetToTop]
+  );
+
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
   // ステップの操作は document レベルの keydown で処理する。input 要素のローカル
   // onKeyDown に持たせると、フォーカス状態や WebView2 のブラウザ既定動作（Ctrl+S の
@@ -265,12 +292,24 @@ export default function App() {
         }
       } else if (e.key === "Escape" && showSettings) {
         closeSettings();
+      } else if (favoriteEditOpen && search.pendingDeleteFavoriteFolder) {
+        // 削除確認モーダル表示中は Escape のみキャンセル扱いにする（下の
+        // favoriteEditOpen 単体の分岐より先に判定し、Escape でモーダルではなく
+        // ビュー自体が閉じてしまわないようにする。/favorite ブラウジング側の
+        // pendingDeleteFavoriteFolder 分岐と同じ理由）。
+        if (e.key === "Escape") {
+          e.preventDefault();
+          search.cancelDeleteFavoriteFolder();
+        }
       } else if (favoriteEditOpen) {
-        // お気に入り編集ビュー（4b：読み取り専用のツリー表示＋選択）のキー操作。
-        // パス貼り付けウィザードと同様、キー操作は window レベルのリスナーに
-        // 一本化し、個別コンポーネントのローカル onKeyDown とは併存させない
-        // （CLAUDE.md「複数ステップのウィザード形式インタラクション」節の考え方を
-        // ここにも適用する）。
+        // お気に入り編集ビューのキー操作。パス貼り付けウィザードと同様、キー操作は
+        // window レベルのリスナーに一本化し、個別コンポーネントのローカル
+        // onKeyDown とは併存させない（CLAUDE.md「複数ステップのウィザード形式
+        // インタラクション」節の考え方をここにも適用する）。ただし「ここに
+        // フォルダを作成」のインライン入力欄はテキスト入力欄自体の性質上、
+        // RegisterEntryDialog.tsx と同じローカル onKeyDown ＋ stopPropagation の
+        // パターンを使う（入力欄にフォーカスがある間はこの window リスナーまで
+        // 伝播しない。詳細は FavoriteEditView.tsx の CreateFolderRow を参照）。
         switch (e.key) {
           case "Escape":
             // 設定パネルと同様、Esc で検索ビューへ戻る（ヘッダーの「戻る」
@@ -753,6 +792,12 @@ export default function App() {
         selected={favoriteEdit.selected}
         onSelectRowByKey={favoriteEdit.selectByKey}
         onToggleCollapse={search.toggleFavoriteFolderCollapsed}
+        onCreateFolder={search.createFavoriteFolder}
+        onFolderCreated={handleFavoriteEditFolderCreated}
+        onRequestDeleteFolder={requestDeleteFavoriteEditFolder}
+        pendingDeleteFolder={search.pendingDeleteFavoriteFolder}
+        onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}
+        onConfirmDeleteFolder={search.confirmDeleteFavoriteFolder}
         onClose={closeFavoriteEdit}
       />
     );
@@ -798,38 +843,15 @@ export default function App() {
         />
       )}
 
-      {/* /favorite モードのフォルダ削除確認モーダル（配下が空でない場合のみ表示。
-          既存の SystemCommandModal・FileSearchSettings.tsx の削除確認モーダルと
-          同じ見た目のパターンを踏襲する。動作確認用の最小限のコア機能のため、
-          専用コンポーネントへの切り出しは行わずここにインラインで実装する）。 */}
+      {/* フォルダ削除確認モーダル（配下が空でない場合のみ表示）。/favorite
+          ブラウジングの暫定UI・お気に入り編集ビューの両方で共有する
+          （FavoriteFolderDeleteModal.tsx を参照）。 */}
       {search.pendingDeleteFavoriteFolder && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="w-72 rounded-xl bg-white p-5 shadow-2xl">
-            <div className="text-sm font-medium text-gray-800">
-              「{search.pendingDeleteFavoriteFolder.name}」を削除しますか？
-            </div>
-            <div className="mt-1 text-xs text-gray-400">
-              フォルダ内の{search.pendingDeleteFavoriteFolder.descendantCount}
-              件の登録情報が削除されます。実ファイルは削除されません。
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={search.cancelDeleteFavoriteFolder}
-                className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={search.confirmDeleteFavoriteFolder}
-                className="rounded bg-red-500 px-3 py-1.5 text-sm text-white hover:bg-red-600"
-              >
-                削除
-              </button>
-            </div>
-          </div>
-        </div>
+        <FavoriteFolderDeleteModal
+          target={search.pendingDeleteFavoriteFolder}
+          onCancel={search.cancelDeleteFavoriteFolder}
+          onConfirm={search.confirmDeleteFavoriteFolder}
+        />
       )}
 
       <SearchBox

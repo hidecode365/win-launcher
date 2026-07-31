@@ -1,25 +1,32 @@
 import { useRef } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
+import { Tooltip } from "./Tooltip";
 import { WarningIcon } from "./ToggleIcons";
 import {
   FolderChevron,
   FileIcon,
   FOLDER_ICON_PATH,
+  TRASH_ICON_PATH,
   INDENT_STEP_REM,
   INDENT_BASE_REM,
 } from "./FavoriteTreeVisuals";
 import { FavoriteTreeRow } from "../types";
 
-// お気に入り編集ビュー（4b：読み取り専用）のツリー表示。走査結果（tree）自体は
-// /favorite ブラウジング（FavoriteListPanel.tsx）と同じ favoriteTree をそのまま
-// 参照し、折りたたみ状態も共有する（新規のツリー走査・折りたたみロジックは持たない。
-// CLAUDE.md「同じ走査ロジックを2箇所に持たない」原則を参照）。行の見た目
-// （チェブロン・フォルダアイコン・インデント幅・ファイルアイコン）は
-// FavoriteTreeVisuals.tsx を共有する。
+// お気に入り編集ビューのツリー表示。走査結果（tree）自体は /favorite ブラウジング
+// （FavoriteListPanel.tsx）と同じ favoriteTree をそのまま参照し、折りたたみ状態も
+// 共有する（新規のツリー走査・折りたたみロジックは持たない。CLAUDE.md「同じ走査
+// ロジックを2箇所に持たない」原則を参照）。行の見た目（チェブロン・フォルダ
+// アイコン・インデント幅・ファイルアイコン・削除アイコン）は FavoriteTreeVisuals.tsx
+// を共有する。
 //
-// FavoriteListPanel.tsx との違い：4b時点では読み取り専用のため、★トグル・
-// 「上へ/下へ移動」・削除アイコン・ドラッグハンドルのいずれも表示しない
-// （4c〜4eで順次追加予定。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+// FavoriteListPanel.tsx との違い：★トグル・「上へ/下へ移動」・ドラッグハンドルは
+// 表示しない（4d〜4eで対応予定。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+// 削除アイコンはフォルダ見出し行のみ、かつ選択中の行にのみ表示する（アイテム行の
+// 削除・登録解除は /favorite ブラウジング側の★トグルのみで行う対象のため、この
+// ビューには持たせない）。予約フォルダ（ピン止め・お気に入り・メモ）はこの
+// tree（favoriteTree は「お気に入り」フォルダの子孫のみを列挙する）に現れないため、
+// 予約フォルダ向けの削除アイコン非表示判定は別途不要（Rust側 remove_favorite_folder
+// も二重に防御している）。
 // アイテム行はクリック／Enterのいずれでもファイルを起動しない（このビューは
 // ファイルを起動する画面ではなく、構造を閲覧・整理する画面のため）。
 export function FavoriteEditTree({
@@ -27,6 +34,7 @@ export function FavoriteEditTree({
   selected,
   onSelectRowByKey,
   onToggleCollapse,
+  onRequestDeleteFolder,
 }: {
   tree: FavoriteTreeRow[];
   // tree（favoriteTree）上の選択インデックス。フォルダ見出し行・アイテム行の
@@ -34,6 +42,7 @@ export function FavoriteEditTree({
   selected: number;
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
+  onRequestDeleteFolder: (folderId: string, name: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
@@ -86,6 +95,35 @@ export function FavoriteEditTree({
               >
                 {row.directChildCount}
               </span>
+              {/* 削除アイコン。選択中の行にのみ表示する（ピン・★アイコンの
+                  「選択時のみ表示」と同じ考え方）。行全体のクリック（折りたたみ
+                  切替）に伝播させないよう stopPropagation する。 */}
+              {isSelected && (
+                <Tooltip label="このフォルダを削除" className="flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRequestDeleteFolder(row.node.id, row.node.name);
+                    }}
+                    className="ml-1 p-1 rounded text-white/80 hover:bg-white/20"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d={TRASH_ICON_PATH}
+                      />
+                    </svg>
+                  </button>
+                </Tooltip>
+              )}
             </div>
           );
         }

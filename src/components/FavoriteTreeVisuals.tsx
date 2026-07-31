@@ -60,3 +60,11 @@ export function FileIcon({ className }: { className: string }) {
 // 縦位置がずれる」誤解を生むため）。
 export const INDENT_STEP_REM = 1.5;
 export const INDENT_BASE_REM = 1;
+
+// フォルダ削除アイコン。FileSearchSettings.tsx の「このフォルダを検索対象から
+// 削除」ボタンと同じゴミ箱アイコン・配色（グレー→ホバーで赤）を流用し、既存の
+// 削除操作の見た目に揃える。ボタン自体（表示条件・選択時の配色切り替え）は
+// FavoriteListPanel.tsx・FavoriteEditTree.tsx それぞれの表示条件が異なるため、
+// アイコンのパスのみをここで共有する。
+export const TRASH_ICON_PATH =
+  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";

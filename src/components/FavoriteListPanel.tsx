@@ -6,16 +6,11 @@ import {
   FolderChevron,
   FileIcon,
   FOLDER_ICON_PATH,
+  TRASH_ICON_PATH,
   INDENT_STEP_REM,
   INDENT_BASE_REM,
 } from "./FavoriteTreeVisuals";
 import { FavoriteTreeRow, FileEntry } from "../types";
-
-// フォルダ削除アイコン。FileSearchSettings.tsx の「このフォルダを検索対象から
-// 削除」ボタンと同じゴミ箱アイコン・配色（グレー→ホバーで赤）を流用し、既存の
-// 削除操作の見た目に揃える。
-const TRASH_ICON_PATH =
-  "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
 
 // 「上へ移動」「下へ移動」用のシェブロンアイコン（Heroicons outline の
 // chevron-up/chevron-down）。段階3のドラッグ&ドロップ実装までの暫定手段のため、

@@ -16,10 +16,12 @@ import type { FavoriteTreeRow } from "../types";
 // useSearch.ts の同種の仕組みと異なり、ホバー抑制（直近キーボード操作からの猶予・
 // カーソル静止判定）・expiresAt によるタイムアウトフォールバックは持たせていない。
 // 編集ビューは常時全件表示のツリーで、ブラウジング側のように非同期の一覧差し替え
-// （検索結果の到着等）と選択操作が競合する場面が無いため、今回のスコープ（4b：
-// 読み取り専用のツリー表示＋選択）では簡略化している。4c（削除）で非同期の
-// データ再取得を伴う操作が入った時点で、必要であれば expiresAt 付き intent を
-// 追加する。
+// （検索結果の到着等）と選択操作が競合する場面が無いため簡略化している。
+// 4c（作成・削除）では、作成後の選択移動は selectByKey（intent は期限なしのため、
+// favoriteTree が非同期更新で新規フォルダを含むまで待ち続け、含まれた時点で自動的に
+// 解決される）、削除後の選択復元は resetToTop（複数階層・複数件をまたぐ削除のため
+// 「次の1件」を一意に定義できず、先頭へのフォールバックでよい）で対応しており、
+// いずれも expiresAt 付き intent を必要としなかった。
 export function useFavoriteEditSelection(tree: FavoriteTreeRow[]) {
   const [intent, setIntent] = useState<SelectIntent>({ type: "top" });
   const [selected, setSelected] = useState(0);
@@ -33,6 +35,14 @@ export function useFavoriteEditSelection(tree: FavoriteTreeRow[]) {
 
   const selectByKey = useCallback((key: string) => {
     setIntent({ type: "key", key });
+  }, []);
+
+  // フォルダ削除（4c）後の選択復元用。複数階層・複数件をまたぐ削除のため
+  // 「次に選ぶべき1件」を一意に定義できず、先頭へのフォールバックでよい
+  // （R-1の既存の正当な例外パターン。useSearch.ts の performRemoveFavoriteFolder
+  // 「onRemoved」デフォルト実装と同じ考え方）。
+  const resetToTop = useCallback(() => {
+    setIntent({ type: "top" });
   }, []);
 
   // ↑↓キーによる選択移動。フォルダ見出し行・アイテム行の両方を対象にする
@@ -53,5 +63,5 @@ export function useFavoriteEditSelection(tree: FavoriteTreeRow[]) {
     [selected, tree]
   );
 
-  return { selected, selectByKey, moveSelection };
+  return { selected, selectByKey, moveSelection, resetToTop };
 }
