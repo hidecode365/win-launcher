@@ -1476,7 +1476,12 @@ export function useSearch(
     onRemoved: () => void;
   } | null>(null);
 
-  const toggleFavorite = useCallback((file: FileEntry) => {
+  // `onRemoved` は解除確定後の選択復元を呼び出し元ごとに切り替えるための
+  // コールバック（省略時は /favorite ブラウジングの既定挙動）。
+  // requestDeleteFavoriteFolder の onRemoved と同じ設計（詳細はそちらのコメントを
+  // 参照）。お気に入り編集ビュー（App.tsx）は自身の選択ドメイン
+  // （useFavoriteEditSelection）を復元するコールバックを明示的に渡す。
+  const toggleFavorite = useCallback((file: FileEntry, onRemoved?: () => void) => {
     const current = favoritesRef.current;
     const existing = current.find(
       (f) =>
@@ -1485,18 +1490,20 @@ export function useSearch(
         isDescendantOfFolder(current, f.parentId, FAVORITES_FOLDER_ID)
     );
     if (existing) {
-      // /favorite モード自身の一覧から★解除した場合、対象行は favoriteTree から
-      // 消え、行番号のフォールバック（resolveSelected の「見つからなければ直前の
-      // インデックスを維持」）に選択位置の復元を委ねると、識別子ベースではなく
-      // 実質的に行番号ベースの復元になってしまう。togglePin の解除分岐
-      // （alreadyPinned 側。「削除後に別の場所へ移動する対象の識別子を intent に
-      // 積み、rows が再構築されて見つかった時点で自動解決される」というパターン）
-      // と同じ経路に統合するため、削除前に次（無ければ前）のアイテム行の識別子を
-      // 求め、intent をその識別子で更新してから解除を確定する。
-      // 通常のファイル検索結果行・/recent の行から★解除した場合（favoriteMode が
-      // false）は、行自体が消えずその場に残るため対象外（togglePin が通常行からの
-      // ピン止めで intent を変更しないのと同じ理由）。
-      if (favoriteMode) {
+      if (onRemoved) {
+        onRemoved();
+      } else if (favoriteMode) {
+        // /favorite モード自身の一覧から★解除した場合、対象行は favoriteTree
+        // から消え、行番号のフォールバック（resolveSelected の「見つからなければ
+        // 直前のインデックスを維持」）に選択位置の復元を委ねると、識別子ベース
+        // ではなく実質的に行番号ベースの復元になってしまう。togglePin の解除
+        // 分岐（alreadyPinned 側。「削除後に別の場所へ移動する対象の識別子を
+        // intent に積み、rows が再構築されて見つかった時点で自動解決される」
+        // というパターン）と同じ経路に統合するため、削除前に次（無ければ前）の
+        // アイテム行の識別子を求め、intent をその識別子で更新してから解除を
+        // 確定する。通常のファイル検索結果行・/recent の行から★解除した場合
+        // （favoriteMode が false）は、行自体が消えずその場に残るため対象外
+        // （togglePin が通常行からのピン止めで intent を変更しないのと同じ理由）。
         const removedKey = favoriteItemRowKey(existing.id);
         const currentIndex = favoriteSelectionItems.findIndex(
           (item) => item.key === removedKey

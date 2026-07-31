@@ -24,7 +24,7 @@ import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
 import { favoriteFolderRowKey } from "./types";
-import type { ClipboardTextEntry, FrecencyMap } from "./types";
+import type { ClipboardTextEntry, FileEntry, FrecencyMap } from "./types";
 
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 
@@ -279,6 +279,38 @@ export default function App() {
       );
     },
     [search.requestDeleteFavoriteFolder, favoriteEdit.resetToTop]
+  );
+
+  // 編集ビューでの★解除。解除の挙動自体（確認なしの即時解除）はブラウジング側と
+  // 同じ search.toggleFavorite をそのまま呼ぶが、解除確定後の選択復元は
+  // 編集ビュー自身の選択ドメイン（favoriteEdit）に対して行う必要があるため、
+  // requestDeleteFavoriteEditFolder と同じ「呼び出し元が復元コールバックを渡す」
+  // 設計に従う。単一アイテムの解除のため、favoriteTree 上で隣接する行（無ければ
+  // 前の行）へ選択を引き継ぎ、対象が見つからない場合のみ resetToTop へ
+  // フォールバックする（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  const toggleFavoriteFromEditView = useCallback(
+    (file: FileEntry) => {
+      const tree = search.favoriteTree;
+      const removedIndex = tree.findIndex(
+        (row) => row.kind === "item" && row.file.path === file.path
+      );
+      const neighbor =
+        (removedIndex !== -1 ? tree[removedIndex + 1] : undefined) ??
+        (removedIndex !== -1 ? tree[removedIndex - 1] : undefined) ??
+        null;
+      search.toggleFavorite(
+        file,
+        neighbor
+          ? () => favoriteEdit.selectByKey(neighbor.key)
+          : favoriteEdit.resetToTop
+      );
+    },
+    [
+      search.favoriteTree,
+      search.toggleFavorite,
+      favoriteEdit.selectByKey,
+      favoriteEdit.resetToTop,
+    ]
   );
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
@@ -841,6 +873,7 @@ export default function App() {
         pendingDeleteFolder={search.pendingDeleteFavoriteFolder}
         onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}
         onConfirmDeleteFolder={search.confirmDeleteFavoriteFolder}
+        onToggleFavorite={toggleFavoriteFromEditView}
         renamingNodeId={renamingFavoriteNodeId}
         onStartRename={setRenamingFavoriteNodeId}
         onCancelRename={cancelRenameFavoriteNode}

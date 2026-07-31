@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "./Tooltip";
 import { FavoriteEditTree } from "./FavoriteEditTree";
 import { FavoriteFolderDeleteModal } from "./FavoriteFolderDeleteModal";
+import { FavoriteEditFooter } from "./FavoriteEditFooter";
 import {
   CreateFolderResult,
   FAVORITES_FOLDER_ID,
   FavoriteTreeRow,
+  FileEntry,
 } from "../types";
 
 // 画面下部に常時表示する「ここにフォルダを作成」行。RegisterEntryDialog.tsx の
@@ -156,6 +158,7 @@ export function FavoriteEditView({
   pendingDeleteFolder,
   onCancelDeleteFolder,
   onConfirmDeleteFolder,
+  onToggleFavorite,
   renamingNodeId,
   onStartRename,
   onCancelRename,
@@ -175,6 +178,7 @@ export function FavoriteEditView({
   pendingDeleteFolder: { name: string; descendantCount: number } | null;
   onCancelDeleteFolder: () => void;
   onConfirmDeleteFolder: () => void;
+  onToggleFavorite: (file: FileEntry) => void;
   renamingNodeId: string | null;
   onStartRename: (id: string) => void;
   onCancelRename: () => void;
@@ -242,6 +246,7 @@ export function FavoriteEditView({
         onSelectRowByKey={onSelectRowByKey}
         onToggleCollapse={onToggleCollapse}
         onRequestDeleteFolder={onRequestDeleteFolder}
+        onToggleFavorite={onToggleFavorite}
         renamingNodeId={renamingNodeId}
         onStartRename={onStartRename}
         onCancelRename={onCancelRename}
@@ -253,6 +258,8 @@ export function FavoriteEditView({
         onCreateFolder={onCreateFolder}
         onFolderCreated={onFolderCreated}
       />
+
+      <FavoriteEditFooter selectedKind={selectedRow?.kind ?? null} />
 
       {/* 詳細表示ペイン。選択中のアイテム行のフルパスを読み取り専用で表示する
           （行自体にも truncate 済みのパスを表示しているが、長いパスは省略される

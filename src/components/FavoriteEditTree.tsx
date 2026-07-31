@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { Tooltip } from "./Tooltip";
-import { WarningIcon } from "./ToggleIcons";
+import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
 import {
   FolderChevron,
   FileIcon,
@@ -10,7 +10,7 @@ import {
   INDENT_STEP_REM,
   INDENT_BASE_REM,
 } from "./FavoriteTreeVisuals";
-import { FavoriteTreeRow } from "../types";
+import { FavoriteTreeRow, FileEntry } from "../types";
 
 // リネーム中の行のインライン入力欄（4d）。CreateFolderRow（FavoriteEditView.tsx）と
 // 同じ「テキストボックス＋Enter確定・Esc取り消し」の見た目・操作感を踏襲する。
@@ -101,14 +101,15 @@ function RenameInput({
 // アイコン・インデント幅・ファイルアイコン・削除アイコン）は FavoriteTreeVisuals.tsx
 // を共有する。
 //
-// FavoriteListPanel.tsx との違い：★トグル・「上へ/下へ移動」・ドラッグハンドルは
-// 表示しない（4eで対応予定。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
-// 削除アイコンはフォルダ見出し行のみ、かつ選択中の行にのみ表示する（アイテム行の
-// 削除・登録解除は /favorite ブラウジング側の★トグルのみで行う対象のため、この
-// ビューには持たせない）。予約フォルダ（ピン止め・お気に入り・メモ）はこの
-// tree（favoriteTree は「お気に入り」フォルダの子孫のみを列挙する）に現れないため、
-// 予約フォルダ向けの削除・リネームアイコン非表示判定は別途不要（Rust側
-// remove_favorite_folder・rename_favorite_node も二重に防御している）。
+// FavoriteListPanel.tsx との違い：「上へ/下へ移動」・ドラッグハンドルは表示しない
+// （4eで対応予定。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。削除アイコンは
+// フォルダ見出し行のみ、かつ選択中の行にのみ表示する。★解除アイコンはアイテム行の
+// みに表示する（フォルダ見出し行には持たせない。当初はアイテムの削除・登録解除は
+// /favorite ブラウジング側の★トグルのみで行う想定だったが、編集ビューを開いたまま
+// 完結できないのは不便との判断で追加した）。予約フォルダ（ピン止め・お気に入り・
+// メモ）はこの tree（favoriteTree は「お気に入り」フォルダの子孫のみを列挙する）に
+// 現れないため、予約フォルダ向けの削除・リネームアイコン非表示判定は別途不要
+// （Rust側 remove_favorite_folder・rename_favorite_node も二重に防御している）。
 // アイテム行はクリック／Enterのいずれでもファイルを起動しない（このビューは
 // ファイルを起動する画面ではなく、構造を閲覧・整理する画面のため）。
 //
@@ -124,6 +125,7 @@ export function FavoriteEditTree({
   onSelectRowByKey,
   onToggleCollapse,
   onRequestDeleteFolder,
+  onToggleFavorite,
   renamingNodeId,
   onStartRename,
   onCancelRename,
@@ -136,6 +138,10 @@ export function FavoriteEditTree({
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
   onRequestDeleteFolder: (folderId: string, name: string) => void;
+  // ★解除（アイテム行のみ）。この一覧内の項目はすべて登録済みのため常に
+  // 塗りつぶし表示・即座に解除する（確認なし。/favorite モードでの★アイコンと
+  // 同じ挙動。REQUIREMENTS.md「/favorite モードでの★アイコン」節を参照）。
+  onToggleFavorite: (file: FileEntry) => void;
   // 現在インライン編集中のノードID（FavoriteNode.id）。null なら編集中の行なし。
   renamingNodeId: string | null;
   onStartRename: (id: string) => void;
@@ -288,6 +294,13 @@ export function FavoriteEditTree({
               )}
             </div>
             {!row.exists && <WarningIcon selected={isSelected} />}
+            {isSelected && !isRenaming && (
+              <FavoriteToggleButton
+                active
+                selected={isSelected}
+                onToggle={() => onToggleFavorite(item)}
+              />
+            )}
           </div>
         );
       })}
