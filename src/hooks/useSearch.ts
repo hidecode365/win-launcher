@@ -1027,7 +1027,6 @@ export function useSearch(
     };
 
     const rows: FavoriteTreeRow[] = [];
-    let itemIndex = 0;
 
     // 「上へ移動」「下へ移動」ボタンの有効/無効判定用。横断検索によるフィルタ表示
     // （一部の兄弟が非表示になり得る）の影響を受けないよう、常に byParent（実際の
@@ -1075,7 +1074,6 @@ export function useSearch(
           depth,
           file: { name: node.name, path: node.value, icon: null },
           exists: favoriteExistence[node.value] ?? true,
-          itemIndex: itemIndex++,
           ...siblingEdgeInfo(node),
         });
       }
@@ -1089,11 +1087,11 @@ export function useSearch(
     favoriteExistence,
   ]);
 
-  // favoriteTree からアイテム行のみを抜き出したもの。↑↓キーによる選択移動・
-  // intent ベースの選択解決（resolveSelected）の対象一覧として使う（フォルダ見出し
-  // 行は選択対象から除外される。REQUIREMENTS.md「/favorite モード」節を参照）。
-  // FavoriteTreeRow の item バリアントは既に `key` フィールドを持つため、
-  // SelectableItem として直接扱える。
+  // favoriteTree からアイテム行のみを抜き出したもの。軸1で↑↓キーによる選択移動・
+  // intent ベースの選択解決（resolveSelected）の対象一覧は favoriteTree（フォルダ
+  // 見出し行込み）へ拡張したため、この一覧はもう選択ドメインとしては使わない。
+  // toggleFavorite の★解除時に「次に選ぶべき隣接アイテム」を探す用途（フォルダ
+  // 見出し行は解除の影響を受けないため対象外でよい）でのみ使う。
   const favoriteSelectionItems = useMemo(
     () => favoriteTree.filter((r) => r.kind === "item"),
     [favoriteTree]
@@ -1994,7 +1992,7 @@ export function useSearch(
   const selectedFallbackRef = useRef(0);
   useLayoutEffect(() => {
     const items: SelectableItem[] = favoriteMode
-      ? favoriteSelectionItems
+      ? favoriteTree
       : clipboardMode
         ? clipboardSelectionItems
         : rows;
@@ -2003,7 +2001,7 @@ export function useSearch(
       const found = items.some((item) => item.key === intent.key);
       if (found) {
         const kind = favoriteMode
-          ? "favoriteItem"
+          ? (items[resolved] as FavoriteTreeRow).kind
           : !clipboardMode
             ? (items[resolved] as ResultRow).kind
             : "clipboard";
@@ -2024,17 +2022,23 @@ export function useSearch(
     clipboardMode,
     clipboardSelectionItems,
     favoriteMode,
-    favoriteSelectionItems,
+    favoriteTree,
   ]);
 
   // intent.type === "key" かつ expiresAt が過ぎても対象が見つからない場合、
   // タイムアウトして intent を {type:'top'} に書き換える（これも「intent の
   // 更新」という同じ経路を通す。selected を直接いじる特別なリセット処理は
-  // 新設しない）。rows/clipboardSelectionItems の「最新値」はタイマー発火時に
-  // 参照する必要があるため ref に鏡写しする（この効果自体の依存配列に
-  // rows/clipboardSelectionItems を含めると、それらが変化するたびタイマーの
-  // 期限が延長されてしまい、「expiresAt の時点で強制的に諦める」という
-  // タイムアウトの意味が失われるため）。
+  // 新設しない）。rows/clipboardSelectionItems/favoriteTree の「最新値」は
+  // タイマー発火時に参照する必要があるため ref に鏡写しする（この効果自体の
+  // 依存配列に rows/clipboardSelectionItems/favoriteTree を含めると、それらが
+  // 変化するたびタイマーの期限が延長されてしまい、「expiresAt の時点で強制的に
+  // 諦める」というタイムアウトの意味が失われるため）。
+  //
+  // 軸1: 従来この分岐に favoriteMode が無く、/favorite モードで発行された
+  // expiresAt 付き intent（toggleFavorite の★解除時等）が rowsRef（favoriteMode
+  // 中は空）を参照して常に「見つからない」と誤判定し、正しく選択解決された直後
+  // でも約1秒後に intent が {type:"top"} へ強制リセットされていた（潜在バグ）。
+  // clipboardSelectionItemsRef と同じ鏡写しパターンで favoriteTreeRef を追加し解消する。
   const rowsRef = useRef<ResultRow[]>([]);
   useEffect(() => {
     rowsRef.current = rows;
@@ -2043,13 +2047,21 @@ export function useSearch(
   useEffect(() => {
     clipboardSelectionItemsRef.current = clipboardSelectionItems;
   }, [clipboardSelectionItems]);
+  const favoriteTreeRef = useRef<FavoriteTreeRow[]>([]);
+  useEffect(() => {
+    favoriteTreeRef.current = favoriteTree;
+  }, [favoriteTree]);
 
   useEffect(() => {
     if (intent.type !== "key" || intent.expiresAt === undefined) return;
     const key = intent.key;
     const delay = Math.max(0, intent.expiresAt - Date.now());
     const timer = setTimeout(() => {
-      const items = clipboardMode ? clipboardSelectionItemsRef.current : rowsRef.current;
+      const items = favoriteMode
+        ? favoriteTreeRef.current
+        : clipboardMode
+          ? clipboardSelectionItemsRef.current
+          : rowsRef.current;
       const stillMissing = !items.some((item) => item.key === key);
       if (stillMissing) {
         console.debug(
@@ -2059,7 +2071,7 @@ export function useSearch(
       }
     }, delay);
     return () => clearTimeout(timer);
-  }, [intent, clipboardMode, updateIntent]);
+  }, [intent, clipboardMode, favoriteMode, updateIntent]);
 
   // 整合性検証用の一時的なデバッグログ（R-1 フェーズA限定。console.debug は本番ビルドで
   // Terser により自動削除される）。rows.length が、既存のオフセット計算（App.tsx の
@@ -2148,7 +2160,6 @@ export function useSearch(
     lastFavoriteFolderId: lastFavoriteFolderIdRef.current,
     favoriteMode,
     favoriteTree,
-    favoriteSelectionItems,
     toggleFavoriteFolderCollapsed,
     pendingDeleteFavoriteFolder,
     requestDeleteFavoriteFolder,

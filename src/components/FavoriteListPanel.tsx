@@ -24,8 +24,8 @@ const CHEVRON_DOWN_PATH = "M19.5 8.25l-7.5 7.5-7.5-7.5";
 // アイテム行は選択中に青背景（bg-blue-500）になるため、フォルダ見出し行と同じ
 // 固定のグレー配色だと選択時に視認できなくなる。`selected` を受け取り、
 // ToggleIcons.tsx の PinToggleButton 等と同じ考え方（選択中は白、非選択中は
-// グレー）で色を切り替える。フォルダ見出し行は選択対象ではないため常に
-// selected=false で呼ぶ。
+// グレー）で色を切り替える（軸1でフォルダ見出し行も選択対象になったため、
+// 呼び出し側はフォルダ見出し行・アイテム行のどちらでも実際の選択状態を渡す）。
 function MoveButton({
   direction,
   disabled,
@@ -76,9 +76,11 @@ function MoveButton({
   );
 }
 
-// フォルダの折りたたみ・展開を示す▼/▶アイコン（マウスクリックのみで操作する。
-// キーボードでは操作しない。REQUIREMENTS.md「/favorite モード」節を参照）。
-// フォルダ見出し行の視認性を強めるため、アイテム行のアイコン類と同じ16px
+// フォルダの折りたたみ・展開を示す▼/▶アイコン。マウスの▼クリック（行全体の
+// onClick）、およびフォルダ見出し行を選択中の Enter キー（呼び出し側 App.tsx が
+// onToggleCollapse を直接呼ぶ）の両方で操作できる（REQUIREMENTS.md
+// 「/favorite モード」節を参照）。フォルダ見出し行の視認性を強めるため、
+// アイテム行のアイコン類と同じ16px
 // （w-4 h-4）に統一する（以前は w-3.5 h-3.5 でやや控えめだった）。
 function FolderChevron({ collapsed }: { collapsed: boolean }) {
   return (
@@ -137,9 +139,8 @@ export function FavoriteListPanel({
   onMoveNode,
 }: {
   tree: FavoriteTreeRow[];
-  // アイテム行のみを対象にした選択インデックス（フォルダ見出し行を除いた番号。
-  // useSearch.ts の favoriteSelectionItems 上の位置と一致する。詳細は
-  // FavoriteTreeRow["itemIndex"] のコメントを参照）。
+  // tree 上の選択インデックス（フォルダ見出し行・アイテム行の両方が対象。軸1で
+  // アイテム行専用の番号から拡張した。詳細は FavoriteTreeRow の型コメントを参照）。
   selected: number;
   onSelectRowByKey: (key: string, clientX: number, clientY: number) => void;
   onToggleCollapse: (folderId: string) => void;
@@ -160,10 +161,10 @@ export function FavoriteListPanel({
     <div ref={containerRef} className="flex-1 overflow-y-auto">
       {tree.length === 0 && (
         <div className="flex items-center justify-center text-gray-400 text-sm py-6">
-          お気に入りはありません
+          ★ボタンでファイルを登録すると、ここに表示されます
         </div>
       )}
-      {tree.map((row) => {
+      {tree.map((row, index) => {
         // インデント幅はフォルダ見出し行・アイテム行で共通の1段あたりの量とする
         // （REQUIREMENTS.md「フォルダ配下のアイテム行はインデントを1段下げる」。
         // 階層は depth のみで表現し、種別ごとに基準位置をずらさない。同じ depth の
@@ -171,6 +172,10 @@ export function FavoriteListPanel({
         const indentStyle = {
           paddingLeft: `${row.depth * INDENT_STEP_REM + INDENT_BASE_REM}rem`,
         };
+        // 軸1：選択ドメインを favoriteTree（フォルダ見出し行＋アイテム行）へ拡張した
+        // ため、選択判定・data-index とも tree 上の位置（index）をそのまま使う
+        // （旧 itemIndex はアイテム行専用の番号で、フォルダ見出し行を選択できなかった）。
+        const isSelected = index === selected;
 
         if (row.kind === "folder") {
           // 削除アイコン（ボタン）を内部に持たせるため、行自体は <button> ではなく
@@ -182,14 +187,21 @@ export function FavoriteListPanel({
           // インデントの深さ・件数バッジの3点のみで表現する（背景帯・太字化・
           // 余白追加は実機確認の結果「なぜここだけ違うのか」という別の違和感を
           // 生んだため撤回した）。行自体の背景・文字の太さ・余白はアイテム行と
-          // 同じ扱いのままにする。
+          // 同じ扱いのままにする。選択時のハイライト（青背景・白文字）はアイテム行と
+          // 同じ配色に揃える（軸1でフォルダ見出し行も選択対象になったため新設）。
           return (
             <div
               key={row.key}
               role="button"
+              data-index={index}
               style={indentStyle}
-              className="w-full flex items-center py-2 pr-2 text-left text-gray-500 hover:bg-gray-50"
+              className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+                isSelected
+                  ? "bg-blue-500 text-white"
+                  : "text-gray-500 hover:bg-gray-50"
+              }`}
               onClick={() => onToggleCollapse(row.node.id)}
+              onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
             >
               <FolderChevron collapsed={row.collapsed} />
               <svg
@@ -205,8 +217,13 @@ export function FavoriteListPanel({
               {/* 直下（孫は含めない）のノード数を示す件数バッジ。
                   ExtensionFilterEditor.tsx のタグ表示（rounded-full bg-gray-100
                   text-gray-700）と同系統のピル型だが、装飾的な補助情報のため
-                  ひとまわり小さく・薄くしている。 */}
-              <span className="ml-2 flex-shrink-0 inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500">
+                  ひとまわり小さく・薄くしている。選択中は MoveButton 等と同じ
+                  「白系の半透明」配色にし、青背景での視認性を保つ。 */}
+              <span
+                className={`ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] ${
+                  isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                }`}
+              >
                 {row.directChildCount}
               </span>
               {/* 「上へ移動」「下へ移動」（段階3のドラッグ&ドロップ実装までの
@@ -214,13 +231,13 @@ export function FavoriteListPanel({
               <MoveButton
                 direction="up"
                 disabled={row.isFirstSibling}
-                selected={false}
+                selected={isSelected}
                 onClick={() => onMoveNode(row.node.id, "up")}
               />
               <MoveButton
                 direction="down"
                 disabled={row.isLastSibling}
-                selected={false}
+                selected={isSelected}
                 onClick={() => onMoveNode(row.node.id, "down")}
               />
               {/* 段階3の本格的なツリー編集UIまでの最小限の削除手段。
@@ -228,7 +245,8 @@ export function FavoriteListPanel({
                   配色に揃える。行全体のクリック（折りたたみ切替）に伝播させない
                   よう stopPropagation する。アイコンサイズは★・ピンアイコンと
                   同じ16px（w-4 h-4）に揃える（以前は w-3.5 h-3.5 で他アイコンより
-                  明らかに小さく表示されていた）。 */}
+                  明らかに小さく表示されていた）。選択時は MoveButton と同じ考え方で
+                  白系配色にする。 */}
               <Tooltip label="このフォルダを削除" className="flex-shrink-0">
                 <button
                   type="button"
@@ -236,7 +254,11 @@ export function FavoriteListPanel({
                     e.stopPropagation();
                     onRequestDeleteFolder(row.node.id, row.node.name);
                   }}
-                  className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  className={`p-1 rounded ${
+                    isSelected
+                      ? "text-white/80 hover:bg-white/20"
+                      : "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  }`}
                 >
                   <svg
                     className="w-4 h-4"
@@ -257,13 +279,12 @@ export function FavoriteListPanel({
           );
         }
 
-        const isSelected = row.itemIndex === selected;
         const item = row.file;
         return (
           <div
             key={row.key}
             role="button"
-            data-index={row.itemIndex}
+            data-index={index}
             style={indentStyle}
             className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
               isSelected

@@ -271,9 +271,10 @@ export type ResultRow =
 // 安定した文字列（`favoriteFolder:<id>`/`favoriteItem:<id>`。FavoriteNode.id は
 // 一意なため、行番号ではなくこれを識別子にする）。
 // `depth` はインデント段数（ルート「お気に入り」直下の項目は 0）。
-// `itemIndex` はアイテム行のみが持つ、アイテム行だけを抜き出した配列
-// （useSearch.ts の `favoriteSelectionItems`）上での位置。↑↓キーによる選択移動・
-// `data-index` によるスクロール追従は、フォルダ見出し行を除いたこの番号を使う。
+// ↑↓キーによる選択移動・`data-index` によるスクロール追従は、フォルダ見出し行・
+// アイテム行の両方を対象に、この配列（`useSearch.ts` の `favoriteTree`）上の
+// 位置そのものをインデックスとして使う（軸1でアイテム行専用の `itemIndex` 方式から
+// フォルダ見出し行も含む方式へ拡張。詳細は REQUIREMENTS.md「/favorite モード」節を参照）。
 // `isFirstSibling`/`isLastSibling` は、段階3のドラッグ&ドロップ実装までの暫定的な
 // 「上へ移動」「下へ移動」操作のための判定。同じ parentId を共有する兄弟ノード
 // （order 昇順。横断検索によるフィルタ表示の影響を受けない、実際の全兄弟基準）の
@@ -299,7 +300,6 @@ export type FavoriteTreeRow =
       depth: number;
       file: FileEntry;
       exists: boolean;
-      itemIndex: number;
       isFirstSibling: boolean;
       isLastSibling: boolean;
     };

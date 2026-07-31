@@ -17,6 +17,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
 import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
 import { FavoriteListPanel } from "./components/FavoriteListPanel";
+import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
@@ -24,8 +25,18 @@ import type { ClipboardTextEntry, FrecencyMap } from "./types";
 
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 
+// 「検索」「設定」「お気に入り編集」の3枚の全画面ビュー（軸4a）。二択の boolean
+// swap（旧 showSettings）では3枚目のビューを表現できないため enum 化した。
+// いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは
+// 作らない（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+type MainView = "search" | "settings" | "favoriteEdit";
+
 export default function App() {
-  const [showSettings, setShowSettings] = useState(false);
+  const [view, setView] = useState<MainView>("search");
+  // 既存コードとの互換のため、設定パネル表示中かどうかは派生値として残す
+  // （useSettings への引数・多数の分岐で使われている）。
+  const showSettings = view === "settings";
+  const favoriteEditOpen = view === "favoriteEdit";
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [ocrClosing, setOcrClosing] = useState(false);
   const [clipboardPaneWidth, setClipboardPaneWidth] = useState(
@@ -35,10 +46,13 @@ export default function App() {
   const storeRef = useRef<Store | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // フォーカスアウト時自動非表示の判定用（後述のフォーカス監視 useEffect は依存配列が
-  // 空で一度しかマウントされないため、showSettings state を直接参照すると初回値の
-  // 古いクロージャのままになる。毎レンダーで最新値を書き込むこの ref を代わりに参照する）
-  const showSettingsRef = useRef(showSettings);
-  showSettingsRef.current = showSettings;
+  // 空で一度しかマウントされないため、view state を直接参照すると初回値の古い
+  // クロージャのままになる。毎レンダーで最新値を書き込むこの ref を代わりに参照する）。
+  // 検索UI自体が表示されていないビュー（設定・お気に入り編集のいずれも）では
+  // 自動非表示を適用しない（元は showSettings 専用の例外だったが、3枚目の
+  // ビュー追加に伴い「検索ビュー以外では適用しない」という条件へ一般化した）。
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
@@ -55,10 +69,14 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!showSettings) {
+    // view を依存配列にすることで、設定パネルだけでなくお気に入り編集ビューを
+    // 閉じて検索ビューへ戻った場合にも再フォーカスされる（showSettings のみを
+    // 見ていた頃は favoriteEdit → search の遷移で showSettings 自体が変化しない
+    // ため再フォーカスが効かなかった）。
+    if (view === "search") {
       inputRef.current?.focus();
     }
-  }, [showSettings]);
+  }, [view]);
 
   const handleOcrClose = useCallback(() => {
     ocr.clearOcr();
@@ -122,8 +140,16 @@ export default function App() {
   }, []);
 
   // ウィンドウサイズの永続化。位置とは異なりサイズのみ保存する。
-  // リサイズ確定から 500ms デバウンスしたうえで settings.json の "windowSize" へ
-  // 論理ピクセルで書き込む。適用（読み込み・反映）は Rust 側の起動時処理が担う。
+  // リサイズ確定から 500ms デバウンスしたうえで settings.json へ論理ピクセルで
+  // 書き込む。適用（読み込み・反映）は Rust 側の起動時処理が担う。
+  //
+  // 検索/設定ビューは従来通り "windowSize" キーを共有するが、お気に入り編集
+  // ビューは軸4a（骨格）の時点から独立した "favoriteEditWindowSize" キーへ保存する
+  // （REQUIREMENTS.md「お気に入り編集ビュー」節：「設定パネルとは独立した永続化
+  // キーを持たせる」。段階5でメモ本文編集を同じビューに追加する際、検索/設定側の
+  // サイズと巻き添えで混ざらないようにするための布石）。ビューを開いた時点で
+  // このキーの値を読み出してウィンドウへ適用する処理は、編集ビューの中身を実装する
+  // 4b以降の対象とする（骨格の時点では保存のみを行う）。
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -137,7 +163,11 @@ export default function App() {
           const win = getCurrentWindow();
           const scaleFactor = await win.scaleFactor().catch(() => 1);
           const logical = size.toLogical(scaleFactor);
-          await store.set("windowSize", {
+          const key =
+            viewRef.current === "favoriteEdit"
+              ? "favoriteEditWindowSize"
+              : "windowSize";
+          await store.set(key, {
             width: Math.round(logical.width),
             height: Math.round(logical.height),
           });
@@ -164,7 +194,7 @@ export default function App() {
   }, []);
 
   const openSettings = useCallback(() => {
-    setShowSettings(true);
+    setView("settings");
   }, []);
 
   // 設定パネル内の各タブのバリデーションエラー（ホットキー・システムコマンドの
@@ -174,8 +204,20 @@ export default function App() {
   // （タブ切り替え時に各タブが unmount される際も同じ理由で自動的に破棄される。詳細は
   // CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
   const closeSettings = useCallback(() => {
-    setShowSettings(false);
+    setView("search");
     setSettingsVersion((v) => v + 1);
+  }, []);
+
+  // お気に入り編集ビューの開閉。設定パネルとは異なりバリデーションエラー等の
+  // 状態を持たないため、view の切り替えのみでよい。/favorite ブラウジング側の
+  // 絞り込み文字列・選択位置・フォルダ展開状態は useSearch 側の state であり、
+  // このビューを開いてもアンマウントされないため自動的に保持される
+  // （FavoriteEditView.tsx のコメントを参照）。
+  const openFavoriteEdit = useCallback(() => {
+    setView("favoriteEdit");
+  }, []);
+  const closeFavoriteEdit = useCallback(() => {
+    setView("search");
   }, []);
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
@@ -187,7 +229,8 @@ export default function App() {
   // 呼び、それ以外の全モードでは現在のモードに関わらずクエリを問答無用で空文字にする
   // （ウィンドウは閉じないため closeWindow は経由しない。closeRefreshTick の加算も
   // 不要：query 自体が変化するので検索用 useEffect は通常通り再トリガーされる）。
-  // 検索 UI そのものが表示されていない設定パネル表示中（showSettings）は対象外とする。
+  // 検索 UI そのものが表示されていない設定パネル表示中・お気に入り編集ビュー
+  // 表示中（showSettings／favoriteEditOpen）は対象外とする。
   //
   // パス貼り付けウィザードの両ステップ（"folderSelect"／"nameEdit"）も、SearchBox の
   // フォーカス状態に依存しないここで一括処理する。
@@ -208,6 +251,7 @@ export default function App() {
         if (showSettings) {
           closeSettings();
         } else if (
+          !favoriteEditOpen &&
           !search.pendingCommand &&
           !search.favoriteDialogTarget &&
           !search.pendingDeleteFavoriteFolder
@@ -216,7 +260,16 @@ export default function App() {
         }
       } else if (e.key === "Escape" && showSettings) {
         closeSettings();
-      } else if (!showSettings && e.ctrlKey && e.key.toLowerCase() === "d") {
+      } else if (e.key === "Escape" && favoriteEditOpen) {
+        // お気に入り編集ビューも設定パネルと同様、Esc で検索ビューへ戻る
+        // （ヘッダーの「戻る」ボタンと同じ操作）。
+        closeFavoriteEdit();
+      } else if (
+        !showSettings &&
+        !favoriteEditOpen &&
+        e.ctrlKey &&
+        e.key.toLowerCase() === "d"
+      ) {
         e.preventDefault();
         e.stopPropagation();
         if (ocrActive) {
@@ -224,7 +277,7 @@ export default function App() {
         } else {
           search.setQuery("");
         }
-      } else if (!showSettings && search.pathPasteWizardMode) {
+      } else if (!showSettings && !favoriteEditOpen && search.pathPasteWizardMode) {
         if (search.wizardStep === "folderSelect") {
           switch (e.key) {
             case "Escape":
@@ -257,7 +310,11 @@ export default function App() {
             search.confirmShortcut();
           }
         }
-      } else if (!showSettings && search.pendingDeleteFavoriteFolder) {
+      } else if (
+        !showSettings &&
+        !favoriteEditOpen &&
+        search.pendingDeleteFavoriteFolder
+      ) {
         // 削除確認モーダルはマウス操作（キャンセル/削除ボタン）のみを主とするが、
         // Escape だけは他のモーダル（システムコマンド確認等）と同様にキャンセル
         // 扱いにする。モーダルを開いたトリガー（ゴミ箱アイコンボタン）がクリック後
@@ -273,11 +330,13 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [
     showSettings,
+    favoriteEditOpen,
     search.pendingCommand,
     search.favoriteDialogTarget,
     search.pendingDeleteFavoriteFolder,
     openSettings,
     closeSettings,
+    closeFavoriteEdit,
     ocrActive,
     handleOcrClose,
     search.setQuery,
@@ -320,7 +379,7 @@ export default function App() {
           ? search.wizardFolders.length
           : 0
         : search.favoriteMode
-          ? search.favoriteSelectionItems.length
+          ? search.favoriteTree.length
           : search.rows.length;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
@@ -335,10 +394,11 @@ export default function App() {
   // キーヒント表示・handleKeyDown の Enter/Shift+Enter 分岐の両方で、この行の
   // kind を見て判定する（詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。
   const selectedRow = search.rows[search.selected] ?? null;
-  // /favorite モード専用の選択中アイテム（favoriteSelectionItems は itemIndex 順に
-  // 並んでいるため、search.selected をそのまま添字として使える）。
-  const selectedFavoriteItem = search.favoriteMode
-    ? (search.favoriteSelectionItems[search.selected] ?? null)
+  // /favorite モード専用の選択中の行（フォルダ見出し行・アイテム行のどちらも
+  // ありうる。軸1で favoriteTree が選択ドメインになったため、search.selected を
+  // そのまま favoriteTree の添字として使える）。kind で分岐して扱う。
+  const selectedFavoriteRow = search.favoriteMode
+    ? (search.favoriteTree[search.selected] ?? null)
     : null;
 
   // R-1 フェーズD-2: ↑↓キーによる選択は、通常モード（rows）・clipboardMode
@@ -369,11 +429,11 @@ export default function App() {
         return;
       }
       if (search.favoriteMode) {
-        // フォルダ見出し行を除いたアイテム行のみを対象に移動する
+        // 軸1：フォルダ見出し行・アイテム行の両方を対象に移動する
         // （REQUIREMENTS.md「/favorite モード」節を参照）。
-        const item = search.favoriteSelectionItems[nextIndex];
-        if (item) {
-          search.selectRowByKeyboard(item.key);
+        const row = search.favoriteTree[nextIndex];
+        if (row) {
+          search.selectRowByKeyboard(row.key);
         }
         return;
       }
@@ -396,7 +456,7 @@ export default function App() {
       search.clipboardMode,
       clipboard.clipboardEntries,
       search.favoriteMode,
-      search.favoriteSelectionItems,
+      search.favoriteTree,
       search.selectRowByKeyboard,
       webSearchVisible,
       baseLength,
@@ -454,10 +514,11 @@ export default function App() {
             // 結果・システムコマンド候補・クリップボード履歴・プレフィックスコマンド
             // 候補・Web検索行）はファイルパスを持たないため、該当する場合のみ実行する
             // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節・
-            // 「格納フォルダを開く（Shift+Enter）」節を参照）。
+            // 「格納フォルダを開く（Shift+Enter）」節を参照）。フォルダ見出し行では
+            // 無効（何もしない。REQUIREMENTS.md「/favorite モード」節を参照）。
             if (search.favoriteMode) {
-              if (selectedFavoriteItem) {
-                search.openContainingFolder(selectedFavoriteItem.file.path);
+              if (selectedFavoriteRow?.kind === "item") {
+                search.openContainingFolder(selectedFavoriteRow.file.path);
               }
             } else if (
               selectedRow &&
@@ -482,8 +543,13 @@ export default function App() {
               );
             }
           } else if (search.favoriteMode) {
-            if (selectedFavoriteItem) {
-              search.launchFile(selectedFavoriteItem.file.path);
+            // フォルダ見出し行では開閉をトグルする（▼クリックのイベント発火を
+            // 疑似的に模倣せず、onToggleCollapse を直接呼ぶ。REQUIREMENTS.md
+            // 「/favorite モード」節を参照）。アイテム行では従来通り起動する。
+            if (selectedFavoriteRow?.kind === "item") {
+              search.launchFile(selectedFavoriteRow.file.path);
+            } else if (selectedFavoriteRow?.kind === "folder") {
+              search.toggleFavoriteFolderCollapsed(selectedFavoriteRow.node.id);
             }
           } else if (selectedRow) {
             switch (selectedRow.kind) {
@@ -539,7 +605,8 @@ export default function App() {
       search.favoriteDialogTarget,
       search.pendingDeleteFavoriteFolder,
       search.favoriteMode,
-      selectedFavoriteItem,
+      search.toggleFavoriteFolderCollapsed,
+      selectedFavoriteRow,
     ]
   );
 
@@ -552,11 +619,13 @@ export default function App() {
   // 即時に hide() せず、一定時間後も本当にフォーカスが戻っていない場合のみ非表示にする。
   //
   // 設定画面表示中はこの自動非表示自体を適用しない（REQUIREMENTS.md「キー操作」＞
-  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。判定は
-  // showSettingsRef（毎レンダーで最新の showSettings を書き込む ref）で行う。
-  // openSettings/closeSettings はいずれも単一の showSettings state を介するため、
-  // 開閉の経路（歯車アイコン・Ctrl+S・Esc・設定パネルの閉じるボタン）を個別に
-  // フックする必要はなく、この ref を見るだけで全経路に自動的に追従する。
+  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。3枚目の
+  // お気に入り編集ビュー表示中も同じ理由（検索UI自体が表示されていない）で適用
+  // しない。判定は viewRef（毎レンダーで最新の view を書き込む ref）で行う。
+  // openSettings/closeSettings/openFavoriteEdit/closeFavoriteEdit はいずれも単一の
+  // view state を介するため、開閉の経路（歯車・編集アイコン・Ctrl+S・Esc・各ビューの
+  // 戻るボタン）を個別にフックする必要はなく、この ref を見るだけで全経路に
+  // 自動的に追従する。
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let blurTimer: ReturnType<typeof setTimeout> | undefined;
@@ -579,7 +648,7 @@ export default function App() {
             const stillFocused = await getCurrentWindow()
               .isFocused()
               .catch(() => false);
-            if (stillFocused || showSettingsRef.current) return;
+            if (stillFocused || viewRef.current !== "search") return;
             const store = storeRef.current;
             if (store) {
               await store.set(
@@ -638,6 +707,10 @@ export default function App() {
         onClose={closeSettings}
       />
     );
+  }
+
+  if (favoriteEditOpen) {
+    return <FavoriteEditView onClose={closeFavoriteEdit} />;
   }
 
   return (
@@ -726,6 +799,8 @@ export default function App() {
           search.pendingDeleteFavoriteFolder !== null
         }
         onOpenSettings={openSettings}
+        favoriteEditVisible={search.favoriteMode}
+        onOpenFavoriteEdit={openFavoriteEdit}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
         }
@@ -834,7 +909,7 @@ export default function App() {
           }
           prefixCommandMode={search.prefixCommandMode}
           selectedRowKind={selectedRow?.kind ?? null}
-          favoriteItemSelected={selectedFavoriteItem !== null}
+          favoriteSelectedKind={selectedFavoriteRow?.kind ?? null}
         />
       )}
     </div>
