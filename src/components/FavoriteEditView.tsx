@@ -90,10 +90,14 @@ function CreateFolderRow({
               e.preventDefault();
               e.stopPropagation();
               confirm();
-            } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-              // ツリーの選択移動（App.tsx の window レベルリスナー）に
-              // 奪われないよう、入力中はこのキーの伝播だけ止める
-              // （入力欄内でのカーソル移動としての意味は持たないキーのため
+            } else if (
+              e.key === "ArrowUp" ||
+              e.key === "ArrowDown" ||
+              e.key === "F2"
+            ) {
+              // ツリーの選択移動・別の行のリネーム開始（App.tsx の window
+              // レベルリスナー）に奪われないよう、入力中はこれらのキーの伝播
+              // だけ止める（入力欄内で特に意味を持たないキーのため
               // preventDefault はしない）。
               e.stopPropagation();
             }
@@ -124,7 +128,7 @@ function CreateFolderRow({
 }
 
 // お気に入り編集ビュー。4bで読み取り専用のツリー描画＋選択、4cでフォルダの
-// 作成・削除を実装した。リネーム・ドラッグ&ドロップによる並び替えは 4d〜4e で
+// 作成・削除、4dでリネームを実装した。ドラッグ&ドロップによる並び替えは 4e で
 // 実装する（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
 //
 // ヘッダーの構成（戻るボタン＋タイトル＋ドラッグ領域）は SettingsPanel.tsx と
@@ -152,6 +156,10 @@ export function FavoriteEditView({
   pendingDeleteFolder,
   onCancelDeleteFolder,
   onConfirmDeleteFolder,
+  renamingNodeId,
+  onStartRename,
+  onCancelRename,
+  onConfirmRename,
   onClose,
 }: {
   tree: FavoriteTreeRow[];
@@ -167,6 +175,10 @@ export function FavoriteEditView({
   pendingDeleteFolder: { name: string; descendantCount: number } | null;
   onCancelDeleteFolder: () => void;
   onConfirmDeleteFolder: () => void;
+  renamingNodeId: string | null;
+  onStartRename: (id: string) => void;
+  onCancelRename: () => void;
+  onConfirmRename: (id: string, newName: string) => Promise<string | null>;
   onClose: () => void;
 }) {
   // 画面下部の詳細表示ペイン用。フォルダ見出し行選択時はフォルダ名のみ、
@@ -230,6 +242,10 @@ export function FavoriteEditView({
         onSelectRowByKey={onSelectRowByKey}
         onToggleCollapse={onToggleCollapse}
         onRequestDeleteFolder={onRequestDeleteFolder}
+        renamingNodeId={renamingNodeId}
+        onStartRename={onStartRename}
+        onCancelRename={onCancelRename}
+        onConfirmRename={onConfirmRename}
       />
 
       <CreateFolderRow

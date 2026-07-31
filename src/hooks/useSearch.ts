@@ -1688,6 +1688,37 @@ export function useSearch(
     [fetchFavoriteNodes]
   );
 
+  // お気に入り編集ビューでのリネーム（4d）。フォルダ・アイテムのどちらの
+  // FavoriteNode.name も変更できる（重複チェック・予約フォルダ保護は Rust側
+  // rename_favorite_node が行う）。他の set_* 系フックコールバックと同じ
+  // 「成功時 null、失敗時エラーメッセージ文字列」の契約に統一する（詳細は
+  // docs/design/settings-panel-architecture.md「エラー状態の保持場所」を参照。
+  // 呼び出し元（FavoriteEditTree.tsx の RenameInput）がこの戻り値をそのまま
+  // ローカルのエラー表示に使う）。
+  //
+  // リネームはノードの識別子（id）を変更しないため、選択状態（ブラウジング側の
+  // intent／編集ビューの useFavoriteEditSelection のいずれも）は特別な復元処理
+  // なしでそのまま維持される（削除のような非同期の選択復元ロジックは不要）。
+  const renameFavoriteNode = useCallback(
+    (id: string, newName: string): Promise<string | null> => {
+      return invoke<FavoriteNode[]>("rename_favorite_node", {
+        id,
+        newName,
+      })
+        .then((saved) => {
+          favoritesRef.current = saved;
+          setFavoritesState(saved);
+          // toggleFavorite・createFavoriteFolder 等と同じ理由で、/favorite
+          // モード表示専用のスナップショット（rawFavoriteNodes）も明示的に
+          // 再取得する。
+          fetchFavoriteNodes("rename-node");
+          return null;
+        })
+        .catch((err) => String(err));
+    },
+    [fetchFavoriteNodes]
+  );
+
   // 登録ダイアログの「保存先フォルダ」プルダウンの選択肢。予約フォルダ「お気に入り」
   // 自身（ルート）＋その配下の folder 型ノードをすべてフラット化し、階層はインデント
   // （全角スペース）と「└ 」の接頭辞で表現する（ツリー階層表示ではなくフラットな
@@ -2170,6 +2201,7 @@ export function useSearch(
     cancelDeleteFavoriteFolder,
     confirmDeleteFavoriteFolder,
     moveFavoriteNode,
+    renameFavoriteNode,
     rows,
   };
 }

@@ -930,6 +930,28 @@ fn add_favorite(
     Ok(favorites)
 }
 
+/// 同一 parent_id・同一 node_type 内での重複名チェック（トリム＋大文字小文字を
+/// 区別しない一致判定。既存の validate_unique_keyword と同じ方針）。node_type を
+/// 条件に含めるため、フォルダとアイテムの間での同名は自然に許容される（種別が
+/// 異なれば見分けがつくため）。`exclude_id` はリネーム時に対象ノード自身を
+/// 重複判定から除外するために使う（新規作成時は None を渡す）。
+/// add_favorite_folder（新規フォルダ作成）・rename_favorite_node（4d：リネーム）の
+/// 両方から共有する。
+fn has_duplicate_favorite_name(
+    favorites: &[FavoriteNode],
+    parent_id: &str,
+    node_type: FavoriteNodeType,
+    name: &str,
+    exclude_id: Option<&str>,
+) -> bool {
+    favorites.iter().any(|f| {
+        f.parent_id == parent_id
+            && f.node_type == node_type
+            && Some(f.id.as_str()) != exclude_id
+            && f.name.trim().to_lowercase() == name.to_lowercase()
+    })
+}
+
 /// 登録ダイアログの「新規フォルダ作成」から呼ばれる。指定した親フォルダの直下に
 /// `folder` 型ノードを1件追加する（`add_favorite` と同じ「Rust側でid・orderを
 /// 採番し、更新後の配列を返す」パターン）。空文字列はエラーとし保存しない
@@ -946,16 +968,15 @@ fn add_favorite_folder(
         return Err("フォルダ名を入力してください".to_string());
     }
     let mut favorites = load_favorites(&app);
-    // 同一 parent_id 配下での重複フォルダ名チェック。名前の一致判定（前後空白の
-    // トリム＋大文字小文字を区別しない）は既存の validate_unique_keyword
-    // （プレフィックスキーワードの重複チェック）と同じ方針に揃える。file 型の
-    // 兄弟ノードとの重複は対象外（フォルダ同士の重複のみを禁止する）。
-    let duplicate = favorites.iter().any(|f| {
-        f.parent_id == parent_id
-            && f.node_type == FavoriteNodeType::Folder
-            && f.name.trim().to_lowercase() == trimmed.to_lowercase()
-    });
-    if duplicate {
+    // 同一 parent_id 配下での重複フォルダ名チェック。file 型の兄弟ノードとの
+    // 重複は対象外（フォルダ同士の重複のみを禁止する）。
+    if has_duplicate_favorite_name(
+        &favorites,
+        &parent_id,
+        FavoriteNodeType::Folder,
+        trimmed,
+        None,
+    ) {
         return Err("同じ名前のフォルダが既に存在します".to_string());
     }
     let max_order = favorites
@@ -971,6 +992,58 @@ fn add_favorite_folder(
         value: String::new(),
         order: max_order.map(|m| m + 1).unwrap_or(0),
     });
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
+/// お気に入り編集ビューでのリネーム（4d）。フォルダ・アイテム（file型）の
+/// どちらの `FavoriteNode.name` も変更できる。空文字列はエラーとし保存しない
+/// （add_favorite_folder と同様のバリデーション）。
+///
+/// 重複チェックは対象ノードの型ごとに独立させる（has_duplicate_favorite_name を
+/// 共有）：
+/// - フォルダの場合：同一親配下の他フォルダとの重複を禁止（add_favorite_folder と
+///   同じ判定）
+/// - アイテムの場合：同一親配下の他アイテムとの重複を禁止（新規のチェック。
+///   同一階層内で似た表示名のファイルが複数あると /favorite 一覧で意図と異なる
+///   ファイルを誤って起動するリスクがあるため、フォルダと同じ「取り違え防止」の
+///   原則を適用する）
+/// - フォルダとアイテムの間の重複は許容する（種別が異なれば見分けがつくため）
+///
+/// 予約フォルダ（ピン止め／お気に入り／メモ）はリネームできない
+/// （enforce_reserved_folders・remove_favorite_folder と同様、UI側の制限だけでなく
+/// Rust側でも防御する）。
+#[tauri::command]
+fn rename_favorite_node(
+    app: AppHandle,
+    id: String,
+    new_name: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+        return Err("予約フォルダの名前は変更できません".to_string());
+    }
+    let trimmed = new_name.trim();
+    if trimmed.is_empty() {
+        return Err("名前を入力してください".to_string());
+    }
+    let mut favorites = load_favorites(&app);
+    let target_index = favorites
+        .iter()
+        .position(|f| f.id == id)
+        .ok_or_else(|| "指定したノードが見つかりません".to_string())?;
+    let parent_id = favorites[target_index].parent_id.clone();
+    let node_type = favorites[target_index].node_type;
+
+    if has_duplicate_favorite_name(&favorites, &parent_id, node_type, trimmed, Some(&id)) {
+        let message = if node_type == FavoriteNodeType::Folder {
+            "同じ名前のフォルダが既に存在します"
+        } else {
+            "同じ名前のファイルが既に存在します"
+        };
+        return Err(message.to_string());
+    }
+
+    favorites[target_index].name = trimmed.to_string();
     save_favorites(&app, &favorites)?;
     Ok(favorites)
 }
@@ -2549,6 +2622,7 @@ fn main() {
             add_favorite_folder,
             remove_favorite,
             remove_favorite_folder,
+            rename_favorite_node,
             move_favorite_node,
             set_favorite_enabled,
             set_favorite_keyword

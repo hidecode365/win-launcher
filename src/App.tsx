@@ -215,6 +215,30 @@ export default function App() {
     setSettingsVersion((v) => v + 1);
   }, []);
 
+  // 4d：編集ビューでのリネーム対象（FavoriteNode.id）。null なら編集中の行なし。
+  // F2キー（App.tsx の window レベルリスナー。選択中の行が対象）・ダブルクリック
+  // （FavoriteEditTree.tsx。クリックした行が対象）のいずれからも開始できる。
+  // リネームはノードの識別子を変更しないため、選択状態（favoriteEdit）は
+  // このstateとは独立して特別な復元処理なしでそのまま維持される
+  // （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。closeFavoriteEdit より
+  // 前で宣言する（closeFavoriteEdit がこの state のリセットも兼ねるため）。
+  const [renamingFavoriteNodeId, setRenamingFavoriteNodeId] = useState<
+    string | null
+  >(null);
+  const cancelRenameFavoriteNode = useCallback(() => {
+    setRenamingFavoriteNodeId(null);
+  }, []);
+  const confirmRenameFavoriteNode = useCallback(
+    async (id: string, newName: string): Promise<string | null> => {
+      const error = await search.renameFavoriteNode(id, newName);
+      if (!error) {
+        setRenamingFavoriteNodeId(null);
+      }
+      return error;
+    },
+    [search.renameFavoriteNode]
+  );
+
   // お気に入り編集ビューの開閉。設定パネルとは異なりバリデーションエラー等の
   // 状態を持たないため、view の切り替えのみでよい。/favorite ブラウジング側の
   // 絞り込み文字列・選択位置・フォルダ展開状態は useSearch 側の state であり、
@@ -225,6 +249,11 @@ export default function App() {
   }, []);
   const closeFavoriteEdit = useCallback(() => {
     setView("search");
+    // リネーム中に「戻る」ボタン等で編集ビューを閉じた場合、renamingFavoriteNodeId
+    // は view とは独立した state のため放置すると残り続け、次回このビューを開いた
+    // 瞬間に同じ行が編集モードのまま表示されてしまう（App.tsx はアンマウントされない
+    // ため）。閉じる際に必ずリセットする。
+    setRenamingFavoriteNodeId(null);
   }, []);
 
   // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移す
@@ -335,6 +364,19 @@ export default function App() {
             }
             break;
           }
+          case "F2": {
+            // 選択中の行をインライン編集モードにする（4d：リネーム）。この
+            // window リスナー自体が favoriteEditOpen の間だけ生きているため、
+            // 「編集ビューにフォーカスがある間のみ有効」という制約は自動的に
+            // 満たされる（グローバルショートカットにはしない。REQUIREMENTS.md
+            // 「お気に入り編集ビュー」節を参照）。
+            e.preventDefault();
+            const row = search.favoriteTree[favoriteEdit.selected];
+            if (row) {
+              setRenamingFavoriteNodeId(row.node.id);
+            }
+            break;
+          }
         }
       } else if (
         !showSettings &&
@@ -413,6 +455,7 @@ export default function App() {
     favoriteEdit.moveSelection,
     search.favoriteTree,
     search.toggleFavoriteFolderCollapsed,
+    setRenamingFavoriteNodeId,
     ocrActive,
     handleOcrClose,
     search.setQuery,
@@ -798,6 +841,10 @@ export default function App() {
         pendingDeleteFolder={search.pendingDeleteFavoriteFolder}
         onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}
         onConfirmDeleteFolder={search.confirmDeleteFavoriteFolder}
+        renamingNodeId={renamingFavoriteNodeId}
+        onStartRename={setRenamingFavoriteNodeId}
+        onCancelRename={cancelRenameFavoriteNode}
+        onConfirmRename={confirmRenameFavoriteNode}
         onClose={closeFavoriteEdit}
       />
     );
