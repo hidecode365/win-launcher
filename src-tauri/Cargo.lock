@@ -5331,6 +5331,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "walkdir",
+ "webview2-com",
  "windows",
 ]
 
