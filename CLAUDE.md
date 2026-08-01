@@ -182,7 +182,7 @@ win-launcher/
 
 以下は `docs/design/*.md` から抽出した「今後の指針・再利用可能な原則」のみを収めたダイジェストである。**各原則の背景（現状仕様の詳細・経緯・却下案・不具合の記録）は必ずポインタ先で確認すること。** 原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある。
 
-見出しは横断アーキテクチャ系3ファイル・機能単位系10ファイルの計13ファイルに対応する。
+見出しは横断アーキテクチャ系4ファイル・機能単位系10ファイルの計14ファイルに対応する。
 
 ### ウィンドウ・ホットキー
 
@@ -213,6 +213,12 @@ win-launcher/
 - 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#adding-a-row-kind)
 - Web検索行は現在 `rows` に未統合で `baseLength+1` の特例（意図的な保留）。選択のずれ・消失の不具合はまずこの特例を疑うこと。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#web-search-row-exception)
 - 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#dom-structure-and-dividers)
+
+### フッター表示
+
+→ 詳細: [status-footer.md](docs/design/status-footer.md)
+
+- フッターは「キーボードだけで何ができるかを示す領域」とする規約（正本は REQUIREMENTS.md「フッター表示規約（全画面共通）」節）に従う。新しい画面・モードのフッターを追加・変更する場合、既存画面の現状表示内容は複製せず `docs/design/status-footer.md` の実装マップを参照し、同じ表に追記する。 → 詳細: [status-footer.md](docs/design/status-footer.md#footer-implementation-map)
 
 ### 設定画面の共通アーキテクチャ
 
