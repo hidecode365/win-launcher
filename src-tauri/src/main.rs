@@ -1891,60 +1891,6 @@ fn register_clipboard_listener(window: &tauri::WebviewWindow) {
 #[cfg(not(windows))]
 fn register_clipboard_listener(_window: &tauri::WebviewWindow) {}
 
-/// お気に入り編集ビューの再親化ショートカット（Alt+←/→）が「単に無反応」に見える
-/// バグへの対処。原因はJS側の実装ミスではなく、Alt+←/→がWebView2既定の
-/// 「戻る/進む」ナビゲーションアクセラレーターとして処理される点にあった。
-/// Ctrl+S等の通常のブラウザデフォルトアクションはフロントエンド側の
-/// `e.preventDefault()` だけで抑止できているが（本アプリで実績あり）、
-/// アクセラレーターキーはWebView2のホストアプリ側（Rust側）でしか抑止できない
-/// （JS側のイベントディスパッチとは別経路で処理されるため）。
-/// `ICoreWebView2Controller::add_AcceleratorKeyPressed` をフックし、
-/// システムキー（Altを押しながら）＋左右矢印キーの組み合わせのみ
-/// `Handled = true` としてWebView2の既定処理（ナビゲーション）を抑止する。
-/// これによりWebView2自身のアクセラレーター処理は止まるが、キーイベント自体は
-/// 通常通りDOMへ配信され続けるため、App.tsx の window レベル keydown リスナーは
-/// 今まで通り受信できる。
-#[cfg(windows)]
-fn suppress_alt_arrow_navigation_accelerator(window: &tauri::WebviewWindow) {
-    use webview2_com::AcceleratorKeyPressedEventHandler;
-    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN;
-
-    // Win32 の仮想キーコード（安定・公開済みの値。VK_LEFT=0x25、VK_RIGHT=0x27）。
-    // windows クレート側の名前付き定数を経由せず生の値を直接使うことで、
-    // モジュール配置（windows クレートのバージョン間での再配置）に依存しない。
-    const VK_LEFT: u32 = 0x25;
-    const VK_RIGHT: u32 = 0x27;
-
-    let _ = window.with_webview(move |webview| {
-        let controller = webview.controller();
-        let handler = AcceleratorKeyPressedEventHandler::create(Box::new(
-            move |_sender, args| {
-                if let Some(args) = args {
-                    unsafe {
-                        let mut kind = Default::default();
-                        args.KeyEventKind(&mut kind)?;
-                        if kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN {
-                            let mut vk: u32 = 0;
-                            args.VirtualKey(&mut vk)?;
-                            if vk == VK_LEFT || vk == VK_RIGHT {
-                                args.SetHandled(true)?;
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            },
-        ));
-        let mut token = 0i64;
-        unsafe {
-            let _ = controller.add_AcceleratorKeyPressed(&handler, &mut token);
-        }
-    });
-}
-
-#[cfg(not(windows))]
-fn suppress_alt_arrow_navigation_accelerator(_window: &tauri::WebviewWindow) {}
-
 /// クリップボード変更検知後の実処理（別スレッド上で実行）。画像が取得できた場合は
 /// Rust 側でバイナリのままキャッシュし、フロントエンドには ID とサムネイルのみを渡す。
 /// 画像が取得できない場合（テキストなど）は種別のみを通知し、実際の取得は
@@ -2603,7 +2549,6 @@ fn main() {
                     let _ = window.set_size(LogicalSize::new(size.width, size.height));
                 }
                 register_clipboard_listener(&window);
-                suppress_alt_arrow_navigation_accelerator(&window);
             }
 
             // 現在の自動起動状態を取得してトレイメニューに反映

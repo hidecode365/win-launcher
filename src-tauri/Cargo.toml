@@ -27,12 +27,6 @@ encoding_rs = "0.8"
 clipboard-win = "5"
 
 [target.'cfg(windows)'.dependencies]
-# WebView2 の AcceleratorKeyPressed イベントを直接フックし、Alt+←/→ が
-# WebView2 既定の「戻る/進む」ナビゲーションアクセラレーターに奪われて
-# JavaScript 側の keydown ハンドラへ届かない問題を回避するために使う
-# （main.rs の setup() 内、webview2-accelerator-key を参照）。
-# tauri（wry経由）が既に依存しているバージョンに合わせる（Cargo.lock参照）。
-webview2-com = "0.38"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
