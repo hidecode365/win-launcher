@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   resolveSelected,
   SelectIntent,
@@ -32,7 +39,10 @@ const TOP_ROW: FavoriteEditTreeRow = { kind: "top", key: FAVORITE_TOP_ROW_KEY };
 // 解決される）、削除後の選択復元は resetToTop（複数階層・複数件をまたぐ削除のため
 // 「次の1件」を一意に定義できず、先頭へのフォールバックでよい）で対応しており、
 // いずれも expiresAt 付き intent を必要としなかった。
-export function useFavoriteEditSelection(rawTree: FavoriteTreeRow[]) {
+export function useFavoriteEditSelection(
+  rawTree: FavoriteTreeRow[],
+  filterText: string
+) {
   // 仮想行「Top」を先頭に合成した、編集ビューの選択ドメインが実際に扱う一覧。
   // /favorite ブラウジング側の favoriteTree（rawTree）自体は変更しない
   // （Top は編集ビュー専用の概念のため、共有データソースを汚染しない）。
@@ -61,6 +71,17 @@ export function useFavoriteEditSelection(rawTree: FavoriteTreeRow[]) {
   const resetToTop = useCallback(() => {
     setIntent({ type: "top" });
   }, []);
+
+  // 軸4g：絞り込み文字列が変わるたびに選択を先頭（お気に入り行）へリセットする。
+  // 「ユーザーが新しい文脈に入ったことを示す値」の変化にのみリセットを一本化する
+  // R-1の原則（CLAUDE.md「検索結果一覧の選択状態・行構造」節を参照）に従い、
+  // 依存配列には filterText のみを含める（rawTree/tree の変化にはリセットしない。
+  // rawTree はフォルダ作成・リネーム等の操作の副作用としても変化するため、それを
+  // トリガーにすると各操作が個別に行っている選択移動（selectByKey 等）を
+  // 上書きしてしまう）。
+  useEffect(() => {
+    resetToTop();
+  }, [filterText, resetToTop]);
 
   // ↑↓キーによる選択移動。フォルダ見出し行・アイテム行の両方を対象にする
   // （軸1で /favorite ブラウジングに実装した内容と同じ設計。REQUIREMENTS.md

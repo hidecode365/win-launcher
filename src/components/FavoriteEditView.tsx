@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Tooltip } from "./Tooltip";
 import { FavoriteEditTree } from "./FavoriteEditTree";
 import { FavoriteFolderDeleteModal } from "./FavoriteFolderDeleteModal";
@@ -6,12 +7,14 @@ import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 
 // お気に入り編集ビュー。4bで読み取り専用のツリー描画＋選択、4cでフォルダの
 // 作成・削除、4dでリネームを実装した。4eでドラッグ&ドロップによる並び替え・
-// 再親化、軸4fで仮想行「Top」・Delete/Ctrl+Shift+N/Alt+矢印キーによる操作・
-// 行内アイコン化（フォルダ作成ボタンの撤去）を実装した
-// （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+// 再親化、軸4fで仮想行「Top」（表示名は軸4gで「お気に入り」へ改称）・
+// Delete/Ctrl+Shift+N/Alt+矢印キーによる操作・行内アイコン化（フォルダ作成
+// ボタンの撤去）を実装した。軸4gではヘッダーを固定見出しから常時表示の検索
+// ボックスに置き換え、絞り込み機能を追加した（REQUIREMENTS.md「お気に入り
+// 編集ビュー」節を参照）。
 //
-// ヘッダーの構成（戻るボタン＋タイトル＋ドラッグ領域）は SettingsPanel.tsx と
-// 同じパターンを踏襲する。
+// ヘッダーの構成（戻るボタン＋検索ボックス＋ドラッグ領域）は SearchBox.tsx と
+// 同じ視覚パターンを踏襲する。
 //
 // 「検索」「設定」に続く3枚目のビューとして、App.tsx の view state 切り替えのみで
 // 表示する（新規のOSウィンドウは作らない）。useSearch/useSettings 自体はこの
@@ -37,6 +40,8 @@ export function FavoriteEditView({
   selected,
   onSelectRowByKey,
   onToggleCollapse,
+  filterText,
+  onFilterTextChange,
   onCreateFolder,
   onFolderCreated,
   creatingFolderAnchorKey,
@@ -58,6 +63,10 @@ export function FavoriteEditView({
   selected: number;
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
+  // 軸4g：編集ビュー専用の絞り込み文字列。ヘッダーの検索ボックスに束縛する
+  // （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  filterText: string;
+  onFilterTextChange: (text: string) => void;
   onCreateFolder: (
     parentId: string,
     name: string
@@ -82,9 +91,18 @@ export function FavoriteEditView({
   onConfirmRename: (id: string, newName: string) => Promise<string | null>;
   onClose: () => void;
 }) {
-  // 画面下部の詳細表示ペイン用。フォルダ見出し行選択時はフォルダ名のみ、
-  // アイテム行選択時はフルパスを表示する（REQUIREMENTS.md「お気に入り編集ビュー」節）。
-  // 仮想行「Top」選択時は実体を持たないため固定文言「Top」を表示する。
+  // マウント時（編集ビューを開いた時点）に検索ボックスへフォーカスする
+  // （メイン検索画面の SearchBox と同じ「常にフォーカスされた入力欄」という
+  // 前提。↑↓・F2・Delete・Ctrl+Shift+N・Alt+矢印は window レベルリスナーが
+  // フォーカス位置に関わらず処理するため、この入力欄にフォーカスがあっても
+  // ツリー操作は妨げられない）。
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    filterInputRef.current?.focus();
+  }, []);
+
+  const filtering = filterText.length > 0;
+  // フッター（FavoriteEditFooter）へ渡す選択中の行種別の算出用。
   const selectedRow = tree[selected] ?? null;
 
   return (
@@ -114,9 +132,42 @@ export function FavoriteEditView({
             </svg>
           </button>
         </Tooltip>
-        <span className="text-base font-medium text-gray-800">
-          お気に入りの編集
-        </span>
+        <svg
+          className="w-5 h-5 text-gray-400 mr-3 flex-shrink-0"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+          />
+        </svg>
+        <input
+          ref={filterInputRef}
+          type="text"
+          value={filterText}
+          onChange={(e) => onFilterTextChange(e.target.value)}
+          onKeyDown={(e) => {
+            // 軸4g：Delete のみ、通常のテキスト編集（文字の後方削除）として
+            // window レベルリスナーへ伝播させない。それ以外のキー（Escape・
+            // ↑↓・F2・Ctrl+Shift+N・Alt+矢印）は、絞り込み中でもリネーム・
+            // 削除・★解除・フォルダ作成・選択移動を通常通り行えるよう、あえて
+            // stopPropagation せず window レベルリスナーへ伝播させる
+            // （REQUIREMENTS.md「お気に入り編集ビュー」節「絞り込み文字列が
+            // 1文字以上入力されている間は...リネーム・削除・★解除・フォルダ
+            // 作成は...通常通り操作可能とする」を参照）。
+            if (e.key === "Delete") {
+              e.stopPropagation();
+            }
+          }}
+          placeholder="お気に入りを絞り込み..."
+          className="flex-1 bg-transparent outline-none text-lg text-gray-800 placeholder-gray-400"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </div>
 
       {pendingDeleteFolder && (
@@ -132,6 +183,7 @@ export function FavoriteEditView({
         selected={selected}
         onSelectRowByKey={onSelectRowByKey}
         onToggleCollapse={onToggleCollapse}
+        filtering={filtering}
         onRequestDeleteFolder={onRequestDeleteFolder}
         onToggleFavorite={onToggleFavorite}
         onMoveNode={onMoveNode}
@@ -146,27 +198,10 @@ export function FavoriteEditView({
         onCancelCreateFolder={onCancelCreateFolder}
       />
 
-      <FavoriteEditFooter selectedKind={selectedRow?.kind ?? null} />
-
-      {/* 詳細表示ペイン。選択中のアイテム行のフルパスを読み取り専用で表示する
-          （行自体にも truncate 済みのパスを表示しているが、長いパスは省略される
-          ため、ここで全文を確認できるようにする）。 */}
-      <div className="flex-shrink-0 border-t border-gray-200/60 px-4 py-2 text-xs text-gray-500 truncate">
-        {selectedRow?.kind === "item" ? (
-          <>
-            {selectedRow.file.path}
-            {!selectedRow.exists && (
-              <span className="ml-2 text-amber-600">実体が見つかりません</span>
-            )}
-          </>
-        ) : selectedRow?.kind === "folder" ? (
-          selectedRow.node.name
-        ) : selectedRow?.kind === "top" ? (
-          "Top"
-        ) : (
-          ""
-        )}
-      </div>
+      <FavoriteEditFooter
+        selectedKind={selectedRow?.kind ?? null}
+        filtering={filtering}
+      />
     </div>
   );
 }

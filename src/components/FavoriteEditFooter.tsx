@@ -19,21 +19,31 @@
 // - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／Delete ★解除／
 //   F2 リネーム／Alt+↑↓ 並び替え／Alt+←→ 再親化
 // Esc 戻る はどの状態でも共通（ヘッダーの「戻る」ボタンと同じ操作）。
+//
+// 軸4g：絞り込み中（filtering）は、フォルダ開閉（Enter 開閉）・並び替え
+// （Alt+↑↓）・再親化（Alt+←→）が無効化される（REQUIREMENTS.md「お気に入り
+// 編集ビュー」節を参照）ため、これら3つのヒントは絞り込み中のみ非表示にする
+// （「今何ができるか」を示すフッターの原則に従う）。リネーム・削除・★解除・
+// フォルダ作成は絞り込み中でも有効なままのため、ヒントも表示し続ける。
 export function FavoriteEditFooter({
   selectedKind,
+  filtering,
 }: {
   selectedKind: "top" | "folder" | "item" | null;
+  filtering: boolean;
 }) {
   return (
     <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
       <span>↑↓ 選択</span>
-      {selectedKind === "folder" && <span>Enter 開閉</span>}
+      {selectedKind === "folder" && !filtering && <span>Enter 開閉</span>}
       <span>Ctrl+Shift+N フォルダ作成</span>
       {selectedKind === "folder" && <span>Delete 削除</span>}
       {selectedKind === "item" && <span>Delete ★解除</span>}
       {(selectedKind === "folder" || selectedKind === "item") && (
+        <span>F2 リネーム</span>
+      )}
+      {(selectedKind === "folder" || selectedKind === "item") && !filtering && (
         <>
-          <span>F2 リネーム</span>
           <span>Alt+↑↓ 並び替え</span>
           <span>Alt+←→ 再親化</span>
         </>

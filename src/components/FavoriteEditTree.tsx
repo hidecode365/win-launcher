@@ -372,6 +372,7 @@ export function FavoriteEditTree({
   selected,
   onSelectRowByKey,
   onToggleCollapse,
+  filtering,
   onRequestDeleteFolder,
   onToggleFavorite,
   onMoveNode,
@@ -391,6 +392,11 @@ export function FavoriteEditTree({
   selected: number;
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
+  // 軸4g：絞り込み中（filterText 非空）は並び替え・再親化のD&Dを無効化する
+  // （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。キー操作側の無効化は
+  // App.tsx（moveFavoriteNodeWithinParent/indentFavoriteNode/outdentFavoriteNode）
+  // で行っているため、ここではD&Dの起点（draggable）だけを無効化すればよい。
+  filtering: boolean;
   onRequestDeleteFolder: (folderId: string, name: string) => void;
   // ★解除（アイテム行のみ）。この一覧内の項目はすべて登録済みのため常に
   // 塗りつぶし表示・即座に解除する（確認なし。/favorite モードでの★アイコンと
@@ -515,8 +521,14 @@ export function FavoriteEditTree({
   };
 
   // フォルダ作成アイコン。選択中の行（フォルダ・アイテム・Topのいずれも）にのみ
-  // 表示する（ピン・★アイコンの「選択時のみ表示」と同じ考え方）。
-  const renderCreateFolderIcon = () => (
+  // 表示する（ピン・★アイコンの「選択時のみ表示」と同じ考え方）。サイズ・
+  // ホバー表現は ToggleIcons.tsx の PinToggleButton/FavoriteToggleButton と
+  // 同じ規約に統一する（軸4g）：アイコン本体は w-4 h-4、ホバー時のみ
+  // rounded-full の淡い円形背景（非選択行は hover:bg-black/[6%]、選択中の
+  // 青ハイライト行は hover:bg-white/20）、文字色は選択中が白・非選択が
+  // gray-600。この関数は選択中の行からしか呼ばれないため実質的に selected は
+  // 常に true だが、将来の呼び出し元の変化に備えて規約通りの分岐を持たせる。
+  const renderCreateFolderIcon = (selected: boolean) => (
     <Tooltip label="ここにフォルダを作成" className="flex-shrink-0">
       <button
         type="button"
@@ -524,7 +536,11 @@ export function FavoriteEditTree({
           e.stopPropagation();
           onStartCreateFolder();
         }}
-        className="ml-1 p-1 rounded text-white/80 hover:bg-white/20"
+        className={`rounded-full p-1 transition-colors ${
+          selected
+            ? "hover:bg-white/20 text-white"
+            : "hover:bg-black/[6%] text-gray-600"
+        }`}
       >
         <CreateFolderIcon className="w-4 h-4" />
       </button>
@@ -581,10 +597,25 @@ export function FavoriteEditTree({
                   }
                   onDrop={(e) => handleDrop(e, row)}
                 >
-                  {/* Topはドラッグ元にならないため、DragHandle・シェブロン相当の
-                      空スペースのみを描き横位置を他の行と揃える。 */}
-                  <span className="w-4 mr-1.5 flex-shrink-0" aria-hidden="true" />
-                  <span className="w-4 flex-shrink-0" aria-hidden="true" />
+                  {/* Topはドラッグ元にならず、件数バッジも持たない。ただし
+                      DragHandle・件数バッジは通常のフォルダ行の行高に影響する
+                      要素（前者は明示的なフォントサイズを持たない文字、後者は
+                      パディング＋行高を持つバッジ）のため、単なる空スペースに
+                      置き換えると行の高さが揃わない（指摘3）。同じ文字・同じ
+                      クラス構成を invisible（非表示だが領域は確保）で描画し、
+                      横位置だけでなく行の高さも通常のフォルダ行と完全に一致
+                      させる。 */}
+                  <span
+                    className="w-4 mr-1.5 flex-shrink-0 inline-flex justify-center"
+                    aria-hidden="true"
+                  >
+                    <span className="invisible cursor-grab select-none font-bold">
+                      ⋮⋮
+                    </span>
+                  </span>
+                  <span className="invisible w-4 flex-shrink-0" aria-hidden="true">
+                    <FolderChevron collapsed={false} />
+                  </span>
                   <svg
                     className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
                     fill="currentColor"
@@ -592,8 +623,16 @@ export function FavoriteEditTree({
                   >
                     <path d={FOLDER_ICON_PATH} />
                   </svg>
-                  <span className="text-xs font-medium truncate flex-1">Top</span>
-                  {isSelected && renderCreateFolderIcon()}
+                  <span className="text-xs font-medium truncate flex-1">
+                    お気に入り
+                  </span>
+                  <span
+                    className="invisible ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px]"
+                    aria-hidden="true"
+                  >
+                    0
+                  </span>
+                  {isSelected && renderCreateFolderIcon(isSelected)}
                 </div>
                 {isCreatingHere && (
                   <CreateFolderInlineRow
@@ -619,7 +658,7 @@ export function FavoriteEditTree({
                 <div
                   role="button"
                   data-index={index}
-                  draggable={!isRenaming}
+                  draggable={!isRenaming && !filtering}
                   style={indentStyle}
                   className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
                     isSelected
@@ -677,7 +716,7 @@ export function FavoriteEditTree({
                   {/* フォルダ作成・削除アイコン。選択中の行にのみ表示する（ピン・★
                       アイコンの「選択時のみ表示」と同じ考え方）。行全体のクリック
                       （折りたたみ切替）に伝播させないよう stopPropagation する。 */}
-                  {isSelected && !isRenaming && renderCreateFolderIcon()}
+                  {isSelected && !isRenaming && renderCreateFolderIcon(isSelected)}
                   {isSelected && !isRenaming && (
                     <Tooltip label="このフォルダを削除" className="flex-shrink-0">
                       <button
@@ -686,7 +725,11 @@ export function FavoriteEditTree({
                           e.stopPropagation();
                           onRequestDeleteFolder(row.node.id, row.node.name);
                         }}
-                        className="ml-1 p-1 rounded text-white/80 hover:bg-white/20"
+                        className={`ml-1 rounded-full p-1 transition-colors ${
+                          isSelected
+                            ? "hover:bg-white/20 text-white"
+                            : "hover:bg-black/[6%] text-gray-600"
+                        }`}
                       >
                         <svg
                           className="w-4 h-4"
@@ -723,7 +766,7 @@ export function FavoriteEditTree({
             <Fragment key={row.key}>
               <div
                 data-index={index}
-                draggable={!isRenaming}
+                draggable={!isRenaming && !filtering}
                 style={indentStyle}
                 className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
                   isSelected
@@ -786,7 +829,7 @@ export function FavoriteEditTree({
                   )}
                 </div>
                 {!row.exists && <WarningIcon selected={isSelected} />}
-                {isSelected && !isRenaming && renderCreateFolderIcon()}
+                {isSelected && !isRenaming && renderCreateFolderIcon(isSelected)}
                 {isSelected && !isRenaming && (
                   <FavoriteToggleButton
                     active

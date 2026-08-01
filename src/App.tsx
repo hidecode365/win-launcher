@@ -80,7 +80,10 @@ export default function App() {
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
   // ドメイン。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。データソースは
   // search.favoriteTree をそのまま共有する。
-  const favoriteEdit = useFavoriteEditSelection(search.favoriteTree);
+  const favoriteEdit = useFavoriteEditSelection(
+    search.favoriteEditRawTree,
+    search.favoriteEditFilterText
+  );
   const ocr = useOcr();
   const updater = useUpdater();
   const clipboard = useClipboard(
@@ -359,6 +362,9 @@ export default function App() {
   // 挿入）。Topは並び替えの対象にならない。
   const moveFavoriteNodeWithinParent = useCallback(
     (direction: 1 | -1) => {
+      // 軸4g：絞り込み中は並び替えを無効化する（REQUIREMENTS.md「お気に入り編集
+      // ビュー」節を参照）。
+      if (search.favoriteEditFilterText.length > 0) return;
       const row = favoriteEdit.tree[favoriteEdit.selected];
       if (!row || row.kind === "top") return;
       const parentId = row.node.parentId;
@@ -379,13 +385,15 @@ export default function App() {
         if (err) console.error(err);
       });
     },
-    [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo]
+    [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo, search.favoriteEditFilterText]
   );
 
   // 軸4f：Alt+→ による再親化（インデント）。選択中の行を、同一親内の直前の
   // 兄弟（フォルダである場合のみ）の配下・末尾へ移動する。直前の兄弟が無い、
   // またはフォルダでない場合は無効（何もしない）。Topは対象にならない。
   const indentFavoriteNode = useCallback(() => {
+    // 軸4g：絞り込み中は再親化を無効化する。
+    if (search.favoriteEditFilterText.length > 0) return;
     const row = favoriteEdit.tree[favoriteEdit.selected];
     if (!row || row.kind === "top") return;
     const parentId = row.node.parentId;
@@ -404,13 +412,20 @@ export default function App() {
       .then((err) => {
         if (err) console.error(err);
       });
-  }, [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo]);
+  }, [
+    favoriteEdit.tree,
+    favoriteEdit.selected,
+    search.moveFavoriteNodeTo,
+    search.favoriteEditFilterText,
+  ]);
 
   // 軸4f：Alt+← による再親化（アウトデント）。選択中の行を、現在の親の
   // さらに親（祖父母フォルダ）の直下へ、元の親のすぐ後ろの位置に移動する。
   // 現在の親が既にルート（FAVORITES_FOLDER_ID）の場合はこれ以上outdentできない
   // ため無効。Topは対象にならない。
   const outdentFavoriteNode = useCallback(() => {
+    // 軸4g：絞り込み中は再親化を無効化する。
+    if (search.favoriteEditFilterText.length > 0) return;
     const row = favoriteEdit.tree[favoriteEdit.selected];
     if (!row || row.kind === "top") return;
     const parentId = row.node.parentId;
@@ -433,7 +448,12 @@ export default function App() {
     search.moveFavoriteNodeTo(row.node.id, grandparentId, targetIndex).then((err) => {
       if (err) console.error(err);
     });
-  }, [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo]);
+  }, [
+    favoriteEdit.tree,
+    favoriteEdit.selected,
+    search.moveFavoriteNodeTo,
+    search.favoriteEditFilterText,
+  ]);
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
   // ステップの操作は document レベルの keydown で処理する。input 要素のローカル
@@ -550,7 +570,7 @@ export default function App() {
             // 閲覧・整理する画面のため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
             const row = favoriteEdit.tree[favoriteEdit.selected];
             if (row?.kind === "folder") {
-              search.toggleFavoriteFolderCollapsed(row.node.id);
+              search.toggleFavoriteFolderCollapsedInEdit(row.node.id);
             }
             break;
           }
@@ -658,7 +678,7 @@ export default function App() {
     favoriteEdit.tree,
     favoriteEdit.selected,
     favoriteEdit.moveSelection,
-    search.toggleFavoriteFolderCollapsed,
+    search.toggleFavoriteFolderCollapsedInEdit,
     setRenamingFavoriteNodeId,
     startCreateFolder,
     moveFavoriteNodeWithinParent,
@@ -1044,7 +1064,9 @@ export default function App() {
         tree={favoriteEdit.tree}
         selected={favoriteEdit.selected}
         onSelectRowByKey={favoriteEdit.selectByKey}
-        onToggleCollapse={search.toggleFavoriteFolderCollapsed}
+        onToggleCollapse={search.toggleFavoriteFolderCollapsedInEdit}
+        filterText={search.favoriteEditFilterText}
+        onFilterTextChange={search.setFavoriteEditFilterText}
         onCreateFolder={search.createFavoriteFolder}
         onFolderCreated={handleFavoriteEditFolderCreated}
         creatingFolderAnchorKey={creatingFolderAnchorKey}

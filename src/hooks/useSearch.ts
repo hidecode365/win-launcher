@@ -133,6 +133,32 @@ export function isDescendantOfFolder(
   return false;
 }
 
+// 「お気に入り」ツリー配下のノードのみを抽出する。Rust 側 `get_favorite_nodes`
+// と同じフィルタ（`is_descendant_of(favorites, parent_id, FAVORITES_FOLDER_ID)`）を
+// フロントエンドでも再現したもの（ソートは呼び出し側の groupNodesByParent が
+// 改めて order 昇順に並べ替えるため、ここでは行わなくてよい）。
+//
+// フォルダ作成・リネーム・削除・移動・開閉状態変更・★解除は、いずれも Rust
+// コマンドが更新後の `favorites` 全量（`saved`）をレスポンスとして返す。以前は
+// これとは別に `fetchFavoriteNodes`（`get_favorite_nodes` への追加の非同期
+// 往復）を呼んで `rawFavoriteNodes`（favoriteTree の実データ源）を更新していたが、
+// この追加の往復が解決するまでの間 `favoriteTree` は古いままになる。連続して
+// 素早く操作すると（例：フォルダ作成直後に、作成した行を選択してすぐ次のフォルダを
+// 作成する）、`favoriteTree` にまだ新しい行が反映されていない状態で選択解決
+// （resolveSelected）が行われ、直前の選択（古い行）にフォールバックしたまま
+// 次の操作の対象になってしまう不具合があった（詳細は
+// docs/design/favorites-data-model.md「経緯」節を参照）。`saved` から同期的に
+// 導出すればこの非同期の隙間自体が生じない。
+//
+// 新規のファイルパスを登録する操作（`confirmFavoriteDialog`。実体の有無を
+// `check_paths_exist` で確認する必要がある）はこの対象外とし、従来通り
+// `fetchFavoriteNodes` を使う。
+function deriveFavoriteNodesFromFavorites(saved: FavoriteNode[]): FavoriteNode[] {
+  return saved.filter((f) =>
+    isDescendantOfFolder(saved, f.parentId, FAVORITES_FOLDER_ID)
+  );
+}
+
 // クエリに応じて URL デコード/エンコードの自動変換結果を返す（該当しない場合は null）。
 // 0. 入力が http(s):// で始まらない場合は、以降の判定を行わず null を返す
 // 1. `%XX`（16進数2桁）パターンを含む場合はデコードを試みる。
@@ -827,6 +853,12 @@ export function useSearch(
     Record<string, boolean>
   >({});
 
+  // お気に入り編集ビュー専用の絞り込み文字列（軸4g）。/favorite ブラウジング側の
+  // favoriteFilterText はメイン検索ボックスの query から導出される値だが、編集
+  // ビューは常時表示の専用検索ボックスを持つため、それとは独立した state として
+  // 持つ（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  const [favoriteEditFilterText, setFavoriteEditFilterText] = useState("");
+
   const fetchFavoriteNodes = useCallback(
     (source: string) => {
       const callId = beginAsyncCall("favorite");
@@ -874,28 +906,48 @@ export function useSearch(
         .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
-          fetchFavoriteNodes("set-collapsed");
+          setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
         })
         .catch(console.error);
     },
-    [fetchFavoriteNodes]
+    []
   );
 
-  // フォルダ見出し行の開閉トグル。/favorite ブラウジング（▼クリック・Enterキー）・
-  // お気に入り編集ビュー（▼クリック・Enterキー）のいずれからも、この同じ関数を
-  // 呼ぶ（軸1・4b双方の呼び出し元が既にこの関数経由のため、ここに1箇所ガードを
-  // 足すだけで両方に適用される）。絞り込み（横断検索）文字列が1文字以上入力されて
-  // いる間は無効化する（no-op）。絞り込みでヒットしたフォルダは favoriteTree 側で
-  // 表示上強制展開されるだけで永続化された collapsed は書き換わらないため、
-  // 絞り込み中に操作を許すと「見えている状態」と「実際に保存される状態」が
+  // フォルダ見出し行の開閉トグルの実処理（ガード抜き）。/favorite ブラウジング・
+  // お気に入り編集ビューはそれぞれ独立した絞り込み文字列（favoriteFilterText／
+  // favoriteEditFilterText）を持つため、「絞り込み中は無効化する」ガードは
+  // 呼び出し元ごとに別々の値で判定する必要がある（一方の画面の絞り込み文字列を
+  // 参照して他方の画面の操作を誤ってブロックしないように、実処理とガードを
+  // 分離する）。
+  const performToggleFavoriteFolderCollapsed = useCallback(
+    (folderId: string) => {
+      const current = rawFavoriteNodes.find((n) => n.id === folderId);
+      setFavoriteFolderCollapsed(folderId, !(current?.collapsed ?? false));
+    },
+    [rawFavoriteNodes, setFavoriteFolderCollapsed]
+  );
+
+  // /favorite ブラウジング（▼クリック・Enterキー）用。絞り込み（横断検索）文字列が
+  // 1文字以上入力されている間は無効化する（no-op）。絞り込みでヒットしたフォルダは
+  // favoriteTree 側で表示上強制展開されるだけで永続化された collapsed は書き換わら
+  // ないため、絞り込み中に操作を許すと「見えている状態」と「実際に保存される状態」が
   // 食い違ってしまうため（REQUIREMENTS.md同節を参照）。
   const toggleFavoriteFolderCollapsed = useCallback(
     (folderId: string) => {
       if ((favoriteFilterText ?? "").length > 0) return;
-      const current = rawFavoriteNodes.find((n) => n.id === folderId);
-      setFavoriteFolderCollapsed(folderId, !(current?.collapsed ?? false));
+      performToggleFavoriteFolderCollapsed(folderId);
     },
-    [favoriteFilterText, rawFavoriteNodes, setFavoriteFolderCollapsed]
+    [favoriteFilterText, performToggleFavoriteFolderCollapsed]
+  );
+
+  // お気に入り編集ビュー（▼クリック・Enterキー）用。上と同じ理由で、編集ビュー
+  // 自身の絞り込み文字列（favoriteEditFilterText）でガードする。
+  const toggleFavoriteFolderCollapsedInEdit = useCallback(
+    (folderId: string) => {
+      if (favoriteEditFilterText.length > 0) return;
+      performToggleFavoriteFolderCollapsed(folderId);
+    },
+    [favoriteEditFilterText, performToggleFavoriteFolderCollapsed]
   );
 
   // pull型モード（get_recent_files 等、プッシュ通知を持たない取得）のうち、フォーカス
@@ -1082,6 +1134,108 @@ export function useSearch(
     });
     return rows;
   }, [rawFavoriteNodes, favoriteFilterText, favoriteExistence]);
+
+  // お気に入り編集ビュー専用の絞り込み済みツリー（軸4g）。上の favoriteTree
+  // （/favorite ブラウジング用）と異なる点は2つ：
+  // (1) ヒット判定にファイル名だけでなくフォルダ名自体も含める
+  // (2) フォルダ名自体がヒットした場合、その配下は絞り込まず全件（サブフォルダ・
+  //     アイテムとも）表示する
+  // (2)は「祖先が既にヒット確定したか」という文脈を子へ伝播する必要があり、
+  // 既存の walkGroupedTree（visit コールバックが親から子へ文脈を渡せない汎用
+  // ユーティリティ）では表現できないため、この専用の再帰関数で書く（favoriteTree
+  // 側の走査は変更しない）。groupNodesByParent は共通のまま再利用する。
+  const favoriteEditRawTree = useMemo<FavoriteTreeRow[]>(() => {
+    const filterLower = favoriteEditFilterText.toLowerCase();
+    const filtering = filterLower.length > 0;
+    const byParent = groupNodesByParent(rawFavoriteNodes);
+
+    // 配下（再帰）に、アイテム名またはフォルダ名自体がヒットするノードが1件でも
+    // 存在するか（自分自身のフォルダ名も対象に含める点が favoriteTree の
+    // folderHasMatch と異なる）。
+    const subtreeMatchCache = new Map<string, boolean>();
+    const subtreeHasMatch = (folderId: string): boolean => {
+      const cached = subtreeMatchCache.get(folderId);
+      if (cached !== undefined) return cached;
+      subtreeMatchCache.set(folderId, false);
+      let found = false;
+      for (const child of byParent.get(folderId) ?? []) {
+        if (child.type === "file") {
+          if (child.name.toLowerCase().includes(filterLower)) {
+            found = true;
+            break;
+          }
+        } else if (child.type === "folder") {
+          if (
+            child.name.toLowerCase().includes(filterLower) ||
+            subtreeHasMatch(child.id)
+          ) {
+            found = true;
+            break;
+          }
+        }
+      }
+      subtreeMatchCache.set(folderId, found);
+      return found;
+    };
+
+    const rows: FavoriteTreeRow[] = [];
+    const siblingEdgeInfo = (node: FavoriteNode) => {
+      const siblings = byParent.get(node.parentId) ?? [];
+      const pos = siblings.findIndex((s) => s.id === node.id);
+      return {
+        isFirstSibling: pos <= 0,
+        isLastSibling: pos === -1 || pos === siblings.length - 1,
+      };
+    };
+
+    // insideMatchedFolder: 祖先のいずれかのフォルダ名自体が既にヒット済みの場合
+    // true。true の間は配下を一切フィルタせず全件表示する（フォルダ名ヒットの
+    // 「配下は絞り込まず全件表示」仕様）。
+    const walk = (
+      parentId: string,
+      depth: number,
+      insideMatchedFolder: boolean
+    ) => {
+      for (const node of byParent.get(parentId) ?? []) {
+        if (node.type === "folder") {
+          const selfMatches =
+            filtering && node.name.toLowerCase().includes(filterLower);
+          const visible =
+            insideMatchedFolder || !filtering || selfMatches || subtreeHasMatch(node.id);
+          if (!visible) continue;
+          const collapsed = filtering ? false : node.collapsed;
+          rows.push({
+            kind: "folder",
+            key: favoriteFolderRowKey(node.id),
+            node,
+            depth,
+            collapsed,
+            directChildCount: (byParent.get(node.id) ?? []).length,
+            ...siblingEdgeInfo(node),
+          });
+          if (collapsed) continue;
+          walk(node.id, depth + 1, insideMatchedFolder || selfMatches);
+        } else if (node.type === "file") {
+          const visible =
+            insideMatchedFolder ||
+            !filtering ||
+            node.name.toLowerCase().includes(filterLower);
+          if (!visible) continue;
+          rows.push({
+            kind: "item",
+            key: favoriteItemRowKey(node.id),
+            node,
+            depth,
+            file: { name: node.name, path: node.value, icon: null },
+            exists: favoriteExistence[node.value] ?? true,
+            ...siblingEdgeInfo(node),
+          });
+        }
+      }
+    };
+    walk(FAVORITES_FOLDER_ID, 0, false);
+    return rows;
+  }, [rawFavoriteNodes, favoriteEditFilterText, favoriteExistence]);
 
   // favoriteTree からアイテム行のみを抜き出したもの。軸1で↑↓キーによる選択移動・
   // intent ベースの選択解決（resolveSelected）の対象一覧は favoriteTree（フォルダ
@@ -1540,20 +1694,19 @@ export function useSearch(
           favoritesRef.current = saved;
           setFavoritesState(saved);
           // favorites（ピン止め・お気に入り・メモ共通の配列）と rawFavoriteNodes
-          // （/favorite モード表示専用に get_favorite_nodes で個別取得した
-          // スナップショット）は別々の state のため、favorites 側の更新だけでは
-          // /favorite モードの一覧（favoriteTree）に反映されない。togglePin が
-          // set_favorites 解決後に fetchPinnedFiles を呼ぶのと同じ理由・同じ
-          // パターンで、ここでも明示的に再取得する（/favorite モード表示中か
-          // どうかに関わらず常に呼ぶ。次にモードへ入ったときのデータが古いまま
-          // 残らないようにするため）。
-          fetchFavoriteNodes("toggle-favorite");
+          // （/favorite モード表示専用のスナップショット）は別々の state のため、
+          // favorites 側の更新だけでは /favorite モードの一覧（favoriteTree）に
+          // 反映されない。★解除は新規のファイルパスを増やす操作ではなく実体の
+          // 有無を再チェックする必要が無いため、追加の非同期往復
+          // （fetchFavoriteNodes）を経由せず、返ってきた saved から同期的に
+          // 導出する（deriveFavoriteNodesFromFavorites のコメントを参照）。
+          setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
         })
         .catch(console.error);
       return;
     }
     setFavoriteDialogTarget(file);
-  }, [fetchFavoriteNodes, favoriteMode, favoriteSelectionItems, updateIntent]);
+  }, [favoriteMode, favoriteSelectionItems, updateIntent]);
 
   const closeFavoriteDialog = useCallback(() => {
     setFavoriteDialogTarget(null);
@@ -1573,8 +1726,14 @@ export function useSearch(
           setFavoritesState(saved);
           lastFavoriteFolderIdRef.current = folderId;
           setFavoriteDialogTarget(null);
-          // toggleFavorite の解除分岐と同じ理由で、/favorite モード表示専用の
-          // スナップショット（rawFavoriteNodes）も明示的に再取得する。
+          // ここで登録するのは新規のファイルパスであり、実体の有無
+          // （favoriteExistence）を check_paths_exist で確認する必要がある
+          // （フォルダ作成・リネーム・削除・移動・★解除のようにファイルパスの
+          // 集合が変わらない/減るだけの操作とは異なり、saved から同期的に
+          // 導出するだけでは足りない）。そのため他の操作とは異なり、
+          // fetchFavoriteNodes（get_favorite_nodes → check_paths_exist の
+          // 非同期往復）をそのまま使う（deriveFavoriteNodesFromFavorites の
+          // コメントを参照）。
           fetchFavoriteNodes("register-dialog");
         })
         .catch(console.error);
@@ -1596,12 +1755,16 @@ export function useSearch(
         .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
-          // toggleFavorite の解除分岐・confirmFavoriteDialog と同じ理由で、
           // /favorite モード表示専用のスナップショット（rawFavoriteNodes）も
-          // 明示的に再取得する。以前はここで呼んでおらず、フォルダ作成直後に
-          // ダイアログを閉じずに /favorite モードを直接確認する等の経路で
-          // 新規フォルダが一覧に反映されない古いデータが残り得た。
-          fetchFavoriteNodes("create-folder");
+          // saved から同期的に更新する（deriveFavoriteNodesFromFavorites の
+          // コメントを参照）。以前はここで別途 fetchFavoriteNodes（追加の非同期
+          // 往復）を呼んでおり、それが解決するまでの間 favoriteTree に新規
+          // フォルダが反映されない隙間があった。連続してフォルダを作成する
+          // （直前に作成した行を選択してすぐ次を作成する）と、この隙間の間は
+          // favoriteTree にまだ新しい行が無いため選択解決が直前の選択に
+          // フォールバックし続け、次の作成先の親を取り違える不具合があった
+          // （詳細は docs/design/favorites-data-model.md「経緯」節を参照）。
+          setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
           const added = saved.find(
             (f) => !before.some((b) => b.id === f.id)
           );
@@ -1619,7 +1782,7 @@ export function useSearch(
           return { folder: null, error: String(err) };
         });
     },
-    [fetchFavoriteNodes]
+    []
   );
 
   // フォルダ削除（お気に入り編集ビューが使う。/favorite ブラウジング側の暫定
@@ -1635,12 +1798,12 @@ export function useSearch(
         .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
-          fetchFavoriteNodes("remove-folder");
+          setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
           onRemoved();
         })
         .catch(console.error);
     },
-    [fetchFavoriteNodes]
+    []
   );
 
   // 削除確認が必要かどうかの判定用に、指定フォルダ配下（再帰）に存在するノード数を
@@ -1700,12 +1863,12 @@ export function useSearch(
         .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
-          fetchFavoriteNodes("move-node-to");
+          setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
           return null;
         })
         .catch((err) => String(err));
     },
-    [fetchFavoriteNodes]
+    []
   );
 
   // お気に入り編集ビューでのリネーム（4d）。フォルダ・アイテムのどちらの
@@ -1728,15 +1891,15 @@ export function useSearch(
         .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
-          // toggleFavorite・createFavoriteFolder 等と同じ理由で、/favorite
-          // モード表示専用のスナップショット（rawFavoriteNodes）も明示的に
-          // 再取得する。
-          fetchFavoriteNodes("rename-node");
+          // /favorite モード表示専用のスナップショット（rawFavoriteNodes）も
+          // saved から同期的に更新する（deriveFavoriteNodesFromFavorites の
+          // コメントを参照）。
+          setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
           return null;
         })
         .catch((err) => String(err));
     },
-    [fetchFavoriteNodes]
+    []
   );
 
   // 登録ダイアログの「保存先フォルダ」プルダウンの選択肢。予約フォルダ「お気に入り」
@@ -2216,6 +2379,10 @@ export function useSearch(
     favoriteMode,
     favoriteTree,
     toggleFavoriteFolderCollapsed,
+    favoriteEditFilterText,
+    setFavoriteEditFilterText,
+    favoriteEditRawTree,
+    toggleFavoriteFolderCollapsedInEdit,
     pendingDeleteFavoriteFolder,
     requestDeleteFavoriteFolder,
     cancelDeleteFavoriteFolder,
