@@ -58,6 +58,7 @@ export function FavoriteEditView({
   onCancelRename,
   onConfirmRename,
   onClose,
+  version,
 }: {
   tree: FavoriteEditTreeRow[];
   selected: number;
@@ -90,6 +91,7 @@ export function FavoriteEditView({
   onCancelRename: () => void;
   onConfirmRename: (id: string, newName: string) => Promise<string | null>;
   onClose: () => void;
+  version: string;
 }) {
   // マウント時（編集ビューを開いた時点）に検索ボックスへフォーカスする
   // （メイン検索画面の SearchBox と同じ「常にフォーカスされた入力欄」という
@@ -201,6 +203,7 @@ export function FavoriteEditView({
       <FavoriteEditFooter
         selectedKind={selectedRow?.kind ?? null}
         filtering={filtering}
+        version={version}
       />
     </div>
   );

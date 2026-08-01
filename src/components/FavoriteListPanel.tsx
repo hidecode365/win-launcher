@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
+import { IconSlot } from "./IconSlot";
 import {
   FolderChevron,
   FileIcon,
@@ -84,7 +85,7 @@ export function FavoriteListPanel({
               role="button"
               data-index={index}
               style={indentStyle}
-              className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+              className={`w-full flex items-center py-2 pr-4 text-left transition-colors ${
                 isSelected
                   ? "bg-blue-500 text-white"
                   : "text-gray-500 hover:bg-gray-50"
@@ -103,17 +104,41 @@ export function FavoriteListPanel({
               <span className="text-xs font-medium truncate flex-1">
                 {row.node.name}
               </span>
-              {/* 直下（孫は含めない）のノード数を示す件数バッジ。
-                  ExtensionFilterEditor.tsx のタグ表示（rounded-full bg-gray-100
-                  text-gray-700）と同系統のピル型だが、装飾的な補助情報のため
-                  ひとまわり小さく・薄くしている。 */}
-              <span
-                className={`ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] ${
-                  isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
-                }`}
-              >
-                {row.directChildCount}
-              </span>
+              {/* 行末アイコン群を1つのflexコンテナに包む（現状はこの件数バッジ
+                  単独だが、ResultList.tsx・FavoriteEditTree.tsx と同じ
+                  IconSlot＋gapの共通ラッパー化規約に揃える。詳細は
+                  docs/design/favorites-ui-iconography.md「行内アイコンの
+                  共通ラッパー化（IconSlot）」節を参照）。件数バッジ自体は
+                  表示専用（クリック不可）のため interactive=false とする。
+                  軸4m：以前は桁数に応じて幅が変わるピル型
+                  （ExtensionFilterEditor.tsx のタグ表示と同系統）を意図的に
+                  維持していたが、実測（Ctrl+Alt+M）でお気に入り編集ビューの
+                  円形バッジ（circle=24）との不一致が判明したため、こちらも
+                  固定サイズの円形（`absolute inset-0` で箱いっぱいの24pxに
+                  広げる）に統一した。3桁までは実際の文字サイズで収まる想定
+                  （4桁以上は円からはみ出しても許容。実運用でそこまでの件数は
+                  稀なため対応不要と判断）。
+                  軸4n：背景色だけだと輪郭がぼやけて見えるとの指摘を受け、
+                  フッターのキー操作チップ（KeyHint.tsx）と同じ「淡い背景＋薄い
+                  ボーダー」方式で境界を明確にする（FavoriteEditTree.tsx の
+                  件数バッジと同じ配色ルール）。 */}
+              <div className="flex items-center gap-2 ml-2">
+                <IconSlot
+                  interactive={false}
+                  selected={isSelected}
+                  measureId="count-badge"
+                >
+                  <span
+                    className={`absolute inset-0 flex items-center justify-center rounded-full border text-[11px] ${
+                      isSelected
+                        ? "border-white/30 bg-white/20 text-white"
+                        : "border-black/10 bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {row.directChildCount}
+                  </span>
+                </IconSlot>
+              </div>
             </div>
           );
         }
@@ -159,21 +184,27 @@ export function FavoriteListPanel({
                 </div>
               </div>
             </div>
-            {!row.exists && <WarningIcon selected={isSelected} />}
-            {/* /favorite モードの一覧内の項目はすべて登録済みのため active は
-                常に固定（塗りつぶし表示）。表示条件自体は、通常の検索結果行・
-                ピン止めブロックと同じ「selected のときのみ表示」に揃える
-                （登録済みかどうかの判定が不要なだけで、選択されていない行では
-                アイコン自体を表示しない、という表示条件のパターンは他の一覧と
-                共通にする）。押下で即座に解除する
-                （REQUIREMENTS.md「/favorite モードでの★アイコン」節を参照）。 */}
-            {isSelected && (
-              <FavoriteToggleButton
-                active
-                selected={isSelected}
-                onToggle={() => onToggleFavorite(item)}
-              />
-            )}
+            {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
+                `gap-2` に一本化する（詳細は
+                docs/design/favorites-ui-iconography.md「行内アイコンの
+                共通ラッパー化（IconSlot）」節を参照）。 */}
+            <div className="flex items-center gap-2 ml-2">
+              {!row.exists && <WarningIcon selected={isSelected} />}
+              {/* /favorite モードの一覧内の項目はすべて登録済みのため active は
+                  常に固定(塗りつぶし表示)。表示条件自体は、通常の検索結果行・
+                  ピン止めブロックと同じ「selected のときのみ表示」に揃える
+                  （登録済みかどうかの判定が不要なだけで、選択されていない行では
+                  アイコン自体を表示しない、という表示条件のパターンは他の一覧と
+                  共通にする）。押下で即座に解除する
+                  （REQUIREMENTS.md「/favorite モードでの★アイコン」節を参照）。 */}
+              {isSelected && (
+                <FavoriteToggleButton
+                  active
+                  selected={isSelected}
+                  onToggle={() => onToggleFavorite(item)}
+                />
+              )}
+            </div>
           </div>
         );
       })}

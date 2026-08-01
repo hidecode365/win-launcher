@@ -1,4 +1,5 @@
 import { Tooltip } from "./Tooltip";
+import { IconSlot } from "./IconSlot";
 
 // ピン（画鋲）・お気に入り（★）・実体なし警告アイコンと、それらのトグルボタンを
 // まとめたモジュール。検索結果行（ResultList.tsx）・/favorite モードの一覧
@@ -105,11 +106,20 @@ export function FavoriteIcon({ filled }: { filled: boolean }) {
 // ツールチップ（「実体が見つかりません」）は SVG の <title> 要素ではなく共通
 // コンポーネント Tooltip を使う（SVG <title> も HTML の title 属性と同じ表示遅延・
 // 表示位置の問題を持つブラウザ既定の仕組みのため。詳細は Tooltip.tsx・CLAUDE.md
-// 「ピン止め・お気に入り・メモ機能」節を参照）。レイアウトに関わるクラス
-// （mr-1 flex-shrink-0）は Tooltip のラッパー側に持たせる。
+// 「ピン止め・お気に入り・メモ機能」節を参照）。
+//
+// 軸4l：以前は Tooltip 側に `mr-1` の個別マージンを持たせていたが、行内アイコン
+// 群の余白を「これらを包むflexコンテナの gap」に一本化する方針（
+// docs/design/favorites-ui-iconography.md「行内アイコンの共通ラッパー化
+// （IconSlot）」節を参照）に伴い撤去した。呼び出し元（ResultList.tsx・
+// FavoriteEditTree.tsx・FavoriteListPanel.tsx）が、隣接する PinToggleButton /
+// FavoriteToggleButton とあわせて `gap-2` のflexコンテナで包む。
+// サイズが w-5 h-5（20px）・配色が amber 系である点は他の行内アイコン
+// （w-4 h-4・gray/white系）と異なる独自仕様のため、IconSlot（p-1込み24px相当の
+// 箱＋gray/white固定色）には乗せず、単体のTooltipラップのまま維持する。
 export function WarningIcon({ selected }: { selected: boolean }) {
   return (
-    <Tooltip label="実体が見つかりません" className="mr-1 flex-shrink-0">
+    <Tooltip label="実体が見つかりません" className="flex-shrink-0">
       <svg
         className={selected ? "w-5 h-5 text-amber-200" : "w-5 h-5 text-amber-600"}
         viewBox="0 0 24 24"
@@ -123,21 +133,9 @@ export function WarningIcon({ selected }: { selected: boolean }) {
   );
 }
 
-// トグルアイコン（ピン・★共通）の色を、状態ではなく行の背景に応じて決める
-// （形状（輪郭／塗りつぶし）で状態を表現するため、色自体は状態を区別する役割を
-// 持たない。色相ではなく行の文字色への追従のみを行う。REQUIREMENTS.md
-// 「アイコンによる状態表現の共通規則」節を参照）。
-// - 非選択 → gray-600（白背景に対して十分な濃さのニュートラルグレー）
-// - 選択中 → 白（青ハイライト背景に対して視認できる濃さ）
-// 非選択・未登録の組み合わせは呼び出し側がそもそもこのボタンを描画しない
-// （PinToggleButton/FavoriteToggleButton 自体は「表示するときにどう塗るか」
-// だけを持つ）。詳細・判断根拠は CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照。
-function toggleIconColorClass(selected: boolean): string {
-  return selected ? "text-white" : "text-gray-600";
-}
-
 // ピンのクリックによる ON/OFF トグルボタン。行全体の onClick（起動）に伝播させない
-// よう stopPropagation する。
+// よう stopPropagation する（実際の stopPropagation・箱のサイズ・ホバー円・
+// Tooltip 表示は共通ラッパー IconSlot（IconSlot.tsx）に委譲している）。
 //
 // 行の状態は「非選択」「選択中」の2つのみで扱う。本アプリはマウスホバーで選択行
 // そのものが移動する（onMouseEnter が onSelect を呼ぶ）ため、「ホバー中」と
@@ -145,16 +143,10 @@ function toggleIconColorClass(selected: boolean): string {
 // 選択中の行へ opacity-60 のホバー用スタイルが誤って波及した不具合があったため、
 // この2状態モデルに統一して構造的に再発しないようにしている）。
 //
-// アイコン単体へのマウスホバーには、行の選択とは独立した反応として、背景に淡い
-// 円形のハイライトを表示する（クリック可能であることを示すための、アイコン専用の
-// ホバー効果。行の選択状態そのものは変えない）。白背景の行では黒6%、青背景の行
-// （selected）では白20%の半透明を使う。
-//
-// ツールチップ（「ピン止めに追加」/「ピン止めから削除」）は title 属性ではなく
-// 共通コンポーネント Tooltip を使う（title は表示遅延・表示位置を制御できない
-// ため。詳細は Tooltip.tsx・CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
-// レイアウトに関わるクラス（ml-2 flex-shrink-0）は Tooltip のラッパー側に持たせ、
-// button 自身は見た目（丸み・パディング・色）のみを持つ。
+// 呼び出し元は、隣接する他の行内アイコン（★・件数バッジ等）とあわせて
+// `gap-2` のflexコンテナで包む前提のため、このコンポーネント自身は個別の
+// マージンを持たない（詳細は docs/design/favorites-ui-iconography.md
+// 「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。
 export function PinToggleButton({
   active,
   onToggle,
@@ -165,30 +157,22 @@ export function PinToggleButton({
   selected: boolean;
 }) {
   return (
-    <Tooltip
-      label={active ? "ピン止めから削除" : "ピン止めに追加"}
-      className="ml-2 flex-shrink-0"
+    <IconSlot
+      interactive
+      selected={selected}
+      tooltip={active ? "ピン止めから削除" : "ピン止めに追加"}
+      onClick={onToggle}
+      measureId="pin"
     >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-        className={`rounded-full p-1 transition-colors ${
-          selected ? "hover:bg-white/20" : "hover:bg-black/[6%]"
-        } ${toggleIconColorClass(selected)}`}
-      >
-        <PinIcon filled={active} />
-      </button>
-    </Tooltip>
+      <PinIcon filled={active} />
+    </IconSlot>
   );
 }
 
 // お気に入りのクリックによる登録／解除トグルボタン。PinToggleButton と同じ構造
-// （stopPropagation・2状態モデル・アイコン単体ホバー・Tooltip）を踏襲する。
-// ツールチップ文言はご指定の「お気に入りに追加」/「お気に入りから削除」を
-// そのまま使う。
+// （stopPropagation・2状態モデル・アイコン単体ホバー・Tooltip・IconSlotへの委譲）
+// を踏襲する。ツールチップ文言はご指定の「お気に入りに追加」/「お気に入りから
+// 削除」をそのまま使う。
 export function FavoriteToggleButton({
   active,
   onToggle,
@@ -199,22 +183,14 @@ export function FavoriteToggleButton({
   selected: boolean;
 }) {
   return (
-    <Tooltip
-      label={active ? "お気に入りから削除" : "お気に入りに追加"}
-      className="ml-2 flex-shrink-0"
+    <IconSlot
+      interactive
+      selected={selected}
+      tooltip={active ? "お気に入りから削除" : "お気に入りに追加"}
+      onClick={onToggle}
+      measureId="star"
     >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-        className={`rounded-full p-1 transition-colors ${
-          selected ? "hover:bg-white/20" : "hover:bg-black/[6%]"
-        } ${toggleIconColorClass(selected)}`}
-      >
-        <FavoriteIcon filled={active} />
-      </button>
-    </Tooltip>
+      <FavoriteIcon filled={active} />
+    </IconSlot>
   );
 }

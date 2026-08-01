@@ -3,6 +3,7 @@ import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { isDescendantOfFolder } from "../hooks/useSearch";
 import { Tooltip } from "./Tooltip";
 import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
+import { IconSlot } from "./IconSlot";
 import {
   FolderChevron,
   FileIcon,
@@ -20,24 +21,30 @@ import {
 } from "../types";
 
 // window レベルの keydown リスナー（App.tsx）が、この編集ビューの間だけ有効な
-// ショートカット（F2・Delete・Ctrl+Shift+N・Alt+↑↓・Ctrl+Shift+←→）を持つため、
-// これらのインライン入力欄（RenameInput・CreateFolderInlineRow）は入力中に限り
-// これらのキーの伝播だけを止める（入力欄自身の通常のテキスト編集を妨げない
-// ため）。
-// 実装時の注意点：再親化のキー割当は軸4hでAlt+←/→からCtrl+Shift+←/→へ変更した
-// （Alt+←/→がWebView2既定の「戻る/進む」ナビゲーションアクセラレーターとして
-// 処理され、preventDefaultでは抑止できず無反応になる不具合があったため）。
+// ショートカット（F2・Delete・Ctrl+Shift+N・Ctrl+Shift+矢印キー4方向）を持つ
+// ため、これらのインライン入力欄（RenameInput・CreateFolderInlineRow）は
+// 入力中に限りこれらのキーの伝播だけを止める（入力欄自身の通常のテキスト
+// 編集を妨げないため）。
+// 実装時の注意点：並び替え・再親化のキー割当は軸4jで最終的に
+// Ctrl+Shift+↑↓←→へ統一した（当初のAlt+↑↓←→のうち、Alt+←/→はWebView2既定の
+// 「戻る/進む」ナビゲーションアクセラレーターとして処理され、preventDefaultでは
+// 抑止できず無反応になる不具合があったため軸4hでCtrl+Shift+←/→へ変更し、
+// 軸4jで並び替え側のAlt+↑/↓も表記を揃える形でCtrl+Shift+↑/↓へ統一した）。
 // Ctrl+Shift+←/→はブラウザ標準のテキスト入力欄で「単語単位の選択」に使われる
 // ため、ここで stopPropagation しないと入力欄内でのテキスト選択と window
-// リスナーの再親化処理が同時に誤発火する。
+// リスナーの再親化処理が同時に誤発火する（↑↓はテキスト入力欄で標準の意味を
+// 持たないが、入力中に window リスナー側の並び替えが誤発火しないよう同様に
+// 止める。矢印キー自体は修飾キーの有無に関わらず常に伝播を止めているため、
+// 個別に判定する必要はない）。
 function shouldStopEditInputKeyPropagation(e: React.KeyboardEvent): boolean {
-  if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "F2" || e.key === "Delete") {
-    return true;
-  }
-  if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-    return true;
-  }
-  if (e.ctrlKey && e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+  if (
+    e.key === "ArrowUp" ||
+    e.key === "ArrowDown" ||
+    e.key === "ArrowLeft" ||
+    e.key === "ArrowRight" ||
+    e.key === "F2" ||
+    e.key === "Delete"
+  ) {
     return true;
   }
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
@@ -107,8 +114,7 @@ function RenameInput({
             // ツリーの選択移動・別の行のリネーム開始・削除・フォルダ作成・
             // 並び替え/再親化（App.tsx の window レベルリスナー）に奪われない
             // よう、入力中はこれらのキーの伝播だけ止める（入力欄内で特に意味を
-            // 持たないキーのため preventDefault はしない。Alt+←/→ は入力欄自身の
-            // テキストカーソル移動として機能させる）。
+            // 持たないキーのため preventDefault はしない）。
             e.stopPropagation();
           }
         }}
@@ -222,19 +228,46 @@ function CreateFolderInlineRow({
 // 視覚的な目印（掴める場所を示す）の役割のみを持つ（ピン止めブロックと同じ設計）。
 // 仮想行「Top」はドラッグ元にならないため、呼び出し元（Top行の描画）では
 // このコンポーネント自体を使わず、同じ横幅の空スペースを描く。
-function DragHandle({ selected }: { selected: boolean }) {
+//
+// 軸4j：絞り込み中（filtering）はD&Dによる並び替え・再親化自体が無効化される
+// ため、「操作できないことが見た目からも分かるように」ハンドルを視覚的に消す。
+// ただし `display: none` 等でレイアウトから除去すると、インデント・間隔が
+// 詰まって絞り込み解除時にレイアウトが動いてしまうため、`opacity-0` で見た目
+// だけを消す（幅・余白は確保したまま）。ツールチップも、見えない要素に対して
+// 「ドラッグして並び替え」という誤った操作案内が出ないよう、絞り込み中は
+// Tooltip自体を使わないプレーンな span に切り替える。
+function DragHandle({
+  selected,
+  filtering,
+}: {
+  selected: boolean;
+  filtering: boolean;
+}) {
+  const glyph = (
+    <span
+      className={`cursor-grab select-none font-bold ${
+        filtering ? "opacity-0" : ""
+      } ${selected ? "text-white" : "text-gray-400"}`}
+    >
+      ⋮⋮
+    </span>
+  );
+  if (filtering) {
+    return (
+      <span
+        className="w-4 mr-1.5 flex-shrink-0 flex justify-center"
+        aria-hidden="true"
+      >
+        {glyph}
+      </span>
+    );
+  }
   return (
     <Tooltip
       label="ドラッグして並び替え"
       className="w-4 mr-1.5 flex-shrink-0 justify-center"
     >
-      <span
-        className={`cursor-grab select-none font-bold ${
-          selected ? "text-white" : "text-gray-400"
-        }`}
-      >
-        ⋮⋮
-      </span>
+      {glyph}
     </Tooltip>
   );
 }
@@ -366,9 +399,10 @@ function computeMoveTarget(
 // 確認なしの即時★解除。Top選択中は何もしない（App.tsx の window レベルリスナー側で
 // 判定する）。
 //
-// 並び替え・再親化（Alt+↑↓←→、軸4f）：App.tsx の window レベルリスナーが
-// move_favorite_node_to を直接呼ぶ（このコンポーネントの D&D ロジックとは別経路。
-// 実際の移動計算はキー操作専用に App.tsx 側で行う）。
+// 並び替え・再親化（Ctrl+Shift+↑↓←→、軸4f・軸4jでキー割当を最終確定）：
+// App.tsx の window レベルリスナーが move_favorite_node_to を直接呼ぶ
+// （このコンポーネントの D&D ロジックとは別経路。実際の移動計算はキー操作
+// 専用に App.tsx 側で行う）。
 //
 // D&D（4e）：HTML5 Drag and Drop API を使う（tauri.conf.json の dragDropEnabled は
 // false のまま。既存のピン止めブロック並び替え（ResultList.tsx）と同じ技術選択）。
@@ -530,29 +564,23 @@ export function FavoriteEditTree({
 
   // フォルダ作成アイコン。選択中の行（フォルダ・アイテム・Topのいずれも）にのみ
   // 表示する（ピン・★アイコンの「選択時のみ表示」と同じ考え方）。サイズ・
-  // ホバー表現は ToggleIcons.tsx の PinToggleButton/FavoriteToggleButton と
-  // 同じ規約に統一する（軸4g）：アイコン本体は w-4 h-4、ホバー時のみ
-  // rounded-full の淡い円形背景（非選択行は hover:bg-black/[6%]、選択中の
-  // 青ハイライト行は hover:bg-white/20）、文字色は選択中が白・非選択が
-  // gray-600。この関数は選択中の行からしか呼ばれないため実質的に selected は
-  // 常に true だが、将来の呼び出し元の変化に備えて規約通りの分岐を持たせる。
+  // ホバー表現・stopPropagationは共通ラッパー IconSlot に委譲し、他の行内
+  // アイコン（★・件数バッジ・削除アイコン）と同一の「箱」を持つ。この関数は
+  // 選択中の行からしか呼ばれないため実質的に selected は常に true だが、
+  // 将来の呼び出し元の変化に備えて規約通りの分岐を持たせる。
+  // アイコン間の間隔は個別の `ml-2` ではなく、呼び出し元の行が持つ `gap-2` の
+  // flexコンテナに委ねる（詳細は docs/design/favorites-ui-iconography.md
+  // 「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。
   const renderCreateFolderIcon = (selected: boolean) => (
-    <Tooltip label="ここにフォルダを作成" className="flex-shrink-0">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onStartCreateFolder();
-        }}
-        className={`rounded-full p-1 transition-colors ${
-          selected
-            ? "hover:bg-white/20 text-white"
-            : "hover:bg-black/[6%] text-gray-600"
-        }`}
-      >
-        <CreateFolderIcon className="w-4 h-4" />
-      </button>
-    </Tooltip>
+    <IconSlot
+      interactive
+      selected={selected}
+      tooltip="ここにフォルダを作成"
+      onClick={onStartCreateFolder}
+      measureId="create-folder"
+    >
+      <CreateFolderIcon className="w-4 h-4" />
+    </IconSlot>
   );
 
   const isEmpty = tree.every((r) => r.kind === "top");
@@ -593,7 +621,7 @@ export function FavoriteEditTree({
                   role="button"
                   data-index={index}
                   style={{ paddingLeft: `${INDENT_BASE_REM}rem` }}
-                  className={`w-full h-10 flex items-center pr-2 text-left transition-colors ${
+                  className={`w-full h-10 flex items-center pr-4 text-left transition-colors ${
                     isSelected
                       ? "bg-blue-500 text-white"
                       : "text-gray-500 hover:bg-gray-50"
@@ -621,7 +649,13 @@ export function FavoriteEditTree({
                   <span className="text-xs font-medium truncate flex-1">
                     お気に入り
                   </span>
-                  {isSelected && renderCreateFolderIcon(isSelected)}
+                  {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
+                      `gap-2` に一本化する（詳細は
+                      docs/design/favorites-ui-iconography.md
+                      「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
+                  <div className="flex items-center gap-2 ml-2">
+                    {isSelected && renderCreateFolderIcon(isSelected)}
+                  </div>
                 </div>
                 {isCreatingHere && (
                   <CreateFolderInlineRow
@@ -644,12 +678,20 @@ export function FavoriteEditTree({
           if (row.kind === "folder") {
             return (
               <Fragment key={row.key}>
+                {/* 軸4m：行右端の余白（pr-4）は、アイテム行・Top行と統一する。
+                    以前はフォルダ行のみ pr-2（8px）で、アイテム行・Top行は
+                    pr-4（16px）だったため、行末アイコン（削除アイコンが最後に
+                    来るフォルダ行 vs ★アイコンが最後に来るアイテム行）で
+                    実測のright-gapが8px/16pxとずれて見える原因になっていた
+                    （アイコン自身の個別マージンではなく、行のpadding-right
+                    自体の不一致が原因。ResultList.tsx・FavoriteListPanel.tsx
+                    も含め、全ての行はpr-4に統一する）。 */}
                 <div
                   role="button"
                   data-index={index}
                   draggable={!isRenaming && !filtering}
                   style={indentStyle}
-                  className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+                  className={`w-full flex items-center py-2 pr-4 text-left transition-colors ${
                     isSelected
                       ? "bg-blue-500 text-white"
                       : "text-gray-500 hover:bg-gray-50"
@@ -672,7 +714,7 @@ export function FavoriteEditTree({
                     setDropTarget(null);
                   }}
                 >
-                  <DragHandle selected={isSelected} />
+                  <DragHandle selected={isSelected} filtering={filtering} />
                   <FolderChevron collapsed={row.collapsed} />
                   <svg
                     className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
@@ -693,32 +735,55 @@ export function FavoriteEditTree({
                       {row.node.name}
                     </span>
                   )}
-                  <span
-                    className={`ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] ${
-                      isSelected
-                        ? "bg-white/20 text-white"
-                        : "bg-gray-100 text-gray-500"
-                    }`}
-                  >
-                    {row.directChildCount}
-                  </span>
-                  {/* フォルダ作成・削除アイコン。選択中の行にのみ表示する（ピン・★
-                      アイコンの「選択時のみ表示」と同じ考え方）。行全体のクリック
-                      （折りたたみ切替）に伝播させないよう stopPropagation する。 */}
-                  {isSelected && !isRenaming && renderCreateFolderIcon(isSelected)}
-                  {isSelected && !isRenaming && (
-                    <Tooltip label="このフォルダを削除" className="flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRequestDeleteFolder(row.node.id, row.node.name);
-                        }}
-                        className={`ml-1 rounded-full p-1 transition-colors ${
+                  {/* 行末アイコン群（件数バッジ・フォルダ作成・削除）はまとめて
+                      1つのflexコンテナに包み、間隔を個々の `ml-2` ではなく
+                      `gap-2` に一本化する。件数バッジは表示専用（クリック不可）
+                      のため IconSlot に `interactive={false}` を渡し、ホバー円・
+                      Tooltipは持たせないが、他のアイコンと同じ「箱」サイズ
+                      （p-1込み）にすることで隣接要素との間隔を統一する（詳細は
+                      docs/design/favorites-ui-iconography.md「行内アイコンの
+                      共通ラッパー化（IconSlot）」節を参照）。 */}
+                  <div className="flex items-center gap-2 ml-2">
+                    <IconSlot
+                      interactive={false}
+                      selected={isSelected}
+                      measureId="count-badge"
+                    >
+                      {/* 軸4m：円のサイズを他のIconSlot系アイコン（★・ピン・
+                          削除・フォルダ作成、いずれも実測circle=24）と統一する
+                          ため、`w-4 h-4`（16px）ではなく `absolute inset-0` で
+                          箱いっぱい（24px）に広げる。フォントサイズも
+                          circle=16→24の拡大に合わせて9px→11pxに調整した。
+                          軸4n：背景色だけだと輪郭がぼやけて見えるとの指摘を
+                          受け、フッターのキー操作チップ（KeyHint.tsx）と同じ
+                          「淡い背景＋薄いボーダー」方式で境界を明確にする。
+                          選択中の行は青背景の上に白系の縁取り
+                          （border-white/30）、非選択行はKeyHintと同じ
+                          border-black/10を使う（背景色自体は変更しない）。 */}
+                      <span
+                        className={`absolute inset-0 flex items-center justify-center rounded-full border text-[11px] ${
                           isSelected
-                            ? "hover:bg-white/20 text-white"
-                            : "hover:bg-black/[6%] text-gray-600"
+                            ? "border-white/30 bg-white/20 text-white"
+                            : "border-black/10 bg-gray-100 text-gray-500"
                         }`}
+                      >
+                        {row.directChildCount}
+                      </span>
+                    </IconSlot>
+                    {/* フォルダ作成・削除アイコン。選択中の行にのみ表示する
+                        （ピン・★アイコンの「選択時のみ表示」と同じ考え方）。
+                        行全体のクリック（折りたたみ切替）に伝播させないよう
+                        stopPropagation する（IconSlot に委譲）。 */}
+                    {isSelected && !isRenaming && renderCreateFolderIcon(isSelected)}
+                    {isSelected && !isRenaming && (
+                      <IconSlot
+                        interactive
+                        selected={isSelected}
+                        tooltip="このフォルダを削除"
+                        onClick={() =>
+                          onRequestDeleteFolder(row.node.id, row.node.name)
+                        }
+                        measureId="delete"
                       >
                         <svg
                           className="w-4 h-4"
@@ -733,9 +798,9 @@ export function FavoriteEditTree({
                             d={TRASH_ICON_PATH}
                           />
                         </svg>
-                      </button>
-                    </Tooltip>
-                  )}
+                      </IconSlot>
+                    )}
+                  </div>
                 </div>
                 {isCreatingHere && (
                   <CreateFolderInlineRow
@@ -779,7 +844,7 @@ export function FavoriteEditTree({
                   setDropTarget(null);
                 }}
               >
-                <DragHandle selected={isSelected} />
+                <DragHandle selected={isSelected} filtering={filtering} />
                 <div
                   className={`flex items-center min-w-0 flex-1 ${
                     !row.exists ? "opacity-50" : ""
@@ -817,15 +882,21 @@ export function FavoriteEditTree({
                     </div>
                   )}
                 </div>
-                {!row.exists && <WarningIcon selected={isSelected} />}
-                {isSelected && !isRenaming && renderCreateFolderIcon(isSelected)}
-                {isSelected && !isRenaming && (
-                  <FavoriteToggleButton
-                    active
-                    selected={isSelected}
-                    onToggle={() => onToggleFavorite(item)}
-                  />
-                )}
+                {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
+                    `gap-2` に一本化する（詳細は
+                    docs/design/favorites-ui-iconography.md「行内アイコンの
+                    共通ラッパー化（IconSlot）」節を参照）。 */}
+                <div className="flex items-center gap-2 ml-2">
+                  {!row.exists && <WarningIcon selected={isSelected} />}
+                  {isSelected && !isRenaming && renderCreateFolderIcon(isSelected)}
+                  {isSelected && !isRenaming && (
+                    <FavoriteToggleButton
+                      active
+                      selected={isSelected}
+                      onToggle={() => onToggleFavorite(item)}
+                    />
+                  )}
+                </div>
               </div>
               {isCreatingHere && (
                 <CreateFolderInlineRow

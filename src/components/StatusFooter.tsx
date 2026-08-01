@@ -1,6 +1,12 @@
 import type { PathPasteWizardStep } from "../hooks/useSearch";
 import type { ResultRow } from "../types";
+import { FooterBar } from "./FooterBar";
+import { KeyHint } from "./KeyHint";
 
+// 軸4k：キー操作ヒントを KeyHint（チップ表示）＋ FooterBar（右端バージョン番号）
+// の共通部品に統一した。以前はモードごとに文言を1本の文字列として組み立てて
+// いたが、KeyHint は「キー表記」「効果」を別々の prop として受け取るため、
+// Enter の効果文言（モードにより変化する部分）だけを算出する変数に分離した。
 export function StatusFooter({
   pendingCommand,
   webSearchVisible,
@@ -10,6 +16,7 @@ export function StatusFooter({
   prefixCommandMode,
   selectedRowKind,
   favoriteSelectedKind,
+  version,
 }: {
   pendingCommand: boolean;
   webSearchVisible: boolean;
@@ -27,51 +34,58 @@ export function StatusFooter({
   // 表示条件に使う。軸1でフォルダ見出し行も選択対象になったため、真偽値から
   // 種別を表す型へ拡張した）。/favorite モード以外では null。
   favoriteSelectedKind: "folder" | "item" | null;
+  version: string;
 }) {
+  if (pendingCommand) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="Enter" label="実行" />
+        <KeyHint keys="Esc" label="キャンセル" />
+      </FooterBar>
+    );
+  }
+
+  if (pathPasteWizardStep) {
+    return (
+      <FooterBar version={version}>
+        {pathPasteWizardStep === "folderSelect" && (
+          <KeyHint keys="↑↓" label="選択" />
+        )}
+        <KeyHint
+          keys="Enter"
+          label={pathPasteWizardStep === "folderSelect" ? "次へ" : "保存"}
+        />
+        <KeyHint keys="Esc" label="戻る" />
+      </FooterBar>
+    );
+  }
+
+  const enterLabel = webSearchVisible && isWebSearchSelected
+    ? "ブラウザで開く"
+    : clipboardMode
+      ? "クリップボードにセット"
+      : prefixCommandMode
+        ? "実行"
+        : favoriteSelectedKind === "folder"
+          ? "開閉"
+          : selectedRowKind === "pathPasteShortcut" ||
+              selectedRowKind === "pathPasteAddFolder"
+            ? "選択"
+            : selectedRowKind === "calc" || selectedRowKind === "urlConvert"
+              ? "コピー"
+              : "起動";
+
   return (
-    <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400">
-      {pendingCommand ? (
-        <>
-          <span>Enter 実行</span>
-          <span>Esc キャンセル</span>
-        </>
-      ) : pathPasteWizardStep ? (
-        <>
-          {pathPasteWizardStep === "folderSelect" && <span>↑↓ 選択</span>}
-          <span>
-            {pathPasteWizardStep === "folderSelect" ? "Enter 次へ" : "Enter 保存"}
-          </span>
-          <span>Esc 戻る</span>
-        </>
-      ) : (
-        <>
-          <span>↑↓ 選択</span>
-          <span>
-            {webSearchVisible && isWebSearchSelected
-              ? "Enter ブラウザで開く"
-              : clipboardMode
-                ? "Enter クリップボードにセット"
-                : prefixCommandMode
-                  ? "Enter 実行"
-                  : favoriteSelectedKind === "folder"
-                    ? "Enter 開閉"
-                    : selectedRowKind === "pathPasteShortcut" ||
-                        selectedRowKind === "pathPasteAddFolder"
-                      ? "Enter 選択"
-                      : selectedRowKind === "calc" ||
-                          selectedRowKind === "urlConvert"
-                        ? "Enter コピー"
-                        : "Enter 起動"}
-          </span>
-          {(selectedRowKind === "pinned" ||
-            selectedRowKind === "file" ||
-            favoriteSelectedKind === "item") && (
-            <span>Shift+Enter フォルダを開く</span>
-          )}
-          <span>Ctrl+D クリア</span>
-          <span>Esc 閉じる</span>
-        </>
+    <FooterBar version={version}>
+      <KeyHint keys="↑↓" label="選択" />
+      <KeyHint keys="Enter" label={enterLabel} />
+      {(selectedRowKind === "pinned" ||
+        selectedRowKind === "file" ||
+        favoriteSelectedKind === "item") && (
+        <KeyHint keys="Shift+Enter" label="フォルダを開く" />
       )}
-    </div>
+      <KeyHint keys="Ctrl+D" label="クリア" />
+      <KeyHint keys="Esc" label="閉じる" />
+    </FooterBar>
   );
 }

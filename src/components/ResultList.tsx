@@ -254,31 +254,37 @@ export function ResultList({
                         </div>
                       </div>
                     </div>
-                    {!exists && <WarningIcon selected={isSelected} />}
-                    {/* ピン止めブロックは全行が既にピン止め済みのため、非選択時に
-                        常時表示すると状態を区別する情報を持たない単なる装飾になる
-                        （ブロックであること自体はドラッグハンドルが示す）。選択中
-                        （ピン止め解除操作が可能）のときのみ表示する。実体が無い行
-                        でも、選択中であれば手動解除できるようこの条件のみで判断する。 */}
-                    {isSelected && (
-                      <PinToggleButton
-                        active
-                        selected={isSelected}
-                        onToggle={() => onTogglePin(item)}
-                      />
-                    )}
-                    {/* お気に入りはピン止めと異なりブロック内の全行が登録済みとは
-                        限らないため（独立した機能）、通常のファイル検索結果行と
-                        同じ表示条件（登録済み、または選択中）で判断する。
-                        favoriteIconVisible（favoriteEnabled）が false の場合は
-                        ピンアイコンの pinIconVisible と同様、表示自体を行わない。 */}
-                    {favoriteIconVisible && (favorited || isSelected) && (
-                      <FavoriteToggleButton
-                        active={favorited}
-                        selected={isSelected}
-                        onToggle={() => onToggleFavorite(item)}
-                      />
-                    )}
+                    {/* 行末アイコン群はまとめて1つのflexコンテナに包み、アイコン間の
+                        間隔を個々の `ml-2` ではなくこの `gap-2` に一本化する
+                        （詳細は docs/design/favorites-ui-iconography.md
+                        「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
+                    <div className="flex items-center gap-2 ml-2">
+                      {!exists && <WarningIcon selected={isSelected} />}
+                      {/* ピン止めブロックは全行が既にピン止め済みのため、非選択時に
+                          常時表示すると状態を区別する情報を持たない単なる装飾になる
+                          （ブロックであること自体はドラッグハンドルが示す）。選択中
+                          （ピン止め解除操作が可能）のときのみ表示する。実体が無い行
+                          でも、選択中であれば手動解除できるようこの条件のみで判断する。 */}
+                      {isSelected && (
+                        <PinToggleButton
+                          active
+                          selected={isSelected}
+                          onToggle={() => onTogglePin(item)}
+                        />
+                      )}
+                      {/* お気に入りはピン止めと異なりブロック内の全行が登録済みとは
+                          限らないため（独立した機能）、通常のファイル検索結果行と
+                          同じ表示条件（登録済み、または選択中）で判断する。
+                          favoriteIconVisible（favoriteEnabled）が false の場合は
+                          ピンアイコンの pinIconVisible と同様、表示自体を行わない。 */}
+                      {favoriteIconVisible && (favorited || isSelected) && (
+                        <FavoriteToggleButton
+                          active={favorited}
+                          selected={isSelected}
+                          onToggle={() => onToggleFavorite(item)}
+                        />
+                      )}
+                    </div>
                   </div>
                 );
               }
@@ -506,26 +512,32 @@ export function ResultList({
                         {item.path}
                       </div>
                     </div>
-                    {/* 未ピン止め・非選択の組み合わせではアイコン自体を表示しない
-                        （行が選択されて初めて「ピン止めする」候補として現れる）。 */}
-                    {pinIconVisible && (pinned || isSelected) && (
-                      <PinToggleButton
-                        active={pinned}
-                        selected={isSelected}
-                        onToggle={() => onTogglePin(item)}
-                      />
-                    )}
-                    {/* 未登録・非選択の組み合わせではアイコン自体を表示しない
-                        （ピンアイコンと同じ表示条件）。favoriteIconVisible
-                        （favoriteEnabled）が false の場合は pinIconVisible と
-                        同様、表示自体を行わない。 */}
-                    {favoriteIconVisible && (favorited || isSelected) && (
-                      <FavoriteToggleButton
-                        active={favorited}
-                        selected={isSelected}
-                        onToggle={() => onToggleFavorite(item)}
-                      />
-                    )}
+                    {/* 行末アイコン群はまとめて1つのflexコンテナに包み、アイコン間の
+                        間隔を個々の `ml-2` ではなくこの `gap-2` に一本化する
+                        （詳細は docs/design/favorites-ui-iconography.md
+                        「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
+                    <div className="flex items-center gap-2 ml-2">
+                      {/* 未ピン止め・非選択の組み合わせではアイコン自体を表示しない
+                          （行が選択されて初めて「ピン止めする」候補として現れる）。 */}
+                      {pinIconVisible && (pinned || isSelected) && (
+                        <PinToggleButton
+                          active={pinned}
+                          selected={isSelected}
+                          onToggle={() => onTogglePin(item)}
+                        />
+                      )}
+                      {/* 未登録・非選択の組み合わせではアイコン自体を表示しない
+                          （ピンアイコンと同じ表示条件）。favoriteIconVisible
+                          （favoriteEnabled）が false の場合は pinIconVisible と
+                          同様、表示自体を行わない。 */}
+                      {favoriteIconVisible && (favorited || isSelected) && (
+                        <FavoriteToggleButton
+                          active={favorited}
+                          selected={isSelected}
+                          onToggle={() => onToggleFavorite(item)}
+                        />
+                      )}
+                    </div>
                   </div>
                 );
               }

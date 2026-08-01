@@ -1,10 +1,13 @@
+import { FooterBar } from "./FooterBar";
+import { KeyHint } from "./KeyHint";
+
 // お気に入り編集ビューのキー操作ヒント。/favorite ブラウジング側の
-// StatusFooter.tsx と同じ視覚スタイル（`<span>` チップの並び）を踏襲するが、
-// 編集ビュー固有の操作（F2 リネーム・Delete 削除/★解除・Alt+矢印による並び替え・
-// 再親化等）を持つため別コンポーネントとして独立させる（StatusFooter.tsx は
-// ブラウジング/クリップボード/プレフィックスコマンド等の複数モードを1つに束ねた
-// 汎用フッターであり、編集ビュー用の分岐をそこへ増設すると条件分岐がさらに
-// 複雑化するため）。
+// StatusFooter.tsx と同じ視覚スタイル（KeyHint チップの並び。共通コンポーネント
+// を軸4kで両者に切り出した）を踏襲するが、編集ビュー固有の操作（F2 リネーム・
+// Delete 削除/★解除・Ctrl+Shift+矢印による並び替え・再親化等）を持つため別
+// コンポーネントとして独立させる（StatusFooter.tsx はブラウジング/クリップ
+// ボード/プレフィックスコマンド等の複数モードを1つに束ねた汎用フッターであり、
+// 編集ビュー用の分岐をそこへ増設すると条件分岐がさらに複雑化するため）。
 //
 // 「フッター表示規約（全画面共通）」（REQUIREMENTS.md「キー操作」節）に従い、
 // ここにはキーボード操作のみを表示する。ドラッグ&ドロップ・アイコンクリック等の
@@ -15,45 +18,54 @@
 // - Top選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成（Topはリネーム・削除・★解除・
 //   並び替え・再親化のいずれの対象にもならないため、それらは表示しない）
 // - フォルダ選択中：↑↓ 選択／Enter 開閉／Ctrl+Shift+N フォルダ作成／Delete 削除／
-//   F2 リネーム／Alt+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
+//   F2 リネーム／Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
 // - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／Delete ★解除／
-//   F2 リネーム／Alt+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
+//   F2 リネーム／Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
 // Esc 戻る はどの状態でも共通（ヘッダーの「戻る」ボタンと同じ操作）。
 //
-// 軸4h：再親化のキー割当はAlt+←/→からCtrl+Shift+←/→へ変更した（Alt+←/→が
-// WebView2既定の「戻る/進む」ナビゲーションアクセラレーターとして処理され、
-// 無反応になる不具合があったため）。
+// 軸4j：並び替え・再親化のキー割当は最終的に Ctrl+Shift+↑↓←→ に統一した
+// （上下＝並び替え、左右＝再親化）。当初のAlt+↑↓←→のうち、Alt+←/→はWebView2
+// 既定の「戻る/進む」ナビゲーションアクセラレーターとして処理され無反応になる
+// 不具合があり軸4hでCtrl+Shift+←/→へ変更、軸4jで並び替え側のAlt+↑/↓も表記を
+// 揃えてCtrl+Shift+↑/↓へ変更した。
 //
-// 軸4g：絞り込み中（filtering）は、フォルダ開閉（Enter 開閉）・並び替え
-// （Alt+↑↓）・再親化（Ctrl+Shift+←→）が無効化される（REQUIREMENTS.md
+// 絞り込み中（filtering）は、フォルダ開閉（Enter 開閉）・並び替え
+// （Ctrl+Shift+↑↓）・再親化（Ctrl+Shift+←→）が無効化される（REQUIREMENTS.md
 // 「お気に入り編集ビュー」節を参照）ため、これら3つのヒントは絞り込み中のみ
 // 非表示にする（「今何ができるか」を示すフッターの原則に従う）。リネーム・
 // 削除・★解除・フォルダ作成は絞り込み中でも有効なままのため、ヒントも表示し
 // 続ける。
+//
+// 軸4k：右端のバージョン番号表示・キー操作チップの共通スタイルは
+// FooterBar.tsx/KeyHint.tsx に切り出し、全画面で共有する。
 export function FavoriteEditFooter({
   selectedKind,
   filtering,
+  version,
 }: {
   selectedKind: "top" | "folder" | "item" | null;
   filtering: boolean;
+  version: string;
 }) {
   return (
-    <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
-      <span>↑↓ 選択</span>
-      {selectedKind === "folder" && !filtering && <span>Enter 開閉</span>}
-      <span>Ctrl+Shift+N フォルダ作成</span>
-      {selectedKind === "folder" && <span>Delete 削除</span>}
-      {selectedKind === "item" && <span>Delete ★解除</span>}
+    <FooterBar version={version}>
+      <KeyHint keys="↑↓" label="選択" />
+      {selectedKind === "folder" && !filtering && (
+        <KeyHint keys="Enter" label="開閉" />
+      )}
+      <KeyHint keys="Ctrl+Shift+N" label="フォルダ作成" />
+      {selectedKind === "folder" && <KeyHint keys="Delete" label="削除" />}
+      {selectedKind === "item" && <KeyHint keys="Delete" label="★解除" />}
       {(selectedKind === "folder" || selectedKind === "item") && (
-        <span>F2 リネーム</span>
+        <KeyHint keys="F2" label="リネーム" />
       )}
       {(selectedKind === "folder" || selectedKind === "item") && !filtering && (
         <>
-          <span>Alt+↑↓ 並び替え</span>
-          <span>Ctrl+Shift+←→ 再親化</span>
+          <KeyHint keys="Ctrl+Shift+↑↓" label="並び替え" />
+          <KeyHint keys="Ctrl+Shift+←→" label="再親化" />
         </>
       )}
-      <span>Esc 戻る</span>
-    </div>
+      <KeyHint keys="Esc" label="戻る" />
+    </FooterBar>
   );
 }

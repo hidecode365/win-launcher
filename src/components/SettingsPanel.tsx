@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { getVersion } from "@tauri-apps/api/app";
+import { useState } from "react";
 import {
   AppSettings,
   FolderDetailSettings,
@@ -19,6 +18,8 @@ import { RecentFilesSettings } from "./RecentFilesSettings";
 import { OcrSettings } from "./OcrSettings";
 import { AboutSettings } from "./AboutSettings";
 import { Tooltip } from "./Tooltip";
+import { FooterBar } from "./FooterBar";
+import { KeyHint } from "./KeyHint";
 
 type SettingsTab =
   | "general"
@@ -79,6 +80,7 @@ export function SettingsPanel({
   onOpenFolder,
   onSaveFolderSettings,
   onClose,
+  version,
 }: {
   appSettings: AppSettings;
   onSaveHotkey: (accelerator: string) => Promise<string | null>;
@@ -119,13 +121,12 @@ export function SettingsPanel({
     detail: FolderDetailSettings
   ) => Promise<string | null>;
   onClose: () => void;
+  // 軸4k：全画面共通のフッター右端バージョン番号表示に統一するため、
+  // App.tsx側で一度だけ取得した値をpropsとして受け取る（以前はこのコンポーネント
+  // 自身がgetVersion()を呼んでいた）。
+  version: string;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
-  const [version, setVersion] = useState<string>("");
-
-  useEffect(() => {
-    getVersion().then((v) => setVersion(v));
-  }, []);
 
   return (
     <div className="flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
@@ -280,11 +281,9 @@ export function SettingsPanel({
         </div>
       </div>
 
-      {version && (
-        <div className="px-4 py-2 border-t border-gray-200/60 text-right">
-          <span className="text-xs text-gray-400">v{version}</span>
-        </div>
-      )}
+      <FooterBar version={version}>
+        <KeyHint keys="Esc" label="閉じる" />
+      </FooterBar>
     </div>
   );
 }

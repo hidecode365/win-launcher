@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
 import { useSettings } from "./hooks/useSettings";
@@ -21,6 +22,7 @@ import { FavoriteListPanel } from "./components/FavoriteListPanel";
 import { FavoriteFolderDeleteModal } from "./components/FavoriteFolderDeleteModal";
 import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { IconSlotMeasureOverlay } from "./components/IconSlotMeasureOverlay";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
 import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
@@ -34,9 +36,9 @@ import type {
 // 仮想行「Top」（kind: "top"）を除いた、実体（FavoriteNode）を持つ行かどうかの
 // 判定。Array.prototype.filter に渡すコールバックが単なる真偽値を返すだけだと
 // TypeScript は要素型を絞り込めない（"top" を含む型のまま残る）ため、型述語
-// （type predicate）としてここに1箇所だけ定義し、Alt+矢印による並び替え・
-// 再親化（moveFavoriteNodeWithinParent/indentFavoriteNode/outdentFavoriteNode）が
-// 共通で使う。
+// （type predicate）としてここに1箇所だけ定義し、Ctrl+Shift+矢印による
+// 並び替え・再親化（moveFavoriteNodeWithinParent/indentFavoriteNode/
+// outdentFavoriteNode）が共通で使う。
 function hasFavoriteNode(
   row: FavoriteEditTreeRow
 ): row is Exclude<FavoriteEditTreeRow, { kind: "top" }> {
@@ -58,7 +60,20 @@ export default function App() {
   const showSettings = view === "settings";
   const favoriteEditOpen = view === "favoriteEdit";
   const [settingsVersion, setSettingsVersion] = useState(0);
+  // 軸4k：全画面のフッター右端に統一表示するアプリのバージョン番号。以前は
+  // SettingsPanel.tsx が自身のフッター専用に個別取得していたが、フッターが
+  // 検索画面・クリップボード履歴モード・パス貼り付けウィザード・お気に入り
+  // 編集ビュー・設定画面のすべてに展開されたため、ここで一度だけ取得して
+  // 各フッターへ props として配る。
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    getVersion().then((v) => setAppVersion(v));
+  }, []);
   const [ocrClosing, setOcrClosing] = useState(false);
+  // 400_テスト・バグ修正：IconSlot実測サイズのデバッグオーバーレイ（一時的な
+  // 開発者向け機能）。Ctrl+Alt+Mでトグルする。詳細は
+  // IconSlotMeasureOverlay.tsx のコメントを参照。
+  const [iconMeasureOverlayOpen, setIconMeasureOverlayOpen] = useState(false);
   const [clipboardPaneWidth, setClipboardPaneWidth] = useState(
     DEFAULT_CLIPBOARD_PANE_WIDTH
   );
@@ -364,7 +379,8 @@ export default function App() {
     ]
   );
 
-  // 軸4f：Alt+↑/Alt+↓ による同一親内での並び替え。既存の move_favorite_node_to
+  // 軸4f：Ctrl+Shift+↑/↓（軸4jでAlt+↑/↓から変更）による同一親内での並び替え。
+  // 既存の move_favorite_node_to
   // （ドラッグ&ドロップと同じRustコマンド）にそのまま乗せる。target_index は
   // 「移動対象自身を除いた兄弟配列（order昇順）上の挿入位置」という契約
   // （main.rs のコメントを参照）のため、直前/直後の兄弟と入れ替えたい場合、
@@ -492,12 +508,30 @@ export default function App() {
   //   （PathPasteWizard の入力欄からは Enter/Escape の onKeyDown を削除済み）。
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 400_テスト・バグ修正：IconSlot実測サイズのデバッグオーバーレイ
+      // （一時的な開発者向け機能）。他のどのモードよりも優先して最初に判定し、
+      // 該当する場合は以降の分岐を一切実行しない（return）。
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        setIconMeasureOverlayOpen((v) => !v);
+        return;
+      }
+      if (iconMeasureOverlayOpen && e.key === "Escape") {
+        e.preventDefault();
+        setIconMeasureOverlayOpen(false);
+        return;
+      }
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
+        // 軸4k：Ctrl+Sは「検索画面表示中に押されたときのみ設定画面を開く」
+        // 非対称な動作に変更した（以前はトグルで開閉していた）。設定画面を
+        // 閉じる手段はEscのみに一本化する（REQUIREMENTS.md「キー操作」節を
+        // 参照）。設定画面表示中にCtrl+Sを押しても何も起きないが、preventDefault
+        // 自体は常に行う（WebView2既定の「ページを保存」ダイアログを、設定画面
+        // 表示中も含めて常に抑止するため）。
         e.preventDefault();
         e.stopPropagation();
-        if (showSettings) {
-          closeSettings();
-        } else if (
+        if (
+          !showSettings &&
           !favoriteEditOpen &&
           !search.pendingCommand &&
           !search.favoriteDialogTarget &&
@@ -543,9 +577,11 @@ export default function App() {
             break;
           case "ArrowDown":
             e.preventDefault();
-            // 軸4f：Alt+↓ は同一親内での並び替え（1つ下の兄弟と入れ替え）、
+            // 軸4j：並び替え（同一親内での入れ替え）のキー割当を Alt+↑/↓ から
+            // Ctrl+Shift+↑/↓ へ変更した（再親化のCtrl+Shift+←/→と対にして
+            // 「並び替え・再親化はCtrl+Shift+矢印キー」に統一するため）。
             // 単独では通常の選択移動。
-            if (e.altKey) {
+            if (e.ctrlKey && e.shiftKey) {
               moveFavoriteNodeWithinParent(1);
             } else {
               favoriteEdit.moveSelection(1);
@@ -553,7 +589,7 @@ export default function App() {
             break;
           case "ArrowUp":
             e.preventDefault();
-            if (e.altKey) {
+            if (e.ctrlKey && e.shiftKey) {
               moveFavoriteNodeWithinParent(-1);
             } else {
               favoriteEdit.moveSelection(-1);
@@ -684,6 +720,7 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
+    iconMeasureOverlayOpen,
     showSettings,
     favoriteEditOpen,
     search.pendingCommand,
@@ -1039,68 +1076,84 @@ export default function App() {
 
   if (showSettings) {
     return (
-      <SettingsPanel
-        appSettings={settings.appSettings}
-        onSaveHotkey={hotkey.setHotkey}
-        onSetFileSearchEnabled={settings.setFileSearchEnabled}
-        onSetCalcEnabled={settings.setCalcEnabled}
-        onSetCopyWithComma={settings.setCopyWithComma}
-        onSetUrlConvertEnabled={settings.setUrlConvertEnabled}
-        onSetUrlConvertKeepSpaceEncoded={settings.setUrlConvertKeepSpaceEncoded}
-        onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
-        onSetSystemCommandKeyword={settings.setSystemCommandKeyword}
-        onSetWebSearchEnabled={settings.setWebSearchEnabled}
-        onSetClipboardEnabled={settings.setClipboardEnabled}
-        onSetClipboardPrefix={settings.setClipboardPrefix}
-        onSetClipboardMaxItems={settings.setClipboardMaxItems}
-        onSetRecentFilesEnabled={settings.setRecentFilesEnabled}
-        onSetRecentKeyword={settings.setRecentKeyword}
-        onSetRecentMaxAgeDays={settings.setRecentMaxAgeDays}
-        onSetRecentMaxResults={settings.setRecentMaxResults}
-        onSaveRecentDisplaySettings={settings.setRecentDisplaySettings}
-        onSetOcrEnabled={settings.setOcrEnabled}
-        onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
-        onSetPathPasteEnabled={settings.setPathPasteEnabled}
-        onSetPinEnabled={settings.setPinEnabled}
-        onSetFavoriteEnabled={settings.setFavoriteEnabled}
-        onSetFavoriteKeyword={settings.setFavoriteKeyword}
-        folders={settings.folders}
-        onAddFolder={settings.addFolder}
-        onToggleFolder={settings.toggleFolder}
-        onRemoveFolder={settings.removeFolder}
-        onOpenFolder={settings.openFolder}
-        onSaveFolderSettings={settings.setFolderSettings}
-        onClose={closeSettings}
-      />
+      <>
+        <SettingsPanel
+          appSettings={settings.appSettings}
+          onSaveHotkey={hotkey.setHotkey}
+          onSetFileSearchEnabled={settings.setFileSearchEnabled}
+          onSetCalcEnabled={settings.setCalcEnabled}
+          onSetCopyWithComma={settings.setCopyWithComma}
+          onSetUrlConvertEnabled={settings.setUrlConvertEnabled}
+          onSetUrlConvertKeepSpaceEncoded={settings.setUrlConvertKeepSpaceEncoded}
+          onSetSystemCommandEnabled={settings.setSystemCommandEnabled}
+          onSetSystemCommandKeyword={settings.setSystemCommandKeyword}
+          onSetWebSearchEnabled={settings.setWebSearchEnabled}
+          onSetClipboardEnabled={settings.setClipboardEnabled}
+          onSetClipboardPrefix={settings.setClipboardPrefix}
+          onSetClipboardMaxItems={settings.setClipboardMaxItems}
+          onSetRecentFilesEnabled={settings.setRecentFilesEnabled}
+          onSetRecentKeyword={settings.setRecentKeyword}
+          onSetRecentMaxAgeDays={settings.setRecentMaxAgeDays}
+          onSetRecentMaxResults={settings.setRecentMaxResults}
+          onSaveRecentDisplaySettings={settings.setRecentDisplaySettings}
+          onSetOcrEnabled={settings.setOcrEnabled}
+          onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
+          onSetPathPasteEnabled={settings.setPathPasteEnabled}
+          onSetPinEnabled={settings.setPinEnabled}
+          onSetFavoriteEnabled={settings.setFavoriteEnabled}
+          onSetFavoriteKeyword={settings.setFavoriteKeyword}
+          folders={settings.folders}
+          onAddFolder={settings.addFolder}
+          onToggleFolder={settings.toggleFolder}
+          onRemoveFolder={settings.removeFolder}
+          onOpenFolder={settings.openFolder}
+          onSaveFolderSettings={settings.setFolderSettings}
+          onClose={closeSettings}
+          version={appVersion}
+        />
+        {iconMeasureOverlayOpen && (
+          <IconSlotMeasureOverlay
+            onClose={() => setIconMeasureOverlayOpen(false)}
+          />
+        )}
+      </>
     );
   }
 
   if (favoriteEditOpen) {
     return (
-      <FavoriteEditView
-        tree={favoriteEdit.tree}
-        selected={favoriteEdit.selected}
-        onSelectRowByKey={favoriteEdit.selectByKey}
-        onToggleCollapse={search.toggleFavoriteFolderCollapsedInEdit}
-        filterText={search.favoriteEditFilterText}
-        onFilterTextChange={search.setFavoriteEditFilterText}
-        onCreateFolder={search.createFavoriteFolder}
-        onFolderCreated={handleFavoriteEditFolderCreated}
-        creatingFolderAnchorKey={creatingFolderAnchorKey}
-        onStartCreateFolder={startCreateFolder}
-        onCancelCreateFolder={cancelCreateFolder}
-        onRequestDeleteFolder={requestDeleteFavoriteEditFolder}
-        pendingDeleteFolder={search.pendingDeleteFavoriteFolder}
-        onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}
-        onConfirmDeleteFolder={search.confirmDeleteFavoriteFolder}
-        onToggleFavorite={toggleFavoriteFromEditView}
-        onMoveNode={search.moveFavoriteNodeTo}
-        renamingNodeId={renamingFavoriteNodeId}
-        onStartRename={setRenamingFavoriteNodeId}
-        onCancelRename={cancelRenameFavoriteNode}
-        onConfirmRename={confirmRenameFavoriteNode}
-        onClose={closeFavoriteEdit}
-      />
+      <>
+        <FavoriteEditView
+          tree={favoriteEdit.tree}
+          selected={favoriteEdit.selected}
+          onSelectRowByKey={favoriteEdit.selectByKey}
+          onToggleCollapse={search.toggleFavoriteFolderCollapsedInEdit}
+          filterText={search.favoriteEditFilterText}
+          onFilterTextChange={search.setFavoriteEditFilterText}
+          onCreateFolder={search.createFavoriteFolder}
+          onFolderCreated={handleFavoriteEditFolderCreated}
+          creatingFolderAnchorKey={creatingFolderAnchorKey}
+          onStartCreateFolder={startCreateFolder}
+          onCancelCreateFolder={cancelCreateFolder}
+          onRequestDeleteFolder={requestDeleteFavoriteEditFolder}
+          pendingDeleteFolder={search.pendingDeleteFavoriteFolder}
+          onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}
+          onConfirmDeleteFolder={search.confirmDeleteFavoriteFolder}
+          onToggleFavorite={toggleFavoriteFromEditView}
+          onMoveNode={search.moveFavoriteNodeTo}
+          renamingNodeId={renamingFavoriteNodeId}
+          onStartRename={setRenamingFavoriteNodeId}
+          onCancelRename={cancelRenameFavoriteNode}
+          onConfirmRename={confirmRenameFavoriteNode}
+          onClose={closeFavoriteEdit}
+          version={appVersion}
+        />
+        {iconMeasureOverlayOpen && (
+          <IconSlotMeasureOverlay
+            onClose={() => setIconMeasureOverlayOpen(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -1111,6 +1164,11 @@ export default function App() {
       }`}
       onMouseMove={(e) => search.recordMouseMove(e.clientX, e.clientY)}
     >
+      {iconMeasureOverlayOpen && (
+        <IconSlotMeasureOverlay
+          onClose={() => setIconMeasureOverlayOpen(false)}
+        />
+      )}
       {/* システムコマンド確認モーダル */}
       {search.pendingCommand && (
         <SystemCommandModal
@@ -1276,6 +1334,7 @@ export default function App() {
           prefixCommandMode={search.prefixCommandMode}
           selectedRowKind={selectedRow?.kind ?? null}
           favoriteSelectedKind={selectedFavoriteRow?.kind ?? null}
+          version={appVersion}
         />
       )}
     </div>
