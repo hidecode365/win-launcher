@@ -100,6 +100,7 @@ CC 側にとっての「工程を問わず参照する恒久的な内容」は�
 - CA実施要領: `ca_app_400_test-bugfix.md`（CA 側で管理）
 - CC実施要領: [cc_app_400_test-bugfix.md](docs/process/cc_app_400_test-bugfix.md)
 - 役割・振る舞い: POは動作確認と不具合報告。CC は原因分析と横並び確認、対処案の提示。CA は差し戻し先の判断をPOへ提案する
+- 複数の指摘に異なる差し戻し先が付いた場合の判定ルール（CAが1本のプロンプトにまとめて送る場合にのみ適用）は [cc_app_400_test-bugfix.md](docs/process/cc_app_400_test-bugfix.md) を参照
 
 ### 500_リリース前作業
 
