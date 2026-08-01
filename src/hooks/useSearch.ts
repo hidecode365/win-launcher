@@ -116,8 +116,9 @@ function isUrlLikeInput(q: string): boolean {
 // できる点がピン止め（フラット構造、`parentId === PINNED_FOLDER_ID` の1回比較で
 // 判定できる）と異なるため、祖先を再帰的に辿る必要がある。Rust側 `is_descendant_of`
 // （main.rs）と同じロジック・同じ探索深さの上限（循環参照は現状発生し得ないが
-// 防御的に設けている）。
-function isDescendantOfFolder(
+// 防御的に設けている）。FavoriteEditTree.tsx がドラッグ中の循環参照事前チェック
+// （4e追加分）でも同じロジックを再利用するため export する。
+export function isDescendantOfFolder(
   nodes: FavoriteNode[],
   parentId: string,
   ancestorId: string
