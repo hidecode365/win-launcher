@@ -20,16 +20,24 @@ import {
 } from "../types";
 
 // window レベルの keydown リスナー（App.tsx）が、この編集ビューの間だけ有効な
-// ショートカット（F2・Delete・Ctrl+Shift+N・Alt+矢印）を持つため、これらの
-// インライン入力欄（RenameInput・CreateFolderInlineRow）は入力中に限りこれらの
-// キーの伝播だけを止める（入力欄自身の通常のテキスト編集を妨げないため。
-// 実装時の注意点：Alt+←/→ は行内のテキストカーソル移動として機能する必要が
-// あり、ここで stopPropagation しないと window リスナーの再親化処理が誤発火する）。
+// ショートカット（F2・Delete・Ctrl+Shift+N・Alt+↑↓・Ctrl+Shift+←→）を持つため、
+// これらのインライン入力欄（RenameInput・CreateFolderInlineRow）は入力中に限り
+// これらのキーの伝播だけを止める（入力欄自身の通常のテキスト編集を妨げない
+// ため）。
+// 実装時の注意点：再親化のキー割当は軸4hでAlt+←/→からCtrl+Shift+←/→へ変更した
+// （Alt+←/→がWebView2既定の「戻る/進む」ナビゲーションアクセラレーターとして
+// 処理され、preventDefaultでは抑止できず無反応になる不具合があったため）。
+// Ctrl+Shift+←/→はブラウザ標準のテキスト入力欄で「単語単位の選択」に使われる
+// ため、ここで stopPropagation しないと入力欄内でのテキスト選択と window
+// リスナーの再親化処理が同時に誤発火する。
 function shouldStopEditInputKeyPropagation(e: React.KeyboardEvent): boolean {
   if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "F2" || e.key === "Delete") {
     return true;
   }
-  if (e.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+  if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+    return true;
+  }
+  if (e.ctrlKey && e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
     return true;
   }
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
@@ -585,7 +593,7 @@ export function FavoriteEditTree({
                   role="button"
                   data-index={index}
                   style={{ paddingLeft: `${INDENT_BASE_REM}rem` }}
-                  className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+                  className={`w-full h-10 flex items-center pr-2 text-left transition-colors ${
                     isSelected
                       ? "bg-blue-500 text-white"
                       : "text-gray-500 hover:bg-gray-50"
@@ -597,27 +605,14 @@ export function FavoriteEditTree({
                   }
                   onDrop={(e) => handleDrop(e, row)}
                 >
-                  {/* Topはドラッグ元にならず、件数バッジも持たない。ただし
-                      DragHandle・件数バッジは通常のフォルダ行の行高に影響する
-                      要素（前者は明示的なフォントサイズを持たない文字、後者は
-                      パディング＋行高を持つバッジ）のため、単なる空スペースに
-                      置き換えると行の高さが揃わない（指摘3）。同じ文字・同じ
-                      クラス構成を invisible（非表示だが領域は確保）で描画し、
-                      横位置だけでなく行の高さも通常のフォルダ行と完全に一致
-                      させる。 */}
-                  <span
-                    className="w-4 mr-1.5 flex-shrink-0 inline-flex justify-center"
-                    aria-hidden="true"
-                  >
-                    <span className="invisible cursor-grab select-none font-bold">
-                      ⋮⋮
-                    </span>
-                  </span>
-                  <span className="invisible w-4 flex-shrink-0" aria-hidden="true">
-                    <FolderChevron collapsed={false} />
-                  </span>
+                  {/* 軸4h：Topはドラッグハンドル・チェブロン・件数バッジのいずれも
+                      持たない特別な行のため、それらの列位置を再現しようとする
+                      プレースホルダー方式（旧実装）は撤去した。フォルダアイコン＋
+                      ラベルを行の左端に直接寄せるだけの、他の行とは独立した見た目
+                      に簡略化する。行の高さは可変コンテンツ（バッジ等）に依存させず
+                      h-10（通常のフォルダ行の実測高さと同じ固定値）で明示的に揃える。 */}
                   <svg
-                    className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
+                    className="w-4 h-4 mr-2 flex-shrink-0"
                     fill="currentColor"
                     viewBox="0 0 24 24"
                   >
@@ -625,12 +620,6 @@ export function FavoriteEditTree({
                   </svg>
                   <span className="text-xs font-medium truncate flex-1">
                     お気に入り
-                  </span>
-                  <span
-                    className="invisible ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px]"
-                    aria-hidden="true"
-                  >
-                    0
                   </span>
                   {isSelected && renderCreateFolderIcon(isSelected)}
                 </div>

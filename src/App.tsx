@@ -293,7 +293,18 @@ export default function App() {
     // 必ずリセットする。
     setRenamingFavoriteNodeId(null);
     setCreatingFolderAnchorKey(null);
-  }, []);
+    // 軸4h：絞り込み文字列（favoriteEditFilterText）も同じ理由でリセットする。
+    // /favorite ブラウジング側の favoriteFilterText はREQUIREMENTS.mdの明記通り
+    // 閉じても保持する仕様だが、編集ビュー専用のこの絞り込みは保持する仕様として
+    // 明記されていなかった（実装時の独自判断だった）。残したままにすると、
+    // 絞り込み文字列が入力された状態で編集ビューを閉じ、後で（別の目的で）再度
+    // 開いた際に、本人が意識しないまま絞り込みが有効なままになり、絞り込み中は
+    // 無効化される並び替え・再親化のドラッグ&ドロップが「原因不明に動かない」
+    // ように見える不具合の温床になっていた（実機テストで報告された「D&Dによる
+    // 再親化が動作しない」の実際の原因の一つ）。編集ビューを開き直すたびに
+    // 空の状態から始める方が事故が少ないと判断し、閉じる際に必ず空文字へ戻す。
+    search.setFavoriteEditFilterText("");
+  }, [search.setFavoriteEditFilterText]);
 
   // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移し、作成中の
   // 入力欄を閉じる（識別子ベースの intent。useFavoriteEditSelection の既存の
@@ -388,9 +399,10 @@ export default function App() {
     [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo, search.favoriteEditFilterText]
   );
 
-  // 軸4f：Alt+→ による再親化（インデント）。選択中の行を、同一親内の直前の
-  // 兄弟（フォルダである場合のみ）の配下・末尾へ移動する。直前の兄弟が無い、
-  // またはフォルダでない場合は無効（何もしない）。Topは対象にならない。
+  // 軸4f：Ctrl+Shift+→（軸4hでAlt+→から変更）による再親化（インデント）。
+  // 選択中の行を、同一親内の直前の兄弟（フォルダである場合のみ）の配下・末尾へ
+  // 移動する。直前の兄弟が無い、またはフォルダでない場合は無効（何もしない）。
+  // Topは対象にならない。
   const indentFavoriteNode = useCallback(() => {
     // 軸4g：絞り込み中は再親化を無効化する。
     if (search.favoriteEditFilterText.length > 0) return;
@@ -419,10 +431,10 @@ export default function App() {
     search.favoriteEditFilterText,
   ]);
 
-  // 軸4f：Alt+← による再親化（アウトデント）。選択中の行を、現在の親の
-  // さらに親（祖父母フォルダ）の直下へ、元の親のすぐ後ろの位置に移動する。
-  // 現在の親が既にルート（FAVORITES_FOLDER_ID）の場合はこれ以上outdentできない
-  // ため無効。Topは対象にならない。
+  // 軸4f：Ctrl+Shift+←（軸4hでAlt+←から変更）による再親化（アウトデント）。
+  // 選択中の行を、現在の親のさらに親（祖父母フォルダ）の直下へ、元の親のすぐ
+  // 後ろの位置に移動する。現在の親が既にルート（FAVORITES_FOLDER_ID）の場合は
+  // これ以上outdentできないため無効。Topは対象にならない。
   const outdentFavoriteNode = useCallback(() => {
     // 軸4g：絞り込み中は再親化を無効化する。
     if (search.favoriteEditFilterText.length > 0) return;
@@ -548,17 +560,22 @@ export default function App() {
             }
             break;
           case "ArrowLeft":
-            // 軸4f：Alt+← のみ再親化（アウトデント）として扱う。Altなしの
-            // 単独の←は、検索ボックスのテキストカーソル移動と競合するため
-            // 割り当てない（/favorite モードの「←→キーには階層操作を割り当てない」
-            // 方針と同じ）。
-            if (e.altKey) {
+            // 軸4h：再親化（アウトデント）のキー割当を Alt+← から
+            // Ctrl+Shift+← へ変更した。Alt+←/→ はWebView2既定の「戻る/進む」
+            // ナビゲーションアクセラレーターとして処理され、JavaScript側の
+            // keydownイベントとは別経路で消費されるためpreventDefaultでは
+            // 抑止できず無反応になる不具合があった（詳細はDESIGN_LOG・
+            // docs/design/window-and-hotkey.md を参照）。Altなしの単独の←は、
+            // 検索ボックスのテキストカーソル移動と競合するため割り当てない
+            // （/favorite モードの「←→キーには階層操作を割り当てない」方針と
+            // 同じ）。
+            if (e.ctrlKey && e.shiftKey) {
               e.preventDefault();
               outdentFavoriteNode();
             }
             break;
           case "ArrowRight":
-            if (e.altKey) {
+            if (e.ctrlKey && e.shiftKey) {
               e.preventDefault();
               indentFavoriteNode();
             }

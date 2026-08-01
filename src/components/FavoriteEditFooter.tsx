@@ -15,16 +15,21 @@
 // - Top選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成（Topはリネーム・削除・★解除・
 //   並び替え・再親化のいずれの対象にもならないため、それらは表示しない）
 // - フォルダ選択中：↑↓ 選択／Enter 開閉／Ctrl+Shift+N フォルダ作成／Delete 削除／
-//   F2 リネーム／Alt+↑↓ 並び替え／Alt+←→ 再親化
+//   F2 リネーム／Alt+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
 // - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／Delete ★解除／
-//   F2 リネーム／Alt+↑↓ 並び替え／Alt+←→ 再親化
+//   F2 リネーム／Alt+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
 // Esc 戻る はどの状態でも共通（ヘッダーの「戻る」ボタンと同じ操作）。
 //
+// 軸4h：再親化のキー割当はAlt+←/→からCtrl+Shift+←/→へ変更した（Alt+←/→が
+// WebView2既定の「戻る/進む」ナビゲーションアクセラレーターとして処理され、
+// 無反応になる不具合があったため）。
+//
 // 軸4g：絞り込み中（filtering）は、フォルダ開閉（Enter 開閉）・並び替え
-// （Alt+↑↓）・再親化（Alt+←→）が無効化される（REQUIREMENTS.md「お気に入り
-// 編集ビュー」節を参照）ため、これら3つのヒントは絞り込み中のみ非表示にする
-// （「今何ができるか」を示すフッターの原則に従う）。リネーム・削除・★解除・
-// フォルダ作成は絞り込み中でも有効なままのため、ヒントも表示し続ける。
+// （Alt+↑↓）・再親化（Ctrl+Shift+←→）が無効化される（REQUIREMENTS.md
+// 「お気に入り編集ビュー」節を参照）ため、これら3つのヒントは絞り込み中のみ
+// 非表示にする（「今何ができるか」を示すフッターの原則に従う）。リネーム・
+// 削除・★解除・フォルダ作成は絞り込み中でも有効なままのため、ヒントも表示し
+// 続ける。
 export function FavoriteEditFooter({
   selectedKind,
   filtering,
@@ -45,7 +50,7 @@ export function FavoriteEditFooter({
       {(selectedKind === "folder" || selectedKind === "item") && !filtering && (
         <>
           <span>Alt+↑↓ 並び替え</span>
-          <span>Alt+←→ 再親化</span>
+          <span>Ctrl+Shift+←→ 再親化</span>
         </>
       )}
       <span>Esc 戻る</span>
