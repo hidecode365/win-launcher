@@ -1,9 +1,19 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   resolveSelected,
   SelectIntent,
 } from "../lib/selectIntent";
-import type { FavoriteTreeRow } from "../types";
+import {
+  FAVORITE_TOP_ROW_KEY,
+  type FavoriteEditTreeRow,
+  type FavoriteTreeRow,
+} from "../types";
+
+// 仮想行「Top」（REQUIREMENTS.md「お気に入り編集ビュー」節）。実体を持たないため
+// `node` フィールドを持たない専用の kind として types.ts の FavoriteEditTreeRow で
+// 定義している。他の行と同様 `key` を持つことで、選択状態（intent）・↑↓移動・
+// resolveSelected の対象に一切の特別扱いなしで組み込める。
+const TOP_ROW: FavoriteEditTreeRow = { kind: "top", key: FAVORITE_TOP_ROW_KEY };
 
 // お気に入り編集ビュー専用の選択状態。/favorite ブラウジング側（useSearch.ts）の
 // 選択状態とは独立したドメインとして持つ（REQUIREMENTS.md「お気に入り編集ビュー」
@@ -22,7 +32,14 @@ import type { FavoriteTreeRow } from "../types";
 // 解決される）、削除後の選択復元は resetToTop（複数階層・複数件をまたぐ削除のため
 // 「次の1件」を一意に定義できず、先頭へのフォールバックでよい）で対応しており、
 // いずれも expiresAt 付き intent を必要としなかった。
-export function useFavoriteEditSelection(tree: FavoriteTreeRow[]) {
+export function useFavoriteEditSelection(rawTree: FavoriteTreeRow[]) {
+  // 仮想行「Top」を先頭に合成した、編集ビューの選択ドメインが実際に扱う一覧。
+  // /favorite ブラウジング側の favoriteTree（rawTree）自体は変更しない
+  // （Top は編集ビュー専用の概念のため、共有データソースを汚染しない）。
+  const tree = useMemo<FavoriteEditTreeRow[]>(() => [TOP_ROW, ...rawTree], [rawTree]);
+  // intent.type === "top" は常にインデックス0（＝仮想行「Top」自身）を指す。
+  // 初期選択・削除後のフォールバック（resetToTop）が「Topを選択する」という
+  // 意味に一致するため、既存の resolveSelected の実装を変更せず自然に組み込める。
   const [intent, setIntent] = useState<SelectIntent>({ type: "top" });
   const [selected, setSelected] = useState(0);
   const fallbackRef = useRef(0);
@@ -63,5 +80,5 @@ export function useFavoriteEditSelection(tree: FavoriteTreeRow[]) {
     [selected, tree]
   );
 
-  return { selected, selectByKey, moveSelection, resetToTop };
+  return { tree, selected, selectByKey, moveSelection, resetToTop };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { isDescendantOfFolder } from "../hooks/useSearch";
 import { Tooltip } from "./Tooltip";
@@ -6,15 +6,40 @@ import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
 import {
   FolderChevron,
   FileIcon,
+  CreateFolderIcon,
   FOLDER_ICON_PATH,
   TRASH_ICON_PATH,
   INDENT_STEP_REM,
   INDENT_BASE_REM,
 } from "./FavoriteTreeVisuals";
-import { FavoriteTreeRow, FileEntry } from "../types";
+import {
+  CreateFolderResult,
+  FAVORITES_FOLDER_ID,
+  FavoriteEditTreeRow,
+  FileEntry,
+} from "../types";
 
-// リネーム中の行のインライン入力欄（4d）。CreateFolderRow（FavoriteEditView.tsx）と
-// 同じ「テキストボックス＋Enter確定・Esc取り消し」の見た目・操作感を踏襲する。
+// window レベルの keydown リスナー（App.tsx）が、この編集ビューの間だけ有効な
+// ショートカット（F2・Delete・Ctrl+Shift+N・Alt+矢印）を持つため、これらの
+// インライン入力欄（RenameInput・CreateFolderInlineRow）は入力中に限りこれらの
+// キーの伝播だけを止める（入力欄自身の通常のテキスト編集を妨げないため。
+// 実装時の注意点：Alt+←/→ は行内のテキストカーソル移動として機能する必要が
+// あり、ここで stopPropagation しないと window リスナーの再親化処理が誤発火する）。
+function shouldStopEditInputKeyPropagation(e: React.KeyboardEvent): boolean {
+  if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "F2" || e.key === "Delete") {
+    return true;
+  }
+  if (e.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+    return true;
+  }
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
+    return true;
+  }
+  return false;
+}
+
+// リネーム中の行のインライン入力欄（4d）。CreateFolderInlineRow と同じ
+// 「テキストボックス＋Enter確定・Esc取り消し」の見た目・操作感を踏襲する。
 // フォーカス時にテキストを全選択する点は RegisterEntryDialog.tsx の表示名欄と同じ。
 function RenameInput({
   initialName,
@@ -43,7 +68,7 @@ function RenameInput({
       return;
     }
     // 同名エラー等、Rust側のバリデーションメッセージをそのまま表示し、入力欄は
-    // 開いたまま再入力させる（CreateFolderRow・RegisterEntryDialog.tsx の
+    // 開いたまま再入力させる（CreateFolderInlineRow・RegisterEntryDialog.tsx の
     // handleCreateFolder と同じ挙動）。
     const err = await onConfirm(trimmed);
     if (err) {
@@ -70,15 +95,12 @@ function RenameInput({
             e.preventDefault();
             e.stopPropagation();
             confirm();
-          } else if (
-            e.key === "ArrowUp" ||
-            e.key === "ArrowDown" ||
-            e.key === "F2"
-          ) {
-            // ツリーの選択移動・別の行への再リネーム開始（App.tsx の window
-            // レベルリスナー）に奪われないよう、入力中はこれらのキーの伝播だけ
-            // 止める（入力欄内で特に意味を持たないキーのため preventDefault は
-            // しない）。
+          } else if (shouldStopEditInputKeyPropagation(e)) {
+            // ツリーの選択移動・別の行のリネーム開始・削除・フォルダ作成・
+            // 並び替え/再親化（App.tsx の window レベルリスナー）に奪われない
+            // よう、入力中はこれらのキーの伝播だけ止める（入力欄内で特に意味を
+            // 持たないキーのため preventDefault はしない。Alt+←/→ は入力欄自身の
+            // テキストカーソル移動として機能させる）。
             e.stopPropagation();
           }
         }}
@@ -95,11 +117,103 @@ function RenameInput({
   );
 }
 
+// フォルダ作成中のインライン入力欄（軸4f：行内アイコン化）。旧・画面下部固定の
+// 「+ ここにフォルダを作成」ボタン（CreateFolderRow）を置き換える。作成先
+// （targetParentId）・挿入位置（depth）は、作成を開始した時点の選択行（アンカー）
+// から呼び出し元（FavoriteEditTree）が算出して渡す。RenameInput と同じ
+// 「Rust側のエラーメッセージをそのまま表示する」「Escape取り消し・Enter確定」
+// パターンを踏襲する。
+function CreateFolderInlineRow({
+  depth,
+  targetParentId,
+  onCreateFolder,
+  onFolderCreated,
+  onCancel,
+}: {
+  depth: number;
+  targetParentId: string;
+  onCreateFolder: (
+    parentId: string,
+    name: string
+  ) => Promise<CreateFolderResult>;
+  onFolderCreated: (folderId: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const confirm = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("フォルダ名を入力してください");
+      return;
+    }
+    const result = await onCreateFolder(targetParentId, trimmed);
+    if (result.folder) {
+      onFolderCreated(result.folder.id);
+    } else {
+      setError(result.error ?? "フォルダの作成に失敗しました");
+    }
+  };
+
+  const indentStyle = {
+    paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem`,
+  };
+
+  return (
+    <div className="flex items-center py-2 pr-2" style={indentStyle}>
+      <span className="w-4 mr-1.5 flex-shrink-0" aria-hidden="true" />
+      <svg
+        className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0 text-gray-400"
+        fill="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path d={FOLDER_ICON_PATH} />
+      </svg>
+      <input
+        ref={inputRef}
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel();
+          } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            e.stopPropagation();
+            confirm();
+          } else if (shouldStopEditInputKeyPropagation(e)) {
+            e.stopPropagation();
+          }
+        }}
+        placeholder="新しいフォルダ名"
+        className="min-w-0 flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-sm text-gray-800 outline-none focus:border-blue-400"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {error && (
+        <span className="ml-2 text-[11px] text-red-500 flex-shrink-0">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ドラッグハンドル（⋮⋮）。ResultList.tsx のピン止めブロックと同じ見た目・
 // Tooltip文言を踏襲する（REQUIREMENTS.md「お気に入り編集ビュー」節「ドラッグハンドル
 // は、編集ビュー内の全行に常時表示する（ピン止めブロックのドラッグハンドルと同じ
 // 扱い）」を参照）。実際の `draggable` 属性は行全体に付与しており、このハンドルは
 // 視覚的な目印（掴める場所を示す）の役割のみを持つ（ピン止めブロックと同じ設計）。
+// 仮想行「Top」はドラッグ元にならないため、呼び出し元（Top行の描画）では
+// このコンポーネント自体を使わず、同じ横幅の空スペースを描く。
 function DragHandle({ selected }: { selected: boolean }) {
   return (
     <Tooltip
@@ -119,12 +233,14 @@ function DragHandle({ selected }: { selected: boolean }) {
 
 // ドロップ位置。"before"/"after" はドロップ先の行と同じ親の下で前後どちらに
 // 挿入するか、"into" はドロップ先のフォルダ行の配下（末尾）への再親化を表す
-// （"into" はフォルダ見出し行のみが対象になりうる）。
+// （"into" はフォルダ見出し行・仮想行「Top」のみが対象になりうる）。
 type DropPosition = "before" | "after" | "into";
 
 // マウスの相対Y位置（0〜1）から、そのポイントに対応するドロップ位置を判定する。
 // フォルダ行は上下25%を「前後に挿入」、中央50%を「配下へ再親化」の3分割、
 // アイテム行は「配下」の概念を持たないため上半分/下半分の2分割にする。
+// 仮想行「Top」は常に "into"（ルート直下への再親化）固定のため、この関数は
+// 呼ばない（呼び出し元で分岐する）。
 function dropPositionFromRatio(
   ratio: number,
   targetIsFolder: boolean
@@ -152,20 +268,23 @@ const CIRCULAR_MOVE_ERROR = "フォルダを自分自身の中に移動するこ
 //   Rust側でしか正確に判定できない（同名判定はトリム・大文字小文字を無視する等の
 //   詳細ロジックを持つ）ため、ここでは事前チェックせず、実際のドロップ時に
 //   Rust側のエラーをそのまま表示する方式でカバーする
+// - 仮想行「Top」（ルート）へのドロップは、ルートより上位の祖先が存在しない以上
+//   循環参照になり得ないため、常に有効とする
 function isValidDropTarget(
-  tree: FavoriteTreeRow[],
+  tree: FavoriteEditTreeRow[],
   draggedId: string,
   draggedIsFolder: boolean,
-  targetRow: FavoriteTreeRow,
+  targetRow: FavoriteEditTreeRow,
   position: DropPosition
 ): boolean {
+  if (targetRow.kind === "top") return true;
   if (targetRow.node.id === draggedId) return false;
   if (!draggedIsFolder) return true;
   const newParentId =
     position === "into" && targetRow.kind === "folder"
       ? targetRow.node.id
       : targetRow.node.parentId;
-  const rawNodes = tree.map((r) => r.node);
+  const rawNodes = tree.filter((r) => r.kind !== "top").map((r) => r.node);
   return !isDescendantOfFolder(rawNodes, newParentId, draggedId);
 }
 
@@ -179,12 +298,22 @@ function isValidDropTarget(
 // order 昇順で辿られているため、`parentId` が一致する行だけを抽出すれば、
 // その相対順序はそのまま order 順になる（groupNodesByParent/walkGroupedTree の
 // 前提。詳細は src/lib/nodeTree.ts を参照）。
+//
+// 仮想行「Top」がドロップ先の場合は、ルート（FAVORITES_FOLDER_ID）配下の末尾に
+// 追加する（フォルダ見出し行への "into" ドロップと同じ「末尾に追加」の考え方を、
+// ルート自身に対しても適用する）。
 function computeMoveTarget(
-  tree: FavoriteTreeRow[],
+  tree: FavoriteEditTreeRow[],
   draggedId: string,
-  targetRow: FavoriteTreeRow,
+  targetRow: FavoriteEditTreeRow,
   position: DropPosition
 ): { newParentId: string; targetIndex: number } {
+  if (targetRow.kind === "top") {
+    const rootSiblings = tree.filter(
+      (r) => r.kind !== "top" && r.node.parentId === FAVORITES_FOLDER_ID && r.node.id !== draggedId
+    );
+    return { newParentId: FAVORITES_FOLDER_ID, targetIndex: rootSiblings.length };
+  }
   if (position === "into" && targetRow.kind === "folder") {
     // 末尾に追加する。target_index は Rust側で兄弟数にクランプされるため、
     // 実際の兄弟数（自分自身が既にその配下にある場合を含む）を気にせず
@@ -193,52 +322,51 @@ function computeMoveTarget(
   }
   const parentId = targetRow.node.parentId;
   const siblings = tree.filter(
-    (r) => r.node.parentId === parentId && r.node.id !== draggedId
+    (r) => r.kind !== "top" && r.node.parentId === parentId && r.node.id !== draggedId
   );
-  const targetPos = siblings.findIndex((r) => r.node.id === targetRow.node.id);
+  const targetPos = siblings.findIndex((r) => r.kind !== "top" && r.node.id === targetRow.node.id);
   const insertIndex = position === "before" ? targetPos : targetPos + 1;
   return { newParentId: parentId, targetIndex: Math.max(insertIndex, 0) };
 }
 
 // お気に入り編集ビューのツリー表示。走査結果（tree）自体は /favorite ブラウジング
-// （FavoriteListPanel.tsx）と同じ favoriteTree をそのまま参照し、折りたたみ状態も
-// 共有する（新規のツリー走査・折りたたみロジックは持たない。CLAUDE.md「同じ走査
-// ロジックを2箇所に持たない」原則を参照）。行の見た目（チェブロン・フォルダ
-// アイコン・インデント幅・ファイルアイコン・削除アイコン）は FavoriteTreeVisuals.tsx
-// を共有する。
+// （FavoriteListPanel.tsx）と同じ favoriteTree に、編集ビュー専用の仮想行「Top」を
+// 先頭に合成したもの（useFavoriteEditSelection.ts が合成する。詳細は同ファイルの
+// コメントを参照）。折りたたみ状態も /favorite ブラウジングと共有する（新規の
+// ツリー走査・折りたたみロジックは持たない。CLAUDE.md「同じ走査ロジックを2箇所に
+// 持たない」原則を参照）。行の見た目（チェブロン・フォルダアイコン・インデント幅・
+// ファイルアイコン・削除アイコン）は FavoriteTreeVisuals.tsx を共有する。
 //
 // FavoriteListPanel.tsx との違い：「上へ/下へ移動」ボタンは表示しない（4eでD&Dに
-// 置き換わったため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。削除アイコンは
-// フォルダ見出し行のみ、かつ選択中の行にのみ表示する。★解除アイコンはアイテム行の
-// みに表示する（フォルダ見出し行には持たせない。当初はアイテムの削除・登録解除は
-// /favorite ブラウジング側の★トグルのみで行う想定だったが、編集ビューを開いたまま
-// 完結できないのは不便との判断で追加した）。予約フォルダ（ピン止め・お気に入り・
-// メモ）はこの tree（favoriteTree は「お気に入り」フォルダの子孫のみを列挙する）に
-// 現れないため、予約フォルダ向けの削除・リネーム・移動アイコン非表示判定は別途
-// 不要（Rust側 remove_favorite_folder・rename_favorite_node・
-// move_favorite_node_to も二重に防御している）。
+// 置き換わったため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。削除アイコン・
+// フォルダ作成アイコンは選択中の行にのみ表示する。★解除アイコンはアイテム行のみに
+// 表示する（フォルダ見出し行・Top行には持たせない）。
 // アイテム行はクリック／Enterのいずれでもファイルを起動しない（このビューは
 // ファイルを起動する画面ではなく、構造を閲覧・整理する画面のため）。
 //
 // リネーム（4d）：F2キー（選択中の行が対象。App.tsx の window レベルリスナー経由）・
 // ダブルクリック（クリックした行が対象）のいずれでもインライン編集モードに入る。
-// フォルダ見出し行をダブルクリックすると、通常の1クリック分（onClick による
-// 折りたたみトグル）が2回発火した後にリネームモードへ入るため、開閉状態が
-// 一瞬ちらつく副作用がある。ダブルクリックでのリネームは頻度の低い操作であり、
-// クリック/ダブルクリックの判定タイマー等での回避は複雑さに見合わないため許容する。
+// Top行はリネームの対象にならない（実体を持たないため）。
+//
+// フォルダ作成（軸4f）：Ctrl+Shift+N、または選択中の行に表示するフォルダ作成
+// アイコンのクリックで、選択中の行の直下（フォルダ・Top選択時）またはその親フォルダ
+// 直下（アイテム選択時）にインライン入力欄を表示する。作成を開始した時点の選択行
+// （アンカー）を creatingFolderAnchorKey として親（App.tsx）が保持し、この
+// コンポーネントはそのキーに一致する行の直後に CreateFolderInlineRow を描画する。
+//
+// 削除・★解除（Delete キー、軸4f）：選択中の行がフォルダなら削除確認、アイテムなら
+// 確認なしの即時★解除。Top選択中は何もしない（App.tsx の window レベルリスナー側で
+// 判定する）。
+//
+// 並び替え・再親化（Alt+↑↓←→、軸4f）：App.tsx の window レベルリスナーが
+// move_favorite_node_to を直接呼ぶ（このコンポーネントの D&D ロジックとは別経路。
+// 実際の移動計算はキー操作専用に App.tsx 側で行う）。
 //
 // D&D（4e）：HTML5 Drag and Drop API を使う（tauri.conf.json の dragDropEnabled は
 // false のまま。既存のピン止めブロック並び替え（ResultList.tsx）と同じ技術選択）。
-// 行全体に draggable を付与し、DragHandle（⋮⋮）は掴める場所を示す視覚的な目印
-// としてのみ機能する（実装上はどこを掴んでもドラッグできる。ピン止めブロックと
-// 同じ設計）。ドラッグ中の行の相対Y位置からドロップ位置（前/後/配下）を判定し、
-// 挿入線（前後）またはリング枠（配下）で視覚的にフィードバックする。実際の
-// newParentId・target_index の算出は onDrop 時点で e.clientY から再計算する
-// （dragover のたびに更新される dropTarget state は表示専用とし、React の
-// バッチ更新のタイミングに依存する値をロジックの入力にしない）。
-//
-// 無効な移動先の事前フィードバック・ドロップ失敗時のインライン警告（4e追加分）は
-// isValidDropTarget・dragError state（下記）を参照。
+// 行全体に draggable を付与し（Top行を除く）、DragHandle（⋮⋮）は掴める場所を示す
+// 視覚的な目印としてのみ機能する（実装上はどこを掴んでもドラッグできる。ピン止め
+// ブロックと同じ設計）。Top行へのドロップは常に「ルート直下の末尾へ再親化」を表す。
 export function FavoriteEditTree({
   tree,
   selected,
@@ -251,10 +379,15 @@ export function FavoriteEditTree({
   onStartRename,
   onCancelRename,
   onConfirmRename,
+  onCreateFolder,
+  onFolderCreated,
+  creatingFolderAnchorKey,
+  onStartCreateFolder,
+  onCancelCreateFolder,
 }: {
-  tree: FavoriteTreeRow[];
-  // tree（favoriteTree）上の選択インデックス。フォルダ見出し行・アイテム行の
-  // 両方が対象（useFavoriteEditSelection.ts を参照）。
+  tree: FavoriteEditTreeRow[];
+  // tree（Top行込みの合成ツリー）上の選択インデックス。フォルダ見出し行・
+  // アイテム行・Top行のいずれも対象（useFavoriteEditSelection.ts を参照）。
   selected: number;
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
@@ -277,6 +410,16 @@ export function FavoriteEditTree({
   onStartRename: (id: string) => void;
   onCancelRename: () => void;
   onConfirmRename: (id: string, newName: string) => Promise<string | null>;
+  onCreateFolder: (
+    parentId: string,
+    name: string
+  ) => Promise<CreateFolderResult>;
+  onFolderCreated: (folderId: string) => void;
+  // フォルダ作成中の入力欄をどの行の直後に描画するか（作成を開始した時点の
+  // 選択行の key。null なら作成中の入力欄なし）。
+  creatingFolderAnchorKey: string | null;
+  onStartCreateFolder: () => void;
+  onCancelCreateFolder: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
@@ -311,18 +454,19 @@ export function FavoriteEditTree({
 
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
-    row: FavoriteTreeRow
+    row: FavoriteEditTreeRow
   ) => {
     e.preventDefault();
     const dragged = dragInfoRef.current;
-    if (dragged === null || dragged.id === row.node.id) {
+    if (dragged === null || (row.kind !== "top" && dragged.id === row.node.id)) {
       e.dataTransfer.dropEffect = "none";
       setDropTarget(null);
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
-    const position = dropPositionFromRatio(ratio, row.kind === "folder");
+    const position: DropPosition =
+      row.kind === "top" ? "into" : dropPositionFromRatio(ratio, row.kind === "folder");
     // 循環参照になる移動先は、Rust側の応答を待たずにここで弾く（4e追加：
     // 事前フィードバック）。preventDefault は既に呼んでいるため drop イベント
     // 自体は発火しうるが（dropEffect はカーソル表示のみに影響し、イベント発火を
@@ -338,19 +482,20 @@ export function FavoriteEditTree({
 
   const handleDrop = (
     e: React.DragEvent<HTMLDivElement>,
-    row: FavoriteTreeRow
+    row: FavoriteEditTreeRow
   ) => {
     e.preventDefault();
     const dragged = dragInfoRef.current;
     dragInfoRef.current = null;
     setDropTarget(null);
-    if (!dragged || dragged.id === row.node.id) return;
+    if (!dragged || (row.kind !== "top" && dragged.id === row.node.id)) return;
     // dropTarget state（表示専用）には頼らず、ドロップ時点の e.clientY から
     // 位置を再計算する（onDragOver の最終更新が反映される前に drop が発火する
     // 競合を避けるため）。
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
-    const position = dropPositionFromRatio(ratio, row.kind === "folder");
+    const position: DropPosition =
+      row.kind === "top" ? "into" : dropPositionFromRatio(ratio, row.kind === "folder");
     // 循環参照は Rust側を呼ぶまでもなく分かるため、ここでも即座に弾く
     // （dragover で禁止カーソルを見た上でなお離した場合の保険）。同名重複は
     // ここでは判定できないため、Rust側の応答（onMoveNode の戻り値）に委ねる。
@@ -369,29 +514,44 @@ export function FavoriteEditTree({
     });
   };
 
+  // フォルダ作成アイコン。選択中の行（フォルダ・アイテム・Topのいずれも）にのみ
+  // 表示する（ピン・★アイコンの「選択時のみ表示」と同じ考え方）。
+  const renderCreateFolderIcon = () => (
+    <Tooltip label="ここにフォルダを作成" className="flex-shrink-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onStartCreateFolder();
+        }}
+        className="ml-1 p-1 rounded text-white/80 hover:bg-white/20"
+      >
+        <CreateFolderIcon className="w-4 h-4" />
+      </button>
+    </Tooltip>
+  );
+
+  const isEmpty = tree.every((r) => r.kind === "top");
+
   return (
     <>
       {/* ドロップ失敗時のインライン警告（4e追加）。ツリーの直上に数秒間だけ表示し、
           自動的に消える。Rust側のバリデーションメッセージ（重複名・循環参照等）を
-          そのまま表示する（CreateFolderRow・RenameInput と同じ「Rust側のエラー
-          メッセージをそのまま表示する」方針）。 */}
+          そのまま表示する（CreateFolderInlineRow・RenameInput と同じ「Rust側の
+          エラーメッセージをそのまま表示する」方針）。 */}
       {dragError && (
         <div className="flex-shrink-0 px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-600">
           {dragError}
         </div>
       )}
       <div ref={containerRef} className="flex-1 overflow-y-auto">
-        {tree.length === 0 && (
+        {isEmpty && (
           <div className="flex items-center justify-center text-gray-400 text-sm py-6">
             ★ボタンでファイルを登録すると、ここに表示されます
           </div>
         )}
         {tree.map((row, index) => {
-          const indentStyle = {
-            paddingLeft: `${row.depth * INDENT_STEP_REM + INDENT_BASE_REM}rem`,
-          };
           const isSelected = index === selected;
-          const isRenaming = row.node.id === renamingNodeId;
           const drop = dropTarget?.key === row.key ? dropTarget.position : null;
           const dropClasses = [
             drop === "before" ? "border-t-2 border-blue-500" : "",
@@ -400,25 +560,180 @@ export function FavoriteEditTree({
           ]
             .filter(Boolean)
             .join(" ");
+          const isCreatingHere = creatingFolderAnchorKey === row.key;
+
+          if (row.kind === "top") {
+            return (
+              <Fragment key={row.key}>
+                <div
+                  role="button"
+                  data-index={index}
+                  style={{ paddingLeft: `${INDENT_BASE_REM}rem` }}
+                  className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+                    isSelected
+                      ? "bg-blue-500 text-white"
+                      : "text-gray-500 hover:bg-gray-50"
+                  } ${dropClasses}`}
+                  onMouseEnter={() => onSelectRowByKey(row.key)}
+                  onDragOver={(e) => handleDragOver(e, row)}
+                  onDragLeave={() =>
+                    setDropTarget((prev) => (prev?.key === row.key ? null : prev))
+                  }
+                  onDrop={(e) => handleDrop(e, row)}
+                >
+                  {/* Topはドラッグ元にならないため、DragHandle・シェブロン相当の
+                      空スペースのみを描き横位置を他の行と揃える。 */}
+                  <span className="w-4 mr-1.5 flex-shrink-0" aria-hidden="true" />
+                  <span className="w-4 flex-shrink-0" aria-hidden="true" />
+                  <svg
+                    className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d={FOLDER_ICON_PATH} />
+                  </svg>
+                  <span className="text-xs font-medium truncate flex-1">Top</span>
+                  {isSelected && renderCreateFolderIcon()}
+                </div>
+                {isCreatingHere && (
+                  <CreateFolderInlineRow
+                    depth={0}
+                    targetParentId={FAVORITES_FOLDER_ID}
+                    onCreateFolder={onCreateFolder}
+                    onFolderCreated={onFolderCreated}
+                    onCancel={onCancelCreateFolder}
+                  />
+                )}
+              </Fragment>
+            );
+          }
+
+          const indentStyle = {
+            paddingLeft: `${row.depth * INDENT_STEP_REM + INDENT_BASE_REM}rem`,
+          };
+          const isRenaming = row.node.id === renamingNodeId;
 
           if (row.kind === "folder") {
             return (
+              <Fragment key={row.key}>
+                <div
+                  role="button"
+                  data-index={index}
+                  draggable={!isRenaming}
+                  style={indentStyle}
+                  className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+                    isSelected
+                      ? "bg-blue-500 text-white"
+                      : "text-gray-500 hover:bg-gray-50"
+                  } ${dropClasses}`}
+                  onClick={() => onToggleCollapse(row.node.id)}
+                  onDoubleClick={() => onStartRename(row.node.id)}
+                  onMouseEnter={() => onSelectRowByKey(row.key)}
+                  onDragStart={(e) => {
+                    dragInfoRef.current = { id: row.node.id, isFolder: true };
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", row.node.id);
+                  }}
+                  onDragOver={(e) => handleDragOver(e, row)}
+                  onDragLeave={() =>
+                    setDropTarget((prev) => (prev?.key === row.key ? null : prev))
+                  }
+                  onDrop={(e) => handleDrop(e, row)}
+                  onDragEnd={() => {
+                    dragInfoRef.current = null;
+                    setDropTarget(null);
+                  }}
+                >
+                  <DragHandle selected={isSelected} />
+                  <FolderChevron collapsed={row.collapsed} />
+                  <svg
+                    className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d={FOLDER_ICON_PATH} />
+                  </svg>
+                  {isRenaming ? (
+                    <RenameInput
+                      initialName={row.node.name}
+                      className="text-xs"
+                      onConfirm={(newName) => onConfirmRename(row.node.id, newName)}
+                      onCancel={onCancelRename}
+                    />
+                  ) : (
+                    <span className="text-xs font-medium truncate flex-1">
+                      {row.node.name}
+                    </span>
+                  )}
+                  <span
+                    className={`ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] ${
+                      isSelected
+                        ? "bg-white/20 text-white"
+                        : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    {row.directChildCount}
+                  </span>
+                  {/* フォルダ作成・削除アイコン。選択中の行にのみ表示する（ピン・★
+                      アイコンの「選択時のみ表示」と同じ考え方）。行全体のクリック
+                      （折りたたみ切替）に伝播させないよう stopPropagation する。 */}
+                  {isSelected && !isRenaming && renderCreateFolderIcon()}
+                  {isSelected && !isRenaming && (
+                    <Tooltip label="このフォルダを削除" className="flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRequestDeleteFolder(row.node.id, row.node.name);
+                        }}
+                        className="ml-1 p-1 rounded text-white/80 hover:bg-white/20"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d={TRASH_ICON_PATH}
+                          />
+                        </svg>
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+                {isCreatingHere && (
+                  <CreateFolderInlineRow
+                    depth={row.depth + 1}
+                    targetParentId={row.node.id}
+                    onCreateFolder={onCreateFolder}
+                    onFolderCreated={onFolderCreated}
+                    onCancel={onCancelCreateFolder}
+                  />
+                )}
+              </Fragment>
+            );
+          }
+
+          const item = row.file;
+          return (
+            <Fragment key={row.key}>
               <div
-                key={row.key}
-                role="button"
                 data-index={index}
                 draggable={!isRenaming}
                 style={indentStyle}
-                className={`w-full flex items-center py-2 pr-2 text-left transition-colors ${
+                className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
                   isSelected
                     ? "bg-blue-500 text-white"
-                    : "text-gray-500 hover:bg-gray-50"
+                    : "text-gray-700 hover:bg-gray-100"
                 } ${dropClasses}`}
-                onClick={() => onToggleCollapse(row.node.id)}
                 onDoubleClick={() => onStartRename(row.node.id)}
                 onMouseEnter={() => onSelectRowByKey(row.key)}
                 onDragStart={(e) => {
-                  dragInfoRef.current = { id: row.node.id, isFolder: true };
+                  dragInfoRef.current = { id: row.node.id, isFolder: false };
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", row.node.id);
                 }}
@@ -433,143 +748,63 @@ export function FavoriteEditTree({
                 }}
               >
                 <DragHandle selected={isSelected} />
-                <FolderChevron collapsed={row.collapsed} />
-                <svg
-                  className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path d={FOLDER_ICON_PATH} />
-                </svg>
-                {isRenaming ? (
-                  <RenameInput
-                    initialName={row.node.name}
-                    className="text-xs"
-                    onConfirm={(newName) => onConfirmRename(row.node.id, newName)}
-                    onCancel={onCancelRename}
-                  />
-                ) : (
-                  <span className="text-xs font-medium truncate flex-1">
-                    {row.node.name}
-                  </span>
-                )}
-                <span
-                  className={`ml-2 flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] ${
-                    isSelected
-                      ? "bg-white/20 text-white"
-                      : "bg-gray-100 text-gray-500"
+                <div
+                  className={`flex items-center min-w-0 flex-1 ${
+                    !row.exists ? "opacity-50" : ""
                   }`}
                 >
-                  {row.directChildCount}
-                </span>
-                {/* 削除アイコン。選択中の行にのみ表示する（ピン・★アイコンの
-                    「選択時のみ表示」と同じ考え方）。行全体のクリック（折りたたみ
-                    切替）に伝播させないよう stopPropagation する。 */}
-                {isSelected && !isRenaming && (
-                  <Tooltip label="このフォルダを削除" className="flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRequestDeleteFolder(row.node.id, row.node.name);
-                      }}
-                      className="ml-1 p-1 rounded text-white/80 hover:bg-white/20"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+                  {item.icon ? (
+                    <img
+                      src={item.icon}
+                      alt=""
+                      className="w-4 h-4 mr-3 flex-shrink-0"
+                    />
+                  ) : (
+                    <FileIcon className="w-4 h-4 mr-3 flex-shrink-0 opacity-60" />
+                  )}
+                  {isRenaming ? (
+                    <RenameInput
+                      initialName={row.node.name}
+                      className="text-sm"
+                      onConfirm={(newName) => onConfirmRename(row.node.id, newName)}
+                      onCancel={onCancelRename}
+                    />
+                  ) : (
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">
+                        {item.name}
+                      </div>
+                      <div
+                        className={`text-xs truncate ${
+                          isSelected ? "text-blue-100" : "text-gray-400"
+                        }`}
+                        title={item.path}
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d={TRASH_ICON_PATH}
-                        />
-                      </svg>
-                    </button>
-                  </Tooltip>
+                        {item.path}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {!row.exists && <WarningIcon selected={isSelected} />}
+                {isSelected && !isRenaming && renderCreateFolderIcon()}
+                {isSelected && !isRenaming && (
+                  <FavoriteToggleButton
+                    active
+                    selected={isSelected}
+                    onToggle={() => onToggleFavorite(item)}
+                  />
                 )}
               </div>
-            );
-          }
-
-          const item = row.file;
-          return (
-            <div
-              key={row.key}
-              data-index={index}
-              draggable={!isRenaming}
-              style={indentStyle}
-              className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
-                isSelected
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-700 hover:bg-gray-100"
-              } ${dropClasses}`}
-              onDoubleClick={() => onStartRename(row.node.id)}
-              onMouseEnter={() => onSelectRowByKey(row.key)}
-              onDragStart={(e) => {
-                dragInfoRef.current = { id: row.node.id, isFolder: false };
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", row.node.id);
-              }}
-              onDragOver={(e) => handleDragOver(e, row)}
-              onDragLeave={() =>
-                setDropTarget((prev) => (prev?.key === row.key ? null : prev))
-              }
-              onDrop={(e) => handleDrop(e, row)}
-              onDragEnd={() => {
-                dragInfoRef.current = null;
-                setDropTarget(null);
-              }}
-            >
-              <DragHandle selected={isSelected} />
-              <div
-                className={`flex items-center min-w-0 flex-1 ${
-                  !row.exists ? "opacity-50" : ""
-                }`}
-              >
-                {item.icon ? (
-                  <img
-                    src={item.icon}
-                    alt=""
-                    className="w-4 h-4 mr-3 flex-shrink-0"
-                  />
-                ) : (
-                  <FileIcon className="w-4 h-4 mr-3 flex-shrink-0 opacity-60" />
-                )}
-                {isRenaming ? (
-                  <RenameInput
-                    initialName={row.node.name}
-                    className="text-sm"
-                    onConfirm={(newName) => onConfirmRename(row.node.id, newName)}
-                    onCancel={onCancelRename}
-                  />
-                ) : (
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">
-                      {item.name}
-                    </div>
-                    <div
-                      className={`text-xs truncate ${
-                        isSelected ? "text-blue-100" : "text-gray-400"
-                      }`}
-                    >
-                      {item.path}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {!row.exists && <WarningIcon selected={isSelected} />}
-              {isSelected && !isRenaming && (
-                <FavoriteToggleButton
-                  active
-                  selected={isSelected}
-                  onToggle={() => onToggleFavorite(item)}
+              {isCreatingHere && (
+                <CreateFolderInlineRow
+                  depth={row.depth}
+                  targetParentId={row.node.parentId}
+                  onCreateFolder={onCreateFolder}
+                  onFolderCreated={onFolderCreated}
+                  onCancel={onCancelCreateFolder}
                 />
               )}
-            </div>
+            </Fragment>
           );
         })}
       </div>

@@ -248,6 +248,7 @@ export function ResultList({
                           className={`text-xs truncate ${
                             isSelected ? "text-blue-100" : "text-gray-400"
                           }`}
+                          title={item.path}
                         >
                           {item.path}
                         </div>
@@ -500,6 +501,7 @@ export function ResultList({
                         className={`text-xs truncate ${
                           isSelected ? "text-blue-100" : "text-gray-400"
                         }`}
+                        title={item.path}
                       >
                         {item.path}
                       </div>

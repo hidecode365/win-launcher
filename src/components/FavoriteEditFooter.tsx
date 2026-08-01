@@ -1,43 +1,42 @@
-// お気に入り編集ビューのキー操作・アイコン操作ヒント。/favorite ブラウジング側の
+// お気に入り編集ビューのキー操作ヒント。/favorite ブラウジング側の
 // StatusFooter.tsx と同じ視覚スタイル（`<span>` チップの並び）を踏襲するが、
-// 編集ビュー固有の操作（F2 リネーム・🗑 削除・★ 解除等）を持つため別コンポーネント
-// として独立させる（StatusFooter.tsx はブラウジング/クリップボード/プレフィックス
-// コマンド等の複数モードを1つに束ねた汎用フッターであり、編集ビュー用の分岐を
-// そこへ増設すると条件分岐がさらに複雑化するため）。
+// 編集ビュー固有の操作（F2 リネーム・Delete 削除/★解除・Alt+矢印による並び替え・
+// 再親化等）を持つため別コンポーネントとして独立させる（StatusFooter.tsx は
+// ブラウジング/クリップボード/プレフィックスコマンド等の複数モードを1つに束ねた
+// 汎用フッターであり、編集ビュー用の分岐をそこへ増設すると条件分岐がさらに
+// 複雑化するため）。
+//
+// 「フッター表示規約（全画面共通）」（REQUIREMENTS.md「キー操作」節）に従い、
+// ここにはキーボード操作のみを表示する。ドラッグ&ドロップ・アイコンクリック等の
+// マウス専用操作はここには表示しない（マウスでのみ可能な操作の存在は
+// ツールチップとホバー反応で示す）。
 //
 // 選択中の行の種別ごとに、その行で実際に使える操作だけを表示する：
-// - フォルダ選択中：↑↓ 選択／Enter 開閉／F2 リネーム／🗑 削除／ドラッグで並び替え
-// - アイテム選択中：↑↓ 選択／F2 リネーム／★ 解除／ドラッグで並び替え
-// - 何も選択されていない（tree が空）：「+ ここにフォルダを作成」のみ
-//   （CreateFolderRow のボタン文言と一致させる。ドラッグ対象の行自体が無いため
-//   ドラッグのヒントは表示しない）
+// - Top選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成（Topはリネーム・削除・★解除・
+//   並び替え・再親化のいずれの対象にもならないため、それらは表示しない）
+// - フォルダ選択中：↑↓ 選択／Enter 開閉／Ctrl+Shift+N フォルダ作成／Delete 削除／
+//   F2 リネーム／Alt+↑↓ 並び替え／Alt+←→ 再親化
+// - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／Delete ★解除／
+//   F2 リネーム／Alt+↑↓ 並び替え／Alt+←→ 再親化
 // Esc 戻る はどの状態でも共通（ヘッダーの「戻る」ボタンと同じ操作）。
-// 「ドラッグで並び替え」（4e）はフォルダ・アイテムどちらの行にも常に表示する
-// （マウス操作のみで、選択状態によって可否が変わる操作ではないため）。
 export function FavoriteEditFooter({
   selectedKind,
 }: {
-  selectedKind: "folder" | "item" | null;
+  selectedKind: "top" | "folder" | "item" | null;
 }) {
   return (
-    <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400">
-      {selectedKind === "folder" ? (
+    <div className="px-4 py-1.5 border-t border-gray-200/60 flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+      <span>↑↓ 選択</span>
+      {selectedKind === "folder" && <span>Enter 開閉</span>}
+      <span>Ctrl+Shift+N フォルダ作成</span>
+      {selectedKind === "folder" && <span>Delete 削除</span>}
+      {selectedKind === "item" && <span>Delete ★解除</span>}
+      {(selectedKind === "folder" || selectedKind === "item") && (
         <>
-          <span>↑↓ 選択</span>
-          <span>Enter 開閉</span>
           <span>F2 リネーム</span>
-          <span>🗑 削除</span>
-          <span>ドラッグで並び替え</span>
+          <span>Alt+↑↓ 並び替え</span>
+          <span>Alt+←→ 再親化</span>
         </>
-      ) : selectedKind === "item" ? (
-        <>
-          <span>↑↓ 選択</span>
-          <span>F2 リネーム</span>
-          <span>★ 解除</span>
-          <span>ドラッグで並び替え</span>
-        </>
-      ) : (
-        <span>+ ここにフォルダを作成</span>
       )}
       <span>Esc 戻る</span>
     </div>

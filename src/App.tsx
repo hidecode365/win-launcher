@@ -23,8 +23,25 @@ import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { hideWindow } from "./lib/window";
-import { favoriteFolderRowKey } from "./types";
-import type { ClipboardTextEntry, FileEntry, FrecencyMap } from "./types";
+import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
+import type {
+  ClipboardTextEntry,
+  FavoriteEditTreeRow,
+  FileEntry,
+  FrecencyMap,
+} from "./types";
+
+// 仮想行「Top」（kind: "top"）を除いた、実体（FavoriteNode）を持つ行かどうかの
+// 判定。Array.prototype.filter に渡すコールバックが単なる真偽値を返すだけだと
+// TypeScript は要素型を絞り込めない（"top" を含む型のまま残る）ため、型述語
+// （type predicate）としてここに1箇所だけ定義し、Alt+矢印による並び替え・
+// 再親化（moveFavoriteNodeWithinParent/indentFavoriteNode/outdentFavoriteNode）が
+// 共通で使う。
+function hasFavoriteNode(
+  row: FavoriteEditTreeRow
+): row is Exclude<FavoriteEditTreeRow, { kind: "top" }> {
+  return row.kind !== "top";
+}
 
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 
@@ -247,21 +264,41 @@ export default function App() {
   const openFavoriteEdit = useCallback(() => {
     setView("favoriteEdit");
   }, []);
-  const closeFavoriteEdit = useCallback(() => {
-    setView("search");
-    // リネーム中に「戻る」ボタン等で編集ビューを閉じた場合、renamingFavoriteNodeId
-    // は view とは独立した state のため放置すると残り続け、次回このビューを開いた
-    // 瞬間に同じ行が編集モードのまま表示されてしまう（App.tsx はアンマウントされない
-    // ため）。閉じる際に必ずリセットする。
-    setRenamingFavoriteNodeId(null);
+  // 軸4f：編集ビューでのフォルダ作成中の入力欄の描画位置（アンカー行の key）。
+  // null なら作成中の入力欄なし。作成を開始した時点の選択行を凍結して保持する
+  // （マウスホバーによる選択移動が入力中の対象をずらさないようにするため。
+  // renamingFavoriteNodeId と同じ「App.tsx 側にリフトした state」パターンを踏襲する）。
+  const [creatingFolderAnchorKey, setCreatingFolderAnchorKey] = useState<
+    string | null
+  >(null);
+  const startCreateFolder = useCallback(() => {
+    const row = favoriteEdit.tree[favoriteEdit.selected];
+    if (row) {
+      setCreatingFolderAnchorKey(row.key);
+    }
+  }, [favoriteEdit.tree, favoriteEdit.selected]);
+  const cancelCreateFolder = useCallback(() => {
+    setCreatingFolderAnchorKey(null);
   }, []);
 
-  // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移す
-  // （識別子ベースの intent。useFavoriteEditSelection の既存の仕組みに乗せる。
-  // REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  const closeFavoriteEdit = useCallback(() => {
+    setView("search");
+    // リネーム中・フォルダ作成中に「戻る」ボタン等で編集ビューを閉じた場合、
+    // renamingFavoriteNodeId・creatingFolderAnchorKey は view とは独立した state
+    // のため放置すると残り続け、次回このビューを開いた瞬間に同じ行が編集モードの
+    // まま表示されてしまう（App.tsx はアンマウントされないため）。閉じる際に
+    // 必ずリセットする。
+    setRenamingFavoriteNodeId(null);
+    setCreatingFolderAnchorKey(null);
+  }, []);
+
+  // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移し、作成中の
+  // 入力欄を閉じる（識別子ベースの intent。useFavoriteEditSelection の既存の
+  // 仕組みに乗せる。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
   const handleFavoriteEditFolderCreated = useCallback(
     (folderId: string) => {
       favoriteEdit.selectByKey(favoriteFolderRowKey(folderId));
+      setCreatingFolderAnchorKey(null);
     },
     [favoriteEdit.selectByKey]
   );
@@ -312,6 +349,91 @@ export default function App() {
       favoriteEdit.resetToTop,
     ]
   );
+
+  // 軸4f：Alt+↑/Alt+↓ による同一親内での並び替え。既存の move_favorite_node_to
+  // （ドラッグ&ドロップと同じRustコマンド）にそのまま乗せる。target_index は
+  // 「移動対象自身を除いた兄弟配列（order昇順）上の挿入位置」という契約
+  // （main.rs のコメントを参照）のため、直前/直後の兄弟と入れ替えたい場合、
+  // その兄弟の（自身除去後の配列上での）位置がそのまま挿入位置になる
+  // （上へ移動＝その兄弟の位置にそのまま挿入／下へ移動＝その兄弟の位置の1つ後ろに
+  // 挿入）。Topは並び替えの対象にならない。
+  const moveFavoriteNodeWithinParent = useCallback(
+    (direction: 1 | -1) => {
+      const row = favoriteEdit.tree[favoriteEdit.selected];
+      if (!row || row.kind === "top") return;
+      const parentId = row.node.parentId;
+      const siblings = favoriteEdit.tree
+        .filter(hasFavoriteNode)
+        .filter((r) => r.node.parentId === parentId);
+      const pos = siblings.findIndex((r) => r.node.id === row.node.id);
+      const swapPos = pos + direction;
+      if (pos === -1 || swapPos < 0 || swapPos >= siblings.length) return;
+      const swapSibling = siblings[swapPos];
+      const others = siblings.filter((_, i) => i !== pos);
+      const swapIndexInOthers = others.findIndex(
+        (r) => r.node.id === swapSibling.node.id
+      );
+      const targetIndex =
+        direction === -1 ? swapIndexInOthers : swapIndexInOthers + 1;
+      search.moveFavoriteNodeTo(row.node.id, parentId, targetIndex).then((err) => {
+        if (err) console.error(err);
+      });
+    },
+    [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo]
+  );
+
+  // 軸4f：Alt+→ による再親化（インデント）。選択中の行を、同一親内の直前の
+  // 兄弟（フォルダである場合のみ）の配下・末尾へ移動する。直前の兄弟が無い、
+  // またはフォルダでない場合は無効（何もしない）。Topは対象にならない。
+  const indentFavoriteNode = useCallback(() => {
+    const row = favoriteEdit.tree[favoriteEdit.selected];
+    if (!row || row.kind === "top") return;
+    const parentId = row.node.parentId;
+    const siblings = favoriteEdit.tree
+      .filter(hasFavoriteNode)
+      .filter((r) => r.node.parentId === parentId);
+    const pos = siblings.findIndex((r) => r.node.id === row.node.id);
+    if (pos <= 0) return;
+    const prevSibling = siblings[pos - 1];
+    if (prevSibling.kind !== "folder") return;
+    const newParentChildren = favoriteEdit.tree
+      .filter(hasFavoriteNode)
+      .filter((r) => r.node.parentId === prevSibling.node.id);
+    search
+      .moveFavoriteNodeTo(row.node.id, prevSibling.node.id, newParentChildren.length)
+      .then((err) => {
+        if (err) console.error(err);
+      });
+  }, [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo]);
+
+  // 軸4f：Alt+← による再親化（アウトデント）。選択中の行を、現在の親の
+  // さらに親（祖父母フォルダ）の直下へ、元の親のすぐ後ろの位置に移動する。
+  // 現在の親が既にルート（FAVORITES_FOLDER_ID）の場合はこれ以上outdentできない
+  // ため無効。Topは対象にならない。
+  const outdentFavoriteNode = useCallback(() => {
+    const row = favoriteEdit.tree[favoriteEdit.selected];
+    if (!row || row.kind === "top") return;
+    const parentId = row.node.parentId;
+    if (parentId === FAVORITES_FOLDER_ID) return;
+    const parentRow = favoriteEdit.tree.find(
+      (r) => r.kind === "folder" && r.node.id === parentId
+    );
+    if (!parentRow || parentRow.kind !== "folder") return;
+    const grandparentId = parentRow.node.parentId;
+    const grandparentChildren = favoriteEdit.tree
+      .filter(hasFavoriteNode)
+      .filter(
+        (r) => r.node.parentId === grandparentId && r.node.id !== row.node.id
+      );
+    const parentPos = grandparentChildren.findIndex(
+      (r) => r.node.id === parentId
+    );
+    const targetIndex =
+      parentPos === -1 ? grandparentChildren.length : parentPos + 1;
+    search.moveFavoriteNodeTo(row.node.id, grandparentId, targetIndex).then((err) => {
+      if (err) console.error(err);
+    });
+  }, [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo]);
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
   // ステップの操作は document レベルの keydown で処理する。input 要素のローカル
@@ -367,10 +489,20 @@ export default function App() {
         // window レベルのリスナーに一本化し、個別コンポーネントのローカル
         // onKeyDown とは併存させない（CLAUDE.md「複数ステップのウィザード形式
         // インタラクション」節の考え方をここにも適用する）。ただし「ここに
-        // フォルダを作成」のインライン入力欄はテキスト入力欄自体の性質上、
+        // フォルダを作成」・リネームのインライン入力欄はテキスト入力欄自体の性質上、
         // RegisterEntryDialog.tsx と同じローカル onKeyDown ＋ stopPropagation の
         // パターンを使う（入力欄にフォーカスがある間はこの window リスナーまで
-        // 伝播しない。詳細は FavoriteEditView.tsx の CreateFolderRow を参照）。
+        // 伝播しない。詳細は FavoriteEditTree.tsx の shouldStopEditInputKeyPropagation
+        // を参照）。
+        //
+        // 軸4f：Ctrl+Shift+N（フォルダ作成）は他のケースと異なり修飾キーの組み合わせ
+        // で判定するため、switch (e.key) に先立って個別に判定する（"N"/"n" いずれの
+        // 大文字小文字でも Shift の状態に関わらず一致させるため toLowerCase で比較）。
+        if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
+          e.preventDefault();
+          startCreateFolder();
+          return;
+        }
         switch (e.key) {
           case "Escape":
             // 設定パネルと同様、Esc で検索ビューへ戻る（ヘッダーの「戻る」
@@ -379,18 +511,44 @@ export default function App() {
             break;
           case "ArrowDown":
             e.preventDefault();
-            favoriteEdit.moveSelection(1);
+            // 軸4f：Alt+↓ は同一親内での並び替え（1つ下の兄弟と入れ替え）、
+            // 単独では通常の選択移動。
+            if (e.altKey) {
+              moveFavoriteNodeWithinParent(1);
+            } else {
+              favoriteEdit.moveSelection(1);
+            }
             break;
           case "ArrowUp":
             e.preventDefault();
-            favoriteEdit.moveSelection(-1);
+            if (e.altKey) {
+              moveFavoriteNodeWithinParent(-1);
+            } else {
+              favoriteEdit.moveSelection(-1);
+            }
+            break;
+          case "ArrowLeft":
+            // 軸4f：Alt+← のみ再親化（アウトデント）として扱う。Altなしの
+            // 単独の←は、検索ボックスのテキストカーソル移動と競合するため
+            // 割り当てない（/favorite モードの「←→キーには階層操作を割り当てない」
+            // 方針と同じ）。
+            if (e.altKey) {
+              e.preventDefault();
+              outdentFavoriteNode();
+            }
+            break;
+          case "ArrowRight":
+            if (e.altKey) {
+              e.preventDefault();
+              indentFavoriteNode();
+            }
             break;
           case "Enter": {
             // フォルダ見出し行では開閉をトグルする（onToggleCollapse を直接
-            // 呼び出し、▼クリックのイベント発火を疑似的に模倣しない）。アイテム行
-            // では何もしない（このビューはファイルを起動する画面ではなく、構造を
+            // 呼び出し、▼クリックのイベント発火を疑似的に模倣しない）。アイテム行・
+            // Top行では何もしない（このビューはファイルを起動する画面ではなく、構造を
             // 閲覧・整理する画面のため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
-            const row = search.favoriteTree[favoriteEdit.selected];
+            const row = favoriteEdit.tree[favoriteEdit.selected];
             if (row?.kind === "folder") {
               search.toggleFavoriteFolderCollapsed(row.node.id);
             }
@@ -401,11 +559,25 @@ export default function App() {
             // window リスナー自体が favoriteEditOpen の間だけ生きているため、
             // 「編集ビューにフォーカスがある間のみ有効」という制約は自動的に
             // 満たされる（グローバルショートカットにはしない。REQUIREMENTS.md
-            // 「お気に入り編集ビュー」節を参照）。
+            // 「お気に入り編集ビュー」節を参照）。Top行は実体を持たないため
+            // リネーム対象外（row.kind === "top" のときは node を持たないため
+            // 何もしない）。
             e.preventDefault();
-            const row = search.favoriteTree[favoriteEdit.selected];
-            if (row) {
+            const row = favoriteEdit.tree[favoriteEdit.selected];
+            if (row && row.kind !== "top") {
               setRenamingFavoriteNodeId(row.node.id);
+            }
+            break;
+          }
+          case "Delete": {
+            // 軸4f：フォルダ選択時は削除確認、アイテム選択時は★解除（確認なし、
+            // ★アイコンクリックと同じ挙動）。Top選択時は何もしない。
+            e.preventDefault();
+            const row = favoriteEdit.tree[favoriteEdit.selected];
+            if (row?.kind === "folder") {
+              requestDeleteFavoriteEditFolder(row.node.id, row.node.name);
+            } else if (row?.kind === "item") {
+              toggleFavoriteFromEditView(row.file);
             }
             break;
           }
@@ -483,11 +655,17 @@ export default function App() {
     openSettings,
     closeSettings,
     closeFavoriteEdit,
+    favoriteEdit.tree,
     favoriteEdit.selected,
     favoriteEdit.moveSelection,
-    search.favoriteTree,
     search.toggleFavoriteFolderCollapsed,
     setRenamingFavoriteNodeId,
+    startCreateFolder,
+    moveFavoriteNodeWithinParent,
+    indentFavoriteNode,
+    outdentFavoriteNode,
+    requestDeleteFavoriteEditFolder,
+    toggleFavoriteFromEditView,
     ocrActive,
     handleOcrClose,
     search.setQuery,
@@ -863,12 +1041,15 @@ export default function App() {
   if (favoriteEditOpen) {
     return (
       <FavoriteEditView
-        tree={search.favoriteTree}
+        tree={favoriteEdit.tree}
         selected={favoriteEdit.selected}
         onSelectRowByKey={favoriteEdit.selectByKey}
         onToggleCollapse={search.toggleFavoriteFolderCollapsed}
         onCreateFolder={search.createFavoriteFolder}
         onFolderCreated={handleFavoriteEditFolderCreated}
+        creatingFolderAnchorKey={creatingFolderAnchorKey}
+        onStartCreateFolder={startCreateFolder}
+        onCancelCreateFolder={cancelCreateFolder}
         onRequestDeleteFolder={requestDeleteFavoriteEditFolder}
         pendingDeleteFolder={search.pendingDeleteFavoriteFolder}
         onCancelDeleteFolder={search.cancelDeleteFavoriteFolder}

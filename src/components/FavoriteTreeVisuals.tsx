@@ -68,3 +68,30 @@ export const INDENT_BASE_REM = 1;
 // アイコンのパスのみをここで共有する。
 export const TRASH_ICON_PATH =
   "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16";
+
+// フォルダ作成アイコン（軸4f：行内アイコン化）。既存の塗りつぶしフォルダアイコン
+// （FOLDER_ICON_PATH）のシルエットに、小さな「+」を合成する。WarningIcon の
+// 「!」と同じ「fillRule="evenodd" による穴抜き」手法：「+」の形をした2つの矩形を
+// 追加のサブパスとして重ね、evenodd により folder 本体の塗りに対する穴として抜く
+// （穴の部分は常に行の背景色がそのまま透けるため、選択中/非選択どちらの背景でも
+// 視認できる）。「+」アイコン自体は段階5（/memo）でのメモ作成用に予約するため
+// （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）、フォルダ作成には
+// このフォルダ+プラス合成アイコンを別途用意する。
+// 座標は FOLDER_ICON_PATH の実際の輪郭（タブ部分を除く本体は概ね x:3〜19,
+// y:7〜18）を踏まえ、タブ・角の丸みを避けた本体中央やや右下に配置している。
+export const CREATE_FOLDER_ICON_PATH =
+  `${FOLDER_ICON_PATH} M12 13.8H18V15.2H12Z M14.3 11.5H15.7V17.5H14.3Z`;
+
+// フォルダ作成アイコン本体。表示サイズは他の行内アイコン（トラッシュ・★等）と
+// 揃えて呼び出し側が className（w-4 h-4 等）で制御する。
+export function CreateFolderIcon({ className }: { className: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d={CREATE_FOLDER_ICON_PATH}
+      />
+    </svg>
+  );
+}

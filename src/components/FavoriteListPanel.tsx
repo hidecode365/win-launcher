@@ -153,6 +153,7 @@ export function FavoriteListPanel({
                   className={`text-xs truncate ${
                     isSelected ? "text-blue-100" : "text-gray-400"
                   }`}
+                  title={item.path}
                 >
                   {item.path}
                 </div>
