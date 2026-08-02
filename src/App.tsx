@@ -20,7 +20,6 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
 import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
 import { FavoriteListPanel } from "./components/FavoriteListPanel";
-import { FavoriteFolderDeleteModal } from "./components/FavoriteFolderDeleteModal";
 import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { IconSlotMeasureOverlay } from "./components/IconSlotMeasureOverlay";
@@ -1211,27 +1210,12 @@ export default function App() {
           onClose={() => setIconMeasureOverlayOpen(false)}
         />
       )}
-      {/* システムコマンド確認モーダル */}
-      {search.pendingCommand && (
-        <SystemCommandModal
-          command={search.pendingCommand}
-          onCancel={search.cancelSystemCommand}
-          onConfirm={search.confirmSystemCommand}
-        />
-      )}
-
-      {/* アップデート確認/インストールダイアログ */}
-      {updater.dialog && (
-        <UpdateDialog
-          state={updater.dialog}
-          onInstall={updater.installUpdate}
-          onDismiss={updater.dismiss}
-        />
-      )}
 
       {/* お気に入り登録ダイアログ（★を押した未登録行から開く。段階5の /memo でも
           同じ RegisterEntryDialog を再利用する想定のため、お気に入り固有の文言・
-          データはすべてここで props として与える）。 */}
+          データはすべてここで props として与える）。マウント時に自身の名前入力欄へ
+          自己focusするため（RegisterEntryDialog.tsx参照）、SearchBoxより前に
+          描画してもTab到達性に問題は無い。 */}
       {search.favoriteDialogTarget && (
         <RegisterEntryDialog
           title="お気に入りに登録"
@@ -1241,17 +1225,6 @@ export default function App() {
           onCancel={search.closeFavoriteDialog}
           onSave={search.confirmFavoriteDialog}
           onCreateFolder={search.createFavoriteFolder}
-        />
-      )}
-
-      {/* フォルダ削除確認モーダル（配下が空でない場合のみ表示）。/favorite
-          ブラウジングの暫定UI・お気に入り編集ビューの両方で共有する
-          （FavoriteFolderDeleteModal.tsx を参照）。 */}
-      {search.pendingDeleteFavoriteFolder && (
-        <FavoriteFolderDeleteModal
-          target={search.pendingDeleteFavoriteFolder}
-          onCancel={search.cancelDeleteFavoriteFolder}
-          onConfirm={search.confirmDeleteFavoriteFolder}
         />
       )}
 
@@ -1273,6 +1246,28 @@ export default function App() {
             : undefined
         }
       />
+
+      {/* システムコマンド確認モーダル・アップデート確認/インストールダイアログ：
+          いずれもマウント時に自己focus()を持たず、開いた時点でフォーカスを
+          持つ要素（SearchBoxのinput）からの前方Tabで到達させる設計（系統1）。
+          そのためSearchBoxより後ろに描画する必要がある（docs/external-design/
+          01-screen-transitions.md「表2」参照。以前はSearchBoxより前に描画されており
+          前方Tabで到達できない不具合があった）。absolute inset-0 z-10で自己位置決め
+          するため、描画順序を変えても見た目の重なりには影響しない。 */}
+      {search.pendingCommand && (
+        <SystemCommandModal
+          command={search.pendingCommand}
+          onCancel={search.cancelSystemCommand}
+          onConfirm={search.confirmSystemCommand}
+        />
+      )}
+      {updater.dialog && (
+        <UpdateDialog
+          state={updater.dialog}
+          onInstall={updater.installUpdate}
+          onDismiss={updater.dismiss}
+        />
+      )}
 
       {/* OCR プレビュー（画像ペースト時に表示。表示中は検索結果エリアを非表示にする） */}
       {/* key に ocrRunId を使い、新しい画像が貼り付けられるたびに再マウントして

@@ -79,20 +79,22 @@
 
 表1が「検索ボックスの入力内容によって切り替わるモード」を扱うのに対し、本表は**画面（view）とオーバーレイ（modal）そのものの遷移**を扱う。両者は直交する軸であり、たとえば「検索 view の上で `/recent` モードになっている状態」は両方の表に同時に該当する。
 
-「遷移後の状態」列は、[モーダル・ダイアログのキー操作原則](#modal-key-policy)（キャンセルはフォーカス非依存、確定はフォーカス依存）と各状態がどう対応するかが読み取れるように記述している。
+「遷移した際のフォーカス先」列は、その状態に入った瞬間に DOM フォーカスがどこにあるか（既定）と、内部状態によって変わる場合の例外を記す。「確定・キャンセルの実装備考」列は、[モーダル・ダイアログのキー操作原則](#modal-key-policy)（キャンセルはフォーカス非依存、確定はフォーカス依存）と各状態がどう対応するかを記す。
 
-| 状態 | 種別 | 遷移先候補 | 遷移トリガー | 遷移後の状態 |
-| --- | --- | --- | --- | --- |
-| `search` | view | `settings`／`favoriteEdit`／各 modal | 歯車クリック・Ctrl+S（**検索画面表示中のみ**開く非対称動作。かつ `pendingCommand`／`favoriteDialogTarget`／`pendingDeleteFavoriteFolder` のいずれも非表示のときに限る）・SearchBox 内の編集アイコンクリック・★ボタン等 | 遷移先が既定のフォーカス先を持つ。`search` 自身の既定フォーカス先は検索欄（`inputRef`） |
-| `settings` | view | `search` | 閉じるボタン・Esc（**Ctrl+S では閉じない**。閉じる手段は Esc に一本化） | `search` が既定のフォーカス先（検索欄）に戻る。Esc は window レベルで処理され、原則どおりフォーカス非依存 |
-| `favoriteEdit` | view | `search`／各 modal | SearchBox 内の編集アイコンクリックで起動（**キーボードからの起動経路は持たない**）・Esc で `search` へ戻る・各 modal 起動 | 遷移先が既定のフォーカス先を持つ。`favoriteEdit` 自身の既定フォーカス先は絞り込み欄（`filterInputRef`）。Esc は window レベルで処理される |
-| `register`（お気に入り登録ダイアログ） | modal | （元の view） | 保存確定・Esc | 元の view が既定のフォーカス先に戻る。**Esc は二重の経路を持つ**（ダイアログ自身の `onKeyDown` が通常時に処理し `stopPropagation`、フォーカスが外れた場合の保険として window レベルにも Esc 分岐がある）。確定はダイアログ内部 state を要するためダイアログ自身が処理する |
-| `systemCommand`（システムコマンド確認） | modal | （元の view） | 確定・Esc | 元の view が既定のフォーカス先に戻る。**原則に適合済み**（[是正](#system-command-enter-removal)により、window レベルの独自 Enter 分岐と 300ms の猶予期間はいずれも削除済み）。Esc は window レベルで処理し、確定は Tab でフォーカスした「実行」ボタン上の Enter（＝ブラウザ標準の `click` 発火）に委ねる。`deleteFolder` と同じ構造 |
-| `deleteFolder`（フォルダ削除確認） | modal | （元の view） | 確定・Esc | 元の view が既定のフォーカス先に戻る。**原則に適合した参照実装**：Esc のみ window レベルで処理し、確定は Tab でフォーカスした削除ボタン上の Enter（＝ブラウザ標準の `click` 発火）に委ねる |
-| `pathPaste`（フォルダ選択ステップ） | modal | `pathPaste`（名前編集ステップ）／（元の view） | 選択確定で次ステップへ・Esc で元の view へ | 名前編集ステップへ遷移する。↑↓・Enter・Esc をいずれも window レベルで処理する（候補行が SearchBox とは別要素のため、フォーカスが SearchBox から外れうる） |
-| `pathPaste`（名前編集ステップ） | modal | （元の view） | 確定でショートカット作成・Esc で1ステップ戻る | **Esc は「モーダルを閉じる」ではなく「フォルダ選択ステップへ戻る」**。この Esc の意味の違いは本ウィザード固有であり、他の modal と揃えていない |
-| `ocrPreview` | **fullscreen overlay**（[定義](#fullscreen-overlay)） | （元の view） | Ctrl+V での画像ペーストで起動・「閉じる」で検索画面へ・「コピーして閉じる」でウィンドウを閉じる | 180ms のフェードアウト中間状態（`ocrClosing`）を持ち、**`closeWindow()` を経由しない唯一の例外**（ウィンドウが可視のまま意図的に見せる演出のため） |
-| `updateDialog`（アップデート確認/DL中） | modal | （元の view） | **マウス操作のみ。キー操作の割当を持たない**（window レベルリスナーにも分岐がなく、Esc も Enter も効かない） | 元の view が既定のフォーカス先に戻る。キー操作を割り当てるかどうかは未検討（現状は意図的に割当なし、という状態） |
+| 状態 | 種別 | 遷移先候補 | 遷移トリガー | 遷移した際のフォーカス先 | 確定・キャンセルの実装備考 |
+| --- | --- | --- | --- | --- | --- |
+| `search` | view | `settings`／`favoriteEdit`／各 modal | 歯車クリック・Ctrl+S 等 | 既定：検索欄（`inputRef`） | ー |
+| `settings` | view | `search` | 閉じるボタン・Esc | 既定：明示的 `focus()` なし。ツリー全置換で直前のフォーカスが DOM ごと消え、素の状態からの Tab で「戻る」ボタンへ自然到達 | Esc のみで閉じる。Ctrl+S では閉じない |
+| `favoriteEdit` | view | `search`／各 modal | 編集アイコンクリック | 既定：絞り込み欄（`filterInputRef`）へ自己 focus | Esc で `search` へ戻る |
+| `register`（お気に入り登録ダイアログ） | modal | （元の view） | 保存確定・Esc | 既定：名前入力欄へ自己 focus（`requestAnimationFrame` 経由）。例外：フォルダ作成中は `newFolderInputRef` へ | Esc は二重経路（ダイアログ自身＋window レベル保険）。確定はダイアログ自身が処理 |
+| `systemCommand`（システムコマンド確認） | modal | （元の view） | 確定・Esc | 既定：フォーカス移動なし。前方 Tab でキャンセルへ到達 | 原則に適合済み（独自 Enter 分岐・300ms 猶予は削除済み、DOM 順序も是正済み） |
+| `deleteFolder`（フォルダ削除確認） | modal | （元の view） | 確定・Esc | 既定：フォーカス移動なし。前方 Tab でキャンセルへ到達（参照実装） | 原則に適合。Esc のみ window レベル、確定は Tab＋ブラウザ標準 click |
+| `pathPaste`（フォルダ選択ステップ） | modal | `pathPaste`（名前編集ステップ） | 選択確定 | 既定：フォーカス移動なし。Tab 運用対象外（↑↓／Enter／Esc はすべて window レベルで完結） | フォーカス位置に依存しない設計 |
+| `pathPaste`（名前編集ステップ） | modal | （元の view） | 確定・Esc（1ステップ戻る） | 既定：名前入力欄へ自己 focus＋`select()` | Esc は「閉じる」ではなく「フォルダ選択へ戻る」。本ウィザード固有の意味 |
+| `ocrPreview` | fullscreen overlay | （元の view） | Ctrl+V で起動 | 既定：サブ状態依存。例外1：loading／error はフォーカス移動先なし（SearchBox に残留）。例外2：結果表示中は `textarea` へ `autoFocus` | `closeWindow()` を経由しない例外（180ms フェードアウト）。Ctrl+D はフォーカス非依存で機能 |
+| `updateDialog`（アップデート確認/DL中） | modal | （元の view） | 自動チェック・トレイメニュー | 既定：フォーカス移動なし。前方 Tab でボタン群へ到達 | Enter/Escape のハンドラ自体が無い（マウス操作のみ）。DOM 順序は是正済み |
+
+> ウィンドウを閉じる／隠す際の「フェードアウト」演出は、本表の対象外（view/modal ＋ フォーカスの話ではなく、非表示時の見え方の話であるため）。現状、通常経路（フォーカスアウト自動非表示・Escape による非表示等）と OCR プレビューの「コピーして閉じる」（独自180ms演出）とで実装が分かれている。この一貫性は別途 200（設計）で検討する（[docs/internal-design/window-lifecycle.md#close-window-common-design](../internal-design/window-lifecycle.md#close-window-common-design) 参照）。
 
 <a id="fullscreen-overlay"></a>
 
