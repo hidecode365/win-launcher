@@ -220,10 +220,38 @@ v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlC
 
 他モードの調査結果（変更していない。判断は必要になった時点で行う）：
 
-- `prefixCommandMode`（`prefixCommandCandidates.map`）：`border-b`/`border-t` なし。ボタンの入れ子は存在しない
-- `clipboardMode`（`ClipboardPanel.tsx` の `entries.map`）：`border-b`/`border-t` なし。ボタンの入れ子は存在しない。詳細パネル側の `border-t border-gray-200/60` は一覧の行区切りではなく本文とメタ情報を区切るフッター境界線であり、性質が異なる
-- `pathPasteWizardMode`（`PathPasteWizard.tsx` の `folders.map`）：`border-b`/`border-t` なし。ボタンの入れ子は存在しない
-- `WebSearchRow.tsx`（触っていない）：`border-t border-gray-100` が付いている（今回削除した5種類と同じ薄い色）。同種の「視認できない区切り線」問題が存在する可能性がある
+- `prefixCommandMode`（`prefixCommandCandidates.map`）：`border-b`/`border-t` なし。ボタンの入れ子は存在しない（※この時点の調査。後述「行ルート要素のフォーカス残留によるシステムコマンド誤実行」で `<div role="button">` へ変更済み）
+- `clipboardMode`（`ClipboardPanel.tsx` の `entries.map`）：`border-b`/`border-t` なし。ボタンの入れ子は存在しない（※同上、`<div role="button">` へ変更済み）。詳細パネル側の `border-t border-gray-200/60` は一覧の行区切りではなく本文とメタ情報を区切るフッター境界線であり、性質が異なる
+- `pathPasteWizardMode`（`PathPasteWizard.tsx` の `folders.map`）：`border-b`/`border-t` なし。ボタンの入れ子は存在しない（※同上、`<div role="button">` へ変更済み）
+- `WebSearchRow.tsx`（触っていない）：`border-t border-gray-100` が付いている（今回削除した5種類と同じ薄い色）。同種の「視認できない区切り線」問題が存在する可能性がある（※後述の理由で `<div role="button">` へ変更済み。区切り線自体は本節時点では未着手のまま）
+
+<a id="row-focus-retention-bug"></a>
+
+### 行ルート要素のフォーカス残留によるシステムコマンド誤実行（400_テスト・バグ修正）
+
+システムコマンド（`/shutdown` 等）をプレフィックスコマンド候補一覧からマウスクリックで選択すると確認モーダル（`SystemCommandModal`）が開くが、直後に Enter を押すと確認モーダルの「実行」ボタンを押したわけでもないのに即座にコマンドが実行されてしまう不具合があった。
+
+**調査の経緯**：当初は直前に行った別の修正（`SystemCommandModal`・`RegisterEntryDialog` の Enter/Escape 処理を window レベルの共通 `keydown` リスナーへ一本化した変更）が原因という仮説で、「モーダル側が確認ボタンへ同期的にフォーカスを移してしまい、Enter の既定動作（フォーカス中の要素をクリック）が誤発火しているのでは（`RegisterEntryDialog` で実際にあった不具合と対になる原因）」という仮説を検証した。しかし `SystemCommandModal.tsx` 自体には autoFocus・フォーカス移動処理が一切無く、この仮説は成立しなかった。
+
+**直接原因**：本節冒頭で「ボタンの入れ子が存在しないため未対応のまま残していた」と記録した3箇所（`prefixCommandMode` の候補行・`WebSearchRow.tsx`・`pathPasteWizardMode` のフォルダ選択候補行）と、同じ理由で見落とされていた `ClipboardPanel.tsx` の履歴一覧行が、行のルート要素として実在の `<button>` を使っていた。本アプリは「検索ボックスの `<input>` が常にDOMフォーカスを持ち続ける」ことを前提に、一覧の選択状態は `selected`/`intent`（本節前半を参照）という完全にReact管理下の値だけで表現し、モーダル・ダイアログのEnter/Escapeは window レベルの `keydown` リスナーに一本化する設計（[window-lifecycle.md](window-lifecycle.md#modal-keydown-window-level)）を取っている。ところが行のルート要素が実在の `<button>` だと、マウスクリックでその行を選択した瞬間にブラウザの既定動作としてクリックした `<button>` 自身へDOMフォーカスが移り、この前提が崩れる。`SystemCommandModal` はオーバーレイとして候補一覧の上に重なるだけで一覧自体をアンマウントしないため、フォーカスはクリックされた候補行の `<button>` に残り続ける。この状態で押した次の Enter は、検索ボックスの `<input>`（に `onKeyDown` で束縛された `handleKeyDown`）を経由せず——候補行の `<button>` と `<input>` は兄弟要素であり、React のイベント委譲はイベントの実際のDOM経路上にあるハンドラしか呼ばないため——直接 window の `keydown` リスナーへ到達する。このリスナーは（クリックからEnterまでの間に少なくとも1回レンダリングを経ているため）その時点で最新の `pendingCommand` を正しく参照でき、Enter を「確認モーダルへの確定入力」として処理してしまう。
+
+**横並び調査**：「一覧の行を実在の `<button>` で実装している箇所」を機械的に grep（`<button` の後に `onMouseEnter` を伴うものを一覧行の目印として抽出）した結果、上記4箇所が全て該当した。「一覧からEnterで選択した直後に別の確認要素へフォーカスを移す」という構造そのものを持つのは `SystemCommandModal`（window レベルで Enter/Escape を処理する）だけで、`FavoriteFolderDeleteModal`（お気に入り編集ビューの削除確認）は Escape のみ window レベルで処理し Enter は未束縛のため、同じ行フォーカス残留があっても「削除の誤実行」までは起きない（トリガーである削除アイコンボタン自身の `onClick` が再度呼ばれるだけ）。ただし行ルート要素が `<button>` であること自体は不具合の有無に関わらず本プロジェクトの既存規約（[dom-structure-and-dividers](#dom-structure-and-dividers)）への違反であり、`PathPasteWizard.tsx` のフォルダ選択候補行についても、クリック直後に遷移する次ステップ（名前編集）の `nameInputRef.current?.focus()` が非同期的な競合（`RegisterEntryDialog` で `requestAnimationFrame` 化して修正したのと同種のレース）を潜在的に抱えていた。
+
+**原因の性質**：個々のコンポーネント固有の実装ミスではなく、「一覧行のDOMフォーカス管理」という設計原則（検索ボックスの `<input>` だけが常にフォーカスを持つ）を、`ResultList.tsx` の `rows.map` 由来の6種類の行にしか適用していなかったという構造的な抜けだった。区切り線の調査（本節前半）の時点で存在に気づいていながら「ボタンの入れ子が無いから」という別の観点だけで判断し、フォーカス管理という観点での再検証をしていなかったことが直接の見落とし要因。
+
+**対応**：`prefixCommandMode` の候補行（`ResultList.tsx`）・`WebSearchRow.tsx`・`pathPasteWizardMode` のフォルダ選択候補行（`PathPasteWizard.tsx`）・クリップボード履歴一覧行（`ClipboardPanel.tsx`）の4箇所すべてを、`ResultList.tsx` の既存6種類と同じ `<div role="button">` パターンへ統一した（`type="button"` 属性の削除以外、`className`／`onClick`／`onMouseEnter`／`data-index` はそのまま維持。見た目・クリック操作に変化はない）。個別の分岐やフラグでの対症療法ではなく、「一覧行のルート要素は常に `<div role="button">` とする」という既存規約の適用範囲を、`ResultList.tsx` 内の行だけでなくアプリ全体の選択可能な一覧行へ広げる形で解消した。
+
+<a id="selectable-row-wrapper"></a>
+
+### 再発防止策の検討（共通ラッパー／ESLint／CI）
+
+上記の修正を「ドキュメントに書くだけ」で終わらせると、新しい行タイプを実装する際にドキュメントを読み忘れて同じ違反が混入しうるため、以下3案を検討した。
+
+1. **一覧行の共通ラッパーコンポーネント**：採用。`src/components/SelectableRow.tsx` を新設し、`role="button"` の `<div>`・`data-index`・`onClick`・`onMouseEnter` を1箇所に固定した。行の実装者は `<button>`/`<div role="button">` を直接書く必要がなくなり、`IconSlot`／`Tooltip` と同様「まずこれを使う」共通コンポーネントとして機能する。今回修正した4箇所（`prefixCommandMode` 候補行・`WebSearchRow`・`PathPasteWizard` のフォルダ選択候補行・`ClipboardPanel` の履歴一覧行）はこのラッパーへ移行済み。`ResultList.tsx` の `rows.map` 由来の6種類（`pinned` 等）は、ドラッグ&ドロップ・複数の内部操作ボタンなど個別の事情を持つ行があり、このラッパーの現在のprops（`index`/`className`/`onClick`/`onMouseEnter`/`children`のみ）では表現しきれないため、今回は移行対象外とした（将来 `draggable` 系props等を追加してラッパーを拡張すれば移行可能。無理に今回の修正範囲へ含めず、既存の直書き `<div role="button">` のまま維持する判断とした）
+2. **ESLintの独自ルール**：本プロジェクトには現時点で ESLint 自体が導入されていない（`package.json` にESLint関連の依存・スクリプトが存在しない）。ルール1つのためだけに新規ツールチェインを導入するのは、このバグ修正チケットの範囲を超える判断（devDependencies追加・設定作成・導入時点で顕在化する既存コードの他の指摘への対応要否等を伴う）と判断し、見送った
+3. **grepベースのCIチェック**：本プロジェクトには `.github/workflows` が存在せず、CI パイプライン自体が無い（Issueテンプレートのみ）。CIを新設する判断も本チケットの範囲を超える。加えて、テキストベースのgrep（`<button` の後に `onMouseEnter` を伴うものを検出、等）は今回の横並び調査でも使えたヒューリスティックだが、行の書き方が変われば容易にすり抜ける（誤検知・見逃しの両方がありうる）ため、AST解析を伴う1の静的チェック（ESLintルール）ほどの信頼性は無い
+
+**結論**：1（共通ラッパー）は新規ツール導入を伴わずに実現でき、実装した。2・3（ESLint／CI）はどちらも「ESLint自体の導入」「CIパイプライン自体の新設」という、このチケットの範囲を超える別判断が前提になるため見送った。ESLint・CIの導入自体を検討する場合は、この一覧行規約のためだけでなく、プロジェクト全体の静的解析方針として別途（200_設計相当で）判断すること。
 
 ## 今後の指針
 
@@ -232,5 +260,5 @@ v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlC
 - reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"その文脈内での操作の副作用として変化する値"を含めない
 - 新機能・新モードを追加する際、そのモード専用の強制リセットeffectを新設しない。選択のリセットは常に汎用トリガーだけに一本化し、それ以外のデータ変化は `resolveSelected` の fallback 挙動に委ねる
 - 選択中の行の種類の判定は常に `rows[selected].kind` で行い、個別のオフセット変数を新設しない。新しい行の種類を追加する場合も、まず `ResultRow` に新しい `kind` を追加して `rows` の構築ロジック（`useSearch.ts` の1箇所）に組み込み、`App.tsx`/`ResultList.tsx` 側は switch に case を1つ追加するだけで対応できる状態を維持する
-- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない。新しい操作ボタンを行に追加する場合はこの構造の上に乗せる
+- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない。新しい操作ボタンを行に追加する場合はこの構造の上に乗せる。**この規約は `ResultList.tsx` の `rows.map` 由来の行に限らず、選択可能な一覧行を描画するコンポーネント全て（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する**（[row-focus-retention-bug](#row-focus-retention-bug) を参照）。新しい一覧・候補リストを追加する場合、行が複数の内部操作ボタンやドラッグ&ドロップ等の個別事情を持たないなら、まず共通ラッパー `SelectableRow`（[selectable-row-wrapper](#selectable-row-wrapper)）が使えないか検討し、使えない場合のみ `<div role="button">` を直接書く
 - 結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要になった場合は背景色差のみで表現する

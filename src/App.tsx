@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { Store } from "@tauri-apps/plugin-store";
+import { logUiEvent } from "./lib/uiDebugLog";
 import { useSettings } from "./hooks/useSettings";
 import { useHotkey } from "./hooks/useHotkey";
 import { useSearch } from "./hooks/useSearch";
@@ -115,10 +116,24 @@ export default function App() {
     // 閉じて検索ビューへ戻った場合にも再フォーカスされる（showSettings のみを
     // 見ていた頃は favoriteEdit → search の遷移で showSettings 自体が変化しない
     // ため再フォーカスが効かなかった）。
-    if (view === "search") {
+    //
+    // 400_テスト・バグ修正：view のみを条件にしていたため、検索ビュー内で
+    // SearchBox の上に開閉するモーダル・ダイアログ（登録ダイアログ・
+    // システムコマンド確認・フォルダ削除確認・パス貼り付けウィザード）を
+    // 閉じても view 自体は "search" のまま変化せずこの effect が発火せず、
+    // SearchBox へ再フォーカスされない不具合があった。これらのstateはいずれも
+    // 「検索ビュー内で SearchBox を隠す/disabledにするオーバーレイ」という
+    // 共通の性質を持つため、個別に列挙せず `search.searchOverlayActive`
+    // （useSearch.ts 側で一括判定した1つの派生値）を参照する。新しい同種の
+    // モーダルを追加する場合も、ここではなく useSearch.ts の
+    // searchOverlayActive の配列へ1state追加するだけでよい（この effect・
+    // SearchBox の disabled 判定・handleKeyDown の早期return の3箇所が自動的に
+    // 追従する。詳細は docs/design/window-lifecycle.md
+    // 「検索ビュー上のオーバーレイstate一覧の単一化（searchOverlayActive）」節を参照）。
+    if (view === "search" && !search.searchOverlayActive) {
       inputRef.current?.focus();
     }
-  }, [view]);
+  }, [view, search.searchOverlayActive]);
 
   const handleOcrClose = useCallback(() => {
     ocr.clearOcr();
@@ -715,6 +730,53 @@ export default function App() {
           e.preventDefault();
           search.cancelDeleteFavoriteFolder();
         }
+      } else if (
+        !showSettings &&
+        !favoriteEditOpen &&
+        search.favoriteDialogTarget
+      ) {
+        // 400_テスト・バグ修正：登録ダイアログ（RegisterEntryDialog）を開いた
+        // トリガー（★ボタン）はクリック後それ自身にフォーカスを持つため、
+        // ダイアログ自身のマウント時 autoFocus（requestAnimationFrame越しに
+        // 表示名欄へ focus() する）が何らかの理由で間に合わない場合、
+        // フォーカスがダイアログ内のどの要素にも当たらないまま Escape を押しても
+        // ダイアログ自身の onKeyDown（React合成イベント）まで到達せず閉じられない
+        // 不具合があった。パス貼り付けウィザード・フォルダ削除確認モーダルと
+        // 同じ理由で、Escapeによるキャンセルだけはこの window レベルのリスナーにも
+        // 用意し、フォーカス位置によらず確実に閉じられるようにする（フォーカスが
+        // ダイアログ内の要素にある通常時は、ダイアログ自身の onKeyDown が先に
+        // 処理してstopPropagationするため、ここには到達せず二重処理にはならない）。
+        // Enterによる保存は表示名・保存先フォルダ等ダイアログ内部のstateを
+        // 必要とするため、引き続きダイアログ自身のonKeyDownのみで処理する。
+        if (e.key === "Escape") {
+          e.preventDefault();
+          search.closeFavoriteDialog();
+        }
+      } else if (
+        !showSettings &&
+        !favoriteEditOpen &&
+        search.pendingCommand
+      ) {
+        // 400_テスト・バグ修正：システムコマンド確認モーダル（SystemCommandModal）も
+        // 登録ダイアログと同じ構造的な弱さを共有していた。こちらは自身の
+        // autoFocusすら持たず、Enter/Escapeの確定・キャンセルはSearchBoxの
+        // React onKeyDown（handleKeyDown）に委ねていたが、モーダル表示中は
+        // SearchBox自体がdisabledになり、直前まで表示名欄以上にフォーカスを
+        // 持ちやすいSearchBox自身が強制的にblurされるため、以降のEnter/Escapeが
+        // SearchBoxまで届かず確定・キャンセルできない状態になりうる。フォルダ
+        // 削除確認モーダル・登録ダイアログと同じ理由で、この window レベルの
+        // リスナーで確実に処理する（SearchBox側のhandleKeyDownは
+        // pendingCommand中は何もしないため、二重処理にはならない）。
+        if (e.key === "Enter") {
+          e.preventDefault();
+          // 400_テスト・バグ修正：調査用ログ（詳細は src/lib/uiDebugLog.ts を参照）。
+          void logUiEvent("[window-keydown] key=Enter");
+          search.confirmSystemCommand();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          void logUiEvent("[window-keydown] key=Escape");
+          search.cancelSystemCommand();
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -724,7 +786,10 @@ export default function App() {
     showSettings,
     favoriteEditOpen,
     search.pendingCommand,
+    search.confirmSystemCommand,
+    search.cancelSystemCommand,
     search.favoriteDialogTarget,
+    search.closeFavoriteDialog,
     search.pendingDeleteFavoriteFolder,
     openSettings,
     closeSettings,
@@ -869,35 +934,18 @@ export default function App() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (search.pendingCommand) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          search.confirmSystemCommand();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          search.cancelSystemCommand();
-        }
-        return;
-      }
-      if (search.pathPasteWizardMode) {
-        // ウィザードの操作（フォルダ選択ステップの ↑↓・Enter・Escape、名前編集
-        // ステップの Escape）は、SearchBox の focus 状態に依存しない window レベルの
-        // keydown リスナー（またはステップ3専用の入力欄自身）で処理する。フォルダ選択
-        // ステップの各行は SearchBox とは別の <button> であり、Enter 確定直後や行の
-        // クリックでフォーカスが SearchBox から外れうるため（詳細は該当 useEffect の
-        // コメントを参照）。
-        return;
-      }
-      if (search.favoriteDialogTarget) {
-        // 登録ダイアログ表示中は、ダイアログ自身の入力欄（マウント時に focus()
-        // 済み）が Enter/Escape を含むキー操作を自己完結で処理する（RegisterEntryDialog
-        // 自身の onKeyDown を参照）。SearchBox 側では何もしない。
-        return;
-      }
-      if (search.pendingDeleteFavoriteFolder) {
-        // フォルダ削除確認モーダル表示中は、window レベルの keydown リスナー
-        // （Escape=キャンセル）が処理する。SearchBox 側では何もしない
-        // （パス貼り付けウィザードと同じ理由）。
+      if (search.searchOverlayActive) {
+        // 400_テスト・バグ修正：システムコマンド確認・パス貼り付けウィザード・
+        // 登録ダイアログ・フォルダ削除確認モーダルのいずれの表示中も、Enter/Escape
+        // はこのReact onKeyDown（SearchBoxの合成イベント）ではなく window レベルの
+        // keydown リスナーに一本化している（登録ダイアログのみ、ダイアログ自身の
+        // 入力欄が自己完結で処理し、window レベルはEscapeの保険用）。理由は
+        // オーバーレイの種類によって異なる（フォーカスが行の `<button>` に残留する・
+        // SearchBoxがdisabledになる等）ため、個別の理由は
+        // docs/design/window-lifecycle.md の該当節と App.tsx の window レベル
+        // keydown リスナー側のコメントを参照。ここでは二重ハンドラによる
+        // リグレッション再発防止のため何もしない（CLAUDE.md
+        // 「複数ステップのウィザード形式インタラクション」節を参照）。
         return;
       }
       switch (e.key) {
@@ -982,9 +1030,7 @@ export default function App() {
       }
     },
     [
-      search.pendingCommand,
-      search.confirmSystemCommand,
-      search.cancelSystemCommand,
+      search.searchOverlayActive,
       moveSelection,
       webSearchVisible,
       search.selected,
@@ -1002,11 +1048,8 @@ export default function App() {
       selectedRow,
       search.launchFile,
       search.openContainingFolder,
-      search.pathPasteWizardMode,
       search.startShortcutWizard,
       search.addSearchFolderFromPaste,
-      search.favoriteDialogTarget,
-      search.pendingDeleteFavoriteFolder,
       search.favoriteMode,
       search.toggleFavoriteFolderCollapsed,
       selectedFavoriteRow,
@@ -1218,12 +1261,7 @@ export default function App() {
         query={search.query}
         onQueryChange={search.setQuery}
         onKeyDown={handleKeyDown}
-        disabled={
-          search.pendingCommand !== null ||
-          search.pathPasteWizardMode ||
-          search.favoriteDialogTarget !== null ||
-          search.pendingDeleteFavoriteFolder !== null
-        }
+        disabled={search.searchOverlayActive}
         onOpenSettings={openSettings}
         favoriteEditVisible={search.favoriteMode}
         onOpenFavoriteEdit={openFavoriteEdit}

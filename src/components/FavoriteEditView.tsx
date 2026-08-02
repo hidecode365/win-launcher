@@ -93,15 +93,31 @@ export function FavoriteEditView({
   onClose: () => void;
   version: string;
 }) {
-  // マウント時（編集ビューを開いた時点）に検索ボックスへフォーカスする
+  // マウント時（編集ビューを開いた時点）に絞り込み欄へフォーカスする
   // （メイン検索画面の SearchBox と同じ「常にフォーカスされた入力欄」という
   // 前提。↑↓・F2・Delete・Ctrl+Shift+N・Alt+矢印は window レベルリスナーが
   // フォーカス位置に関わらず処理するため、この入力欄にフォーカスがあっても
   // ツリー操作は妨げられない）。
+  //
+  // 400_テスト・バグ修正：当初はマウント時（空の依存配列）にしか実行しておらず、
+  // フォルダ削除確認モーダル（pendingDeleteFolder）をトリガーのゴミ箱アイコン
+  // ボタンから開いて閉じても絞り込み欄へ再フォーカスされない不具合があった
+  // （トリガーのボタン自身がクリック後もフォーカスを持ち続けるため。詳細は
+  // docs/design/result-list-and-selection.md「行ルート要素のフォーカス残留による
+  // システムコマンド誤実行」節と同種の理由）。横並び調査の結果、リネーム中
+  // （renamingNodeId）・フォルダ作成中（creatingFolderAnchorKey）のインライン
+  // 入力欄も、確定/キャンセル後に絞り込み欄へ戻す処理を持たない同じ構造的な
+  // 抜けだったため、検索ビュー側の `searchOverlayActive`（App.tsx・
+  // useSearch.ts）と同じ考え方で、この編集ビュー内で絞り込み欄からフォーカスを
+  // 奪いうる3state（いずれもこのビュー内だけで完結する props）が全て閉じた
+  // タイミングでまとめて再フォーカスするようにした。新しい同種の状態を
+  // 追加する場合はこの依存配列に1つ追記するだけでよい。
   const filterInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    filterInputRef.current?.focus();
-  }, []);
+    if (!pendingDeleteFolder && !renamingNodeId && !creatingFolderAnchorKey) {
+      filterInputRef.current?.focus();
+    }
+  }, [pendingDeleteFolder, renamingNodeId, creatingFolderAnchorKey]);
 
   const filtering = filterText.length > 0;
   // フッター（FavoriteEditFooter）へ渡す選択中の行種別の算出用。

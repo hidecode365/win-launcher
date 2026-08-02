@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import type { PathPasteWizardStep } from "../hooks/useSearch";
 import { FolderEntry } from "../types";
+import { SelectableRow } from "./SelectableRow";
 
 // 機能2（検索フォルダにショートカットとして追加）のミニウィザードのステップ2・3を描画する。
 // ステップ1（候補行表示）は ResultList 側で描画するため、ここでは扱わない
@@ -66,9 +67,9 @@ export function PathPasteWizard({
         </div>
       ) : (
         folders.map((folder, i) => (
-          <button
+          <SelectableRow
             key={folder.path}
-            data-index={i}
+            index={i}
             className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
               i === selected
                 ? "bg-blue-500 text-white"
@@ -93,7 +94,7 @@ export function PathPasteWizard({
             <div className="min-w-0 truncate text-sm font-medium">
               {folder.path}
             </div>
-          </button>
+          </SelectableRow>
         ))
       )}
     </div>

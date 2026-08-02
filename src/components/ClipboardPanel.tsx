@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatTimestamp } from "../lib/format";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
+import { SelectableRow } from "./SelectableRow";
 import {
   ClipboardEntry,
   ClipboardImageEntry,
@@ -80,9 +81,9 @@ export function ClipboardPanel({
           </div>
         ) : (
           entries.map((entry, i) => (
-            <button
+            <SelectableRow
               key={entry.id}
-              data-index={i}
+              index={i}
               className={`w-full flex items-center px-3 py-2 text-left transition-colors ${
                 i === selected
                   ? "bg-blue-500 text-white"
@@ -126,7 +127,7 @@ export function ClipboardPanel({
                   {formatTimestamp(entry.timestamp)}
                 </div>
               </div>
-            </button>
+            </SelectableRow>
           ))
         )}
       </div>

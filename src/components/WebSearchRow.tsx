@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { SelectableRow } from "./SelectableRow";
 
 export function WebSearchRow({
   query,
@@ -14,9 +15,8 @@ export function WebSearchRow({
   onMouseEnter: (e: MouseEvent) => void;
 }) {
   return (
-    <button
-      type="button"
-      data-index={index}
+    <SelectableRow
+      index={index}
       className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
         active ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
       }`}
@@ -50,6 +50,6 @@ export function WebSearchRow({
           Enter で開く
         </div>
       </div>
-    </button>
+    </SelectableRow>
   );
 }

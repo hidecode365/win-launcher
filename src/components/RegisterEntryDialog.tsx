@@ -46,9 +46,19 @@ export function RegisterEntryDialog({
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   // ダイアログを開いた瞬間に表示名フィールドへフォーカスし、テキストを全選択状態にする。
+  // 400_テスト・バグ修正：このダイアログを開くトリガー（★ボタン）はクリック後
+  // それ自身にフォーカスを持つため、ここで確実に表示名欄へフォーカスを奪う必要が
+  // ある。App.tsx の handleOcrClose（OCRプレビューを閉じた直後の検索ボックス
+  // 再フォーカス）が同じ理由で requestAnimationFrame を挟んでいるのに倣い、ここでも
+  // マウント直後の1フレームを待ってから focus() する（マウント直後の同期的な
+  // focus() 呼び出しだけでは、ブラウザ既定のクリックによるフォーカス移動と
+  // タイミングが競合し、表示名欄へのフォーカスが確実に反映されない場合がある）。
   useEffect(() => {
-    nameInputRef.current?.focus();
-    nameInputRef.current?.select();
+    const frame = requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   // 新規フォルダ作成のインライン入力に切り替わった時点でそちらへフォーカスを移す。
@@ -99,11 +109,35 @@ export function RegisterEntryDialog({
         // stopPropagation も呼ぶのは、App.tsx の window レベル keydown リスナー
         // （Ctrl+S 等）へこのダイアログのキー操作が漏れ、ダイアログ表示中に
         // 設定画面が開いてしまう等の意図しない相互作用を防ぐため。
+        //
+        // 400_テスト・バグ修正：フォーカスが「作成」「キャンセル」「+ 新規
+        // フォルダ作成」「保存」等の <button> に当たっている状態で Enter を
+        // 押すと、本来はブラウザの既定動作としてそのボタン自身の click が
+        // 発火するはずだが、このハンドラが無条件に preventDefault ＋
+        // handleSave() を実行していたため、常にダイアログ全体の「保存」に
+        // 上書きされてしまい、フォーカス中のボタン本来の意味（フォルダ作成・
+        // キャンセル等）が握りつぶされる不具合があった（例：インラインの
+        // 新規フォルダ名入力欄からTabで「作成」ボタンへ移動しEnterを押すと、
+        // フォルダが作成されずダイアログが閉じてしまう）。
+        // フォーカスが button 要素（またはその子孫）に当たっている場合、Enter
+        // だけはこのハンドラでは何もせず、ブラウザ標準の「フォーカス中の
+        // ボタンのclick発火」に処理を譲る（個々のボタンへ同じ内容のonKeyDownを
+        // 重複して実装するのではなく、コンテナ側の1箇所でtarget種別を判定する
+        // ことで、将来ボタンが増えても同じ確認を漏れなく適用できる）。Escapeは
+        // ボタンに対するブラウザの既定動作を持たない（押しても何も起きない）
+        // ため、この判定の対象外とし、フォーカス位置によらず常にダイアログを
+        // 閉じる。
+        const focusedButton =
+          e.target instanceof HTMLElement && e.target.closest("button");
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
           onCancel();
-        } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+        } else if (
+          e.key === "Enter" &&
+          !e.nativeEvent.isComposing &&
+          !focusedButton
+        ) {
           e.preventDefault();
           e.stopPropagation();
           handleSave();

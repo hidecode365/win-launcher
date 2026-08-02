@@ -78,6 +78,8 @@
 
 基本姿勢：症状ごとの場当たり的なパッチ（モグラ叩き）は最も避けるべき対応であり、急がば回れで根本原因・共通設計に向き合うことを常に優先する。
 
+上記4は単一のバグ調査内での判断だが、単一の調査に留まらず、別々のやり取り（チケット）にまたがって同種の修正指示（サイズ・間隔・配色等の微調整）を2回以上受けた場合も、同じ判断が必要になる。この場合、3回目の指示を待たずに、対症療法（個別の値のその都度調整）を続けるべきか、共通化・構造的な作り替えを検討すべきかをCC自身から提案すること。提案の際は、対象範囲（影響を受けるファイル）とおおよその実装コストの見立ても添える。
+
 ## 概要
 
 Windows 11 向けキーボードランチャー。Alt+Space でウィンドウをトグルし、
@@ -200,6 +202,8 @@ win-launcher/
 
 - フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#close-window-common-design)
+- モーダル・ダイアログ（システムコマンド確認・お気に入り登録ダイアログ・フォルダ削除確認・パス貼り付けウィザード等）のEnter/Escape確定・キャンセルは、DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#modal-keydown-window-level)
+- 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#search-overlay-active-consolidation)
 - 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得は `focusRegainTableRef.current` にエントリを1つ追加するだけにし、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#prefix-mode-architecture)
 - 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#suppress-next-search-ref-removed)
 
@@ -212,7 +216,7 @@ win-launcher/
 - 移動先が操作時点で確定的に分かる場合（末尾追加・D&D確定等）は intent を同期的に設定してよい。移動先が非同期でしか確定しない場合のみ、識別子照合＋タイムアウトの復元機構に乗せる。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#sync-vs-async-restore)
 - 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#adding-a-row-kind)
 - Web検索行は現在 `rows` に未統合で `baseLength+1` の特例（意図的な保留）。選択のずれ・消失の不具合はまずこの特例を疑うこと。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#web-search-row-exception)
-- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#dom-structure-and-dividers)
+- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。この規約は `ResultList.tsx` の行に限らず、選択可能な一覧行を描画する全コンポーネント（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する（行が実在の `<button>` だとクリック後にDOMフォーカスが残留し、モーダル確認等の window レベル `keydown` リスナーを誤って発火させる不具合の実例があった）。個別の内部操作ボタン・D&D等の事情が無い新しい一覧行は、まず共通ラッパー `SelectableRow.tsx` の利用を検討する。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#dom-structure-and-dividers)
 
 ### フッター表示
 

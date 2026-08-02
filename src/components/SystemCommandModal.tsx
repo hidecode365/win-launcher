@@ -1,4 +1,5 @@
 import { SystemCommand } from "../types";
+import { logUiEvent } from "../lib/uiDebugLog";
 
 export function SystemCommandModal({
   command,
@@ -21,14 +22,25 @@ export function SystemCommandModal({
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={(e) => {
+              // 400_テスト・バグ修正：調査用ログ（詳細は src/lib/uiDebugLog.ts を参照）。
+              void logUiEvent(
+                `[modal-cancel-click] x=${e.clientX} y=${e.clientY}`
+              );
+              onCancel();
+            }}
             className="rounded px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
           >
             キャンセル
           </button>
           <button
             type="button"
-            onClick={onConfirm}
+            onClick={(e) => {
+              void logUiEvent(
+                `[modal-confirm-click] x=${e.clientX} y=${e.clientY}`
+              );
+              onConfirm();
+            }}
             className="rounded bg-red-500 px-3 py-1.5 text-sm text-white hover:bg-red-600"
           >
             実行

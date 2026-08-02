@@ -1,7 +1,9 @@
 import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
+import { logUiEvent } from "../lib/uiDebugLog";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { Tooltip } from "./Tooltip";
+import { SelectableRow } from "./SelectableRow";
 import {
   WarningIcon,
   PinToggleButton,
@@ -102,15 +104,22 @@ export function ResultList({
       {prefixCommandMode ? (
         <>
           {prefixCommandCandidates.map((cmd, i) => (
-            <button
+            <SelectableRow
               key={cmd.keyword}
-              data-index={i}
+              index={i}
               className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
                 i === selected
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
               }`}
-              onClick={() => onSelectPrefixCommand(cmd)}
+              onClick={(e) => {
+                // 400_テスト・バグ修正：調査用ログ（詳細は src/lib/uiDebugLog.ts を参照）。
+                const target = e.target instanceof HTMLElement ? e.target.tagName : "?";
+                void logUiEvent(
+                  `[row-click] keyword=${cmd.keyword} x=${e.clientX} y=${e.clientY} target=${target}`
+                );
+                onSelectPrefixCommand(cmd);
+              }}
               onMouseEnter={(e) => onSelect(i, e.clientX, e.clientY)}
             >
               <svg
@@ -136,7 +145,7 @@ export function ResultList({
                   {cmd.description}
                 </div>
               </div>
-            </button>
+            </SelectableRow>
           ))}
           {webSearchVisible && (
             <WebSearchRow

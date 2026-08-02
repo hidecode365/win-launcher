@@ -47,6 +47,11 @@ const RECENT_DEBUG_LOG_FILENAME: &str = "recent_debug.log";
 const PANIC_LOG_FILENAME: &str = "panic.log";
 // panic.log の肥大化防止用サイズ上限。これを超えていたら書き込み前にクリアする。
 const PANIC_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+// 400_テスト・バグ修正：システムコマンド確認モーダルのEnter二重keydown調査用の
+// 暫定調査ログファイル名（log_ui_event を参照）。原因特定・暫定対処後も、恒久的な
+// 構造化ログ機能（別途100〜200工程で着手予定）の参考実装として意図的に残して
+// いる。詳細は src/lib/uiDebugLog.ts のコメントを参照。
+const UI_DEBUG_LOG_FILENAME: &str = "ui_debug.log";
 
 /// クリップボード変更通知用のウィンドウサブクラスプロシージャ（`extern "system"`）は
 /// クロージャで `AppHandle` を捕捉できないため、`setup()` で一度だけ設定したハンドルを
@@ -81,6 +86,13 @@ fn init_log_dir(app: &tauri::App) {
         .write(true)
         .truncate(true)
         .open(dir.join(RECENT_DEBUG_LOG_FILENAME));
+    // 400_テスト・バグ修正：ui_debug.log も同様に起動のたびに新規作成し、前回起動分の
+    // ログと混ざらないようにする（log_ui_event を参照）。
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(dir.join(UI_DEBUG_LOG_FILENAME));
     let _ = LOG_DIR.set(dir);
 }
 
@@ -105,6 +117,30 @@ fn log_debug(msg: &str) {
     };
     use std::io::Write;
     let _ = writeln!(file, "[{}] {msg}", now_ms());
+}
+
+/// 400_テスト・バグ修正：システムコマンド確認モーダルのEnter二重keydown調査用の
+/// 暫定調査ログコマンド。`log_debug` と異なり、書き込み後に `file.sync_all()`
+/// （fsync）を呼んでから戻る。フロントエンド側はこの invoke の Promise を必ず
+/// `await` し、その後にのみ `execute_system_command` を発火させることで、
+/// 「OS操作（シャットダウン/再起動/スリープ）の発火前にログのディスク書き込みが
+/// 完了していること」を保証する。原因特定・暫定対処後もこの計測自体は、恒久的な
+/// 構造化ログ機能（別途100〜200工程で着手予定）の参考実装として意図的に残して
+/// いる。詳細は src/lib/uiDebugLog.ts のコメントを参照。
+#[tauri::command]
+fn log_ui_event(line: String) -> Result<(), String> {
+    let dir = LOG_DIR
+        .get()
+        .ok_or_else(|| "log dir not initialized".to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(UI_DEBUG_LOG_FILENAME))
+        .map_err(|e| e.to_string())?;
+    use std::io::Write;
+    writeln!(file, "[{}] {line}", now_ms()).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// パニック発生時の情報を、アプリ専用ログディレクトリ（`LOG_DIR`）配下の `panic.log` に
@@ -2214,6 +2250,10 @@ fn open_containing_folder(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn execute_system_command(action: String) -> Result<(), String> {
+    // 400_テスト・バグ修正：フロントエンド側の記録と突き合わせるため、実際にIPCで
+    // action を受信した時点を、OS操作（プロセスspawn）より前に記録する。暫定計測の
+    // 扱いは src/lib/uiDebugLog.ts のコメントを参照（意図的に残している）。
+    let _ = log_ui_event(format!("[rust] execute_system_command received action={action}"));
     let result = match action.as_str() {
         "shutdown" => std::process::Command::new("shutdown")
             .args(["/s", "/t", "0"])
@@ -2639,6 +2679,7 @@ fn main() {
             toggle_folder,
             set_folder_settings,
             execute_system_command,
+            log_ui_event,
             get_app_settings,
             set_file_search_enabled,
             set_calc_enabled,

@@ -12,6 +12,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-shell";
 import type { Store } from "@tauri-apps/plugin-store";
 import { hideWindow } from "../lib/window";
+import { logUiEvent } from "../lib/uiDebugLog";
 import { formatWithCommas, makeId } from "../lib/format";
 import { groupNodesByParent, walkGroupedTree } from "../lib/nodeTree";
 import {
@@ -52,6 +53,16 @@ const MONTH_MS = 30 * DAY_MS;
 // 選択変更は無視する。オートスクロールでカーソル直下の行が入れ替わっただけの
 // 非ユーザー起因の mouseenter が、キーボード操作の結果を横から上書きするのを防ぐため。
 const HOVER_SUPPRESS_AFTER_KEYBOARD_MS = 200;
+
+// 400_テスト・バグ修正（暫定対処）：システムコマンド確認モーダルを開いてから
+// この時間内の確定操作（Enter／「実行」ボタンクリックのいずれも confirmSystemCommand
+// という同じ合流点を通る）は無視する。キーボードのチャタリング・WebView2固有の
+// keydown二重発火等により、モーダルを開いた直後の極めて短い間隔（実測3ms）で
+// 2回目の Enter keydown が届き、ユーザーの意図に反してシステムコマンド
+// （シャットダウン・再起動・スリープ）が即座に実行されてしまう不具合の暫定対処。
+// 詳細な原因分析・恒久対応（「開く」と「確定する」を同一キー・同一の合流点に
+// 無条件で紐付けている設計自体の見直し）は別チケットで扱う。
+const SYSTEM_COMMAND_CONFIRM_GRACE_MS = 300;
 
 function decayFactor(lastUsed: number, now: number): number {
   const elapsed = now - lastUsed;
@@ -401,6 +412,11 @@ export function useSearch(
   const [pendingCommand, setPendingCommand] = useState<SystemCommand | null>(
     null
   );
+  // 400_テスト・バグ修正（暫定対処）：pendingCommand を開いた時刻（ms）。
+  // confirmSystemCommand がこの時刻からの経過時間を判定するために使う
+  // （SYSTEM_COMMAND_CONFIRM_GRACE_MS を参照）。再レンダリングを起こす必要が
+  // ないため useState ではなく useRef で保持する。
+  const pendingCommandOpenedAtRef = useRef<number>(0);
   const [frecency, setFrecency] = useState<FrecencyMap>({});
   const frecencyRef = useRef<FrecencyMap>({});
   const [prefixCommandFrecency, setPrefixCommandFrecency] =
@@ -2067,6 +2083,11 @@ export function useSearch(
   );
 
   const requestSystemCommand = useCallback((cmd: SystemCommand) => {
+    // 400_テスト・バグ修正：調査用ログ（詳細は src/lib/uiDebugLog.ts を参照）。
+    void logUiEvent(`[open] action=${cmd.action}`);
+    // 400_テスト・バグ修正（暫定対処）：開いた時刻を記録する
+    // （SYSTEM_COMMAND_CONFIRM_GRACE_MS・confirmSystemCommand を参照）。
+    pendingCommandOpenedAtRef.current = Date.now();
     setPendingCommand(cmd);
   }, []);
 
@@ -2094,11 +2115,33 @@ export function useSearch(
   );
 
   const cancelSystemCommand = useCallback(() => {
+    // 400_テスト・バグ修正：調査用ログ。
+    void logUiEvent("[cancel]");
     setPendingCommand(null);
   }, []);
 
   const confirmSystemCommand = useCallback(async () => {
     if (!pendingCommand) return;
+    // 400_テスト・バグ修正（暫定対処）：モーダルを開いてから
+    // SYSTEM_COMMAND_CONFIRM_GRACE_MS 未満しか経過していない確定操作は無視する。
+    // windowレベルkeydownリスナーのEnter分岐（App.tsx）・SystemCommandModal の
+    // 「実行」ボタンクリックのどちらもこの confirmSystemCommand という単一の
+    // 合流点を経由するため、ここ1箇所でガードすれば経路を問わず一律に効く。
+    // 猶予期間中は何もせず return するのみで、エラー表示等のフィードバックは
+    // 行わない（REQUIREMENTS.mdに追加の仕様が無い限りこれで十分と判断）。
+    if (
+      Date.now() - pendingCommandOpenedAtRef.current <
+      SYSTEM_COMMAND_CONFIRM_GRACE_MS
+    ) {
+      void logUiEvent(
+        `[confirm-ignored-grace-period] action=${pendingCommand.action}`
+      );
+      return;
+    }
+    // 400_テスト・バグ修正：調査用ログ。execute_system_command（OS操作）の発火より
+    // 前に必ず await し、この呼び出しがあった事実をディスクへfsync済みにしてから
+    // 進める（詳細は src/lib/uiDebugLog.ts を参照）。
+    await logUiEvent(`[confirm] action=${pendingCommand.action}`);
     invoke("execute_system_command", {
       action: pendingCommand.action,
     }).catch(console.error);
@@ -2319,6 +2362,22 @@ export function useSearch(
     }
   }, [rows, pinnedVisible, pinnedFiles, pathPasteCandidate, calcResult, urlConvertResult, results]);
 
+  // 検索ビュー上でSearchBoxをふさぐ/disabledにするオーバーレイstateの一覧。
+  // App.tsx側の「検索ボックス再フォーカスeffect」「SearchBoxのdisabled判定」
+  // 「handleKeyDownの早期return」の3箇所は、いずれも「これらのうちどれか1つでも
+  // 開いているか」だけを見ればよく、個別に4state列挙する必要がない。新しい
+  // オーバーレイstateを追加する場合はこの配列に追記するだけで、上記3箇所は
+  // 自動的に追従する（window レベルのkeydownリスナーだけはオーバーレイごとに
+  // Enter/Escapeの意味が異なるため個別分岐が必要で、この値だけでは代替できない。
+  // 詳細は docs/design/window-lifecycle.md「検索ビュー上のオーバーレイstate一覧の
+  // 単一化（searchOverlayActive）」節を参照）。
+  const searchOverlayActive = [
+    favoriteDialogTarget,
+    pendingCommand,
+    pendingDeleteFavoriteFolder,
+    pathPasteWizardMode,
+  ].some(Boolean);
+
   return {
     query,
     setQuery,
@@ -2327,6 +2386,7 @@ export function useSearch(
     setSelected,
     selectFromHover,
     selectRowByKeyboard,
+    searchOverlayActive,
     selectRowFromHover,
     syncClipboardSelectionItems: setClipboardSelectionItems,
     recordMouseMove,

@@ -60,6 +60,35 @@ const closeWindow = useCallback(
 
 **適用対象外の例外**：OCR プレビューの「コピーして閉じる」（`App.tsx` の `handleOcrCopyAndClose`）は、`closeWindow()` を経由せず独自に 180ms のフェードアウト演出を挟んでから `hideWindow()` を呼ぶ（詳細は [docs/design/clipboard-and-ocr.md](clipboard-and-ocr.md) を参照）。これはウィンドウが可視のまま意図的に見せる演出であり、「隠れるまで state を変更しない」という本節の原則とは目的が異なる。同様に `Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない。
 
+<a id="modal-keydown-window-level"></a>
+
+### モーダル・ダイアログのキー操作は window レベルへ一本化する
+
+`SystemCommandModal`（システムコマンド確認）・`RegisterEntryDialog`（お気に入り登録ダイアログ）・`FavoriteFolderDeleteModal`（フォルダ削除確認）・`PathPasteWizard`（パス貼り付けウィザード）など、検索ビュー上に開閉するモーダル・ダイアログ・ウィザードの確定・キャンセル操作（Enter/Escape 等）は、DOM 上のフォーカス位置に依存させず、`App.tsx` の window レベルの共通 `keydown` リスナー（[ウィンドウを閉じる系アクションの共通設計](#close-window-common-design) 節と同じ `useEffect`）へ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない。
+
+**理由**：モーダルを開くトリガー要素（★ボタン・ゴミ箱アイコン等の `<button>`）はクリック直後もそれ自身がフォーカスを持ち続けることがある。ダイアログ自身のマウント時 `focus()`（`requestAnimationFrame` 越しでも）が何らかの理由で間に合わない、あるいは一覧行のルート要素が実在の `<button>` だった場合はクリックで選択した行自身にフォーカスが残り続ける（詳細は [result-list-and-selection.md](result-list-and-selection.md#row-focus-retention-bug) を参照）、といった事情により、意図した要素にフォーカスが無い瞬間に Enter/Escape が押されると、フォーカス依存のローカル `onKeyDown` ではキー操作を拾えず確定・キャンセルできなくなる（詳細は「経緯」節の[modal-keydown-focus-incidents](#modal-keydown-focus-incidents)を参照）。
+
+<a id="search-overlay-active-consolidation"></a>
+
+**window レベルリスナーが対象とするオーバーレイstateの一覧化（`searchOverlayActive`）**：対象は `favoriteDialogTarget`（登録ダイアログ）／`pendingCommand`（システムコマンド確認）／`pendingDeleteFavoriteFolder`（フォルダ削除確認）／`pathPasteWizardMode`（パス貼り付けウィザード）の4state。いずれも「`SearchBox` を隠す/`disabled`（実装上は `readOnly`。後述）にする検索ビュー内オーバーレイ」という共通の性質を持つが、この「4state」という列挙は以下の3箇所に独立して存在していた：
+
+1. `App.tsx` の検索ボックス再フォーカス `useEffect` の条件・依存配列
+2. `App.tsx` から `SearchBox` へ渡す `disabled` prop の算出式
+3. `handleKeyDown`（`SearchBox` の React `onKeyDown`）の早期 `return` ガード
+
+3箇所とも「4stateのうちどれか1つでも開いているか」という同じ問い（"is any overlay open"）にしか答えておらず、個別の overlay ごとに異なる分岐は不要だった。そこで `useSearch.ts` 側に `searchOverlayActive`（4stateを配列にまとめ `.some(Boolean)` で判定する派生値）を1箇所だけ定義し、上記3箇所はこれを参照するだけにした。新しいオーバーレイstateを追加する場合も、`useSearch.ts` の `searchOverlayActive` の配列へ1state追記するだけで、上記3箇所は自動的に追従する（コンパイルエラーで強制するものではなく、あくまで「参照先を1箇所に集約する」ことによる更新漏れリスクの低減である点に注意。詳細は「今後の指針」節を参照）。
+
+- `SearchBox` 自身の React `onKeyDown`（`handleKeyDown`）は、`searchOverlayActive` が立っている間は早期 `return` するだけに留め、実処理を持たせない（window レベルとの二重ハンドラ化を防ぐため）
+- window レベルの共通 `keydown` リスナー自体は、オーバーレイごとに Enter/Escape の意味が異なる（例：`pendingDeleteFavoriteFolder` は Escape のみ、`pendingCommand` は Enter/Escapeとも）ため、`searchOverlayActive` という単一値には集約できず、引き続き4state個別の分岐を持つ
+- 例外：インライン編集用の通常のテキスト入力欄（お気に入り編集ビューのフォルダ作成／リネーム欄など）は、フォーカスが外れる余地がないため、ローカル `onKeyDown` ＋ `stopPropagation` のパターンのままでよい
+- 新しい同種のモーダル・ダイアログを追加する場合は、`searchOverlayActive` の配列への追記1箇所と、window レベルリスナーの分岐・依存配列への追記1箇所の、計2箇所を変更するだけでよい
+
+**`view` をまたいで共有される overlay state（`pendingDeleteFavoriteFolder`）の再フォーカス範囲**：`pendingDeleteFavoriteFolder`（フォルダ削除確認）は、検索ビュー（`view === "search"`、`/favorite` ブラウジングの暫定UI）と、お気に入り編集ビュー（`view === "favoriteEdit"`、`FavoriteEditView.tsx`）の両方から開かれうる、`useSearch.ts` 側の単一の共有 state である。一方、`App.tsx` の `searchOverlayActive` を参照する検索ボックス再フォーカス `useEffect` は `view === "search"` を条件に含んでおり、意図的に検索ビュー専用である（`SearchBox` の `inputRef` は検索ビューにしか存在しないため）。
+
+400_テスト・バグ修正：この非対称性を見落とし、お気に入り編集ビュー側では「削除確認モーダルを閉じても何にも再フォーカスされない」不具合があった（`FavoriteEditView.tsx` 自身の絞り込み欄フォーカスeffectが、コンポーネントのマウント時（空の依存配列）にしか実行されておらず、`pendingDeleteFolder` の変化を見ていなかったため）。
+
+対応方針：`App.tsx` 側の `searchOverlayActive` エフェクトを `view === "favoriteEdit"` にも対応させる（＝ビューをまたいだ1つの巨大なeffectにする）のではなく、**各ビューが自分自身のデフォルトフォーカス対象（検索ビューなら `inputRef`、編集ビューなら `filterInputRef`）を自分自身の責務として管理する**という既存の分離（`FavoriteEditView.tsx` が独自にマウント時フォーカスeffectを持っていたのと同じ設計）を維持したまま、`FavoriteEditView.tsx` 側のeffectの依存配列に `pendingDeleteFolder` を追加した。あわせて横並び調査の結果、同じビュー内でリネーム中（`renamingNodeId`）・フォルダ作成中（`creatingFolderAnchorKey`）のインライン入力欄も同じ抜け（確定/キャンセル後に絞り込み欄へ戻らない）を持っていたため、3state共通の条件へまとめて対応した（`FavoriteEditView.tsx` 内のコメントを参照）。`useSearch.ts` の `searchOverlayActive` 自体（検索ビュー用）は変更していない。
+
 <a id="prefix-mode-architecture"></a>
 
 ### "/" プレフィックスモードの内部アーキテクチャ
@@ -101,6 +130,16 @@ const closeWindow = useCallback(
 - `cleanup` の同期的な部分（`setQuery`／`setResults`／`bumpCloseRefreshTick` 等）は `hideWindow()` の解決直後、単一の JS 実行区間内でほぼ瞬時に完了する。人間の Alt+Space 打鍵と Rust 側の `show()` の IPC 往復がここに割り込む余地は事実上ない
 - 残る非同期部分（`recordFrecency` の store 書き込み、検索結果の再取得等）が再表示後もまだ解決していない場合に見える状態は、「クエリを変更した直後、結果が追いつくまでの一瞬のロード状態」と本質的に同じであり、通常のクエリ入力時から既に許容されている自然な UI 状態である。ここだけを特別扱いして待たせる理由がない
 
+<a id="modal-keydown-focus-incidents"></a>
+
+### RegisterEntryDialog・SystemCommandModal でのフォーカス依存キー操作不具合
+
+- **症状**：①お気に入り登録ダイアログ（`RegisterEntryDialog`）を★ボタンから開いた直後、Escapeを押してもダイアログが閉じないことがあった。②システムコマンド確認モーダル（`SystemCommandModal`）表示中、Enter/Escapeを押しても確定・キャンセルできないことがあった
+- **直接原因**：①トリガーの★ボタンがクリック後もフォーカスを持ち続け、ダイアログ自身のマウント時 `focus()` が間に合わない場合、フォーカスがダイアログ内のどの要素にも当たらないまま Escape を押しても、ダイアログ自身の `onKeyDown`（React合成イベント）まで到達しない。②当時は「モーダル表示中は `SearchBox` 自体が `disabled` になり強制的に `blur` される」ことを原因と推定して対応した。**この推定は不正確だった**（`SearchBox` の `disabled` prop は実装上 `<input readOnly>` にマッピングされており、`readOnly` はフォーカス・blur に影響しない）。後日の再調査（[row-focus-retention-bug](result-list-and-selection.md#row-focus-retention-bug) 参照）で判明した真の原因は、システムコマンド候補行の DOM 構造にあった：候補行のルート要素が実在の `<button>` だったため、マウスクリックで選択した瞬間にその `<button>` へDOMフォーカスが移り、`SystemCommandModal` は一覧をアンマウントしないオーバーレイのため、フォーカスはクリックされた行の `<button>` に残り続ける。この状態で押すEnterは `SearchBox`（`<input>`）とは別要素が発端のため、`<input>` に束縛された `handleKeyDown`（React合成イベント）を経由しない。**結果的に「window レベルリスナーへ一本化する」という対応自体は結果的に正しかった**（フォーカス位置に依存しない設計にしたため、原因の特定が後から変わっても対応を変更せずに済んだ）が、原因分析の記録としては訂正しておく
+- **横並び調査の結果**：検索ビュー上に開くオーバーレイ4種（登録ダイアログ・システムコマンド確認・フォルダ削除確認・パス貼り付けウィザード）のうち、フォルダ削除確認モーダル・パス貼り付けウィザードは既に window レベルリスナーで確定/キャンセルを処理する設計になっており対象外だった。登録ダイアログとシステムコマンド確認の2件が、ローカル `onKeyDown`・`SearchBox` の `onKeyDown` というフォーカス依存の実装のまま残っていたことが判明した
+- **原因の性質判定**：「モーダルを開くトリガーがクリック後もフォーカスを持ち続けうる」「モーダル表示中に元のフォーカス先が disabled/blur されうる」というのは特定のダイアログ固有の実装ミスではなく、フォーカス依存でキー操作を処理するモーダル実装パターン全般が共有する構造的な弱さと判定した。個別対応ではなく、既に一部（フォルダ削除確認・パス貼り付けウィザード）で採用していた「windowレベルリスナーへの一本化」を全4種に統一する設計見直しを行った（[modal-keydown-window-level](#modal-keydown-window-level)節）
+- **対応**：登録ダイアログはEscapeのみwindowレベルリスナーへ保険として追加（Enterは表示名・保存先フォルダ等ダイアログ内部stateが必要なため引き続きダイアログ自身が処理）。システムコマンド確認はEnter/Escapeともwindowレベルリスナーへ完全移管し、`SearchBox`側の実処理は削除した
+
 <a id="suppress-next-search-ref-removed"></a>
 
 ### `suppressNextSearchRef` の廃止
@@ -114,4 +153,6 @@ const closeWindow = useCallback(
 - 新しいウィンドウクローズ系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない
 - 画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。この順序さえ守れば、後処理の重さや連鎖的な再レンダリングを個別に気にする必要はない
 - 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得が必要なら `focusRegainTableRef.current` にエントリを1つ追加するだけで済ませ、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない
+- モーダル・ダイアログ（`SystemCommandModal`／`RegisterEntryDialog`／`FavoriteFolderDeleteModal`／`PathPasteWizard` 等）のEnter/Escape確定・キャンセルは、DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない
+- 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の `searchOverlayActive`（[search-overlay-active-consolidation](#search-overlay-active-consolidation)）を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。ただしオーバーレイごとにEnter/Escapeの意味が異なる window レベルリスナー自体は個別分岐が必要で、この値には集約できない
 - 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる
