@@ -36,16 +36,16 @@
 
 <a id="system-command-enter-removal"></a>
 
-### `systemCommand` の是正方針（実装は別途）
+### `systemCommand` の是正（実装済み）
 
-上記を踏まえ、`systemCommand` については以下をいずれも**削除**し、`deleteFolder` と同じブラウザ標準経路に統一する。
+上記を踏まえ、`systemCommand` について以下をいずれも**削除し、`deleteFolder` と同じブラウザ標準経路に統一済み**。
 
-- window レベルリスナーの独自 Enter 分岐
-- 暫定対処として導入した 300ms の猶予期間（`SYSTEM_COMMAND_CONFIRM_GRACE_MS`）
+- window レベルリスナーの独自 Enter 分岐（`App.tsx`）
+- 暫定対処として導入していた 300ms の猶予期間 `SYSTEM_COMMAND_CONFIRM_GRACE_MS`（`useSearch.ts`）とその関連コード（開いた時刻を記録する ref 等）
 
-猶予期間は「二重発火の 2 回目を時間で弾く」という対症療法であり、原因（独自 Enter 分岐の存在）そのものを取り除けば不要になる。
+猶予期間は「二重発火の 2 回目を時間で弾く」という対症療法であり、原因（独自 Enter 分岐の存在）そのものを取り除いたことで不要になった。
 
-**この是正の実装は、設計書整備の完了後に優先度高で着手する**（本書作成時点では未着手であり、コードには独自 Enter 分岐と猶予期間の両方が残っている）。
+是正後の実装：`SystemCommandModal.tsx` の「実行」ボタンは `FavoriteFolderDeleteModal.tsx` と同じ、autoFocus を持たない素の `<button>` として実装されている（Tab で到達可能）。確定は `confirmSystemCommand`（`useSearch.ts`）を「実行」ボタンの `onClick` からのみ呼び出す。キャンセル（Escape）は従来どおり `App.tsx` の window レベルリスナーで処理する。
 
 <a id="mode-coexistence-table"></a>
 
@@ -87,7 +87,7 @@
 | `settings` | view | `search` | 閉じるボタン・Esc（**Ctrl+S では閉じない**。閉じる手段は Esc に一本化） | `search` が既定のフォーカス先（検索欄）に戻る。Esc は window レベルで処理され、原則どおりフォーカス非依存 |
 | `favoriteEdit` | view | `search`／各 modal | SearchBox 内の編集アイコンクリックで起動（**キーボードからの起動経路は持たない**）・Esc で `search` へ戻る・各 modal 起動 | 遷移先が既定のフォーカス先を持つ。`favoriteEdit` 自身の既定フォーカス先は絞り込み欄（`filterInputRef`）。Esc は window レベルで処理される |
 | `register`（お気に入り登録ダイアログ） | modal | （元の view） | 保存確定・Esc | 元の view が既定のフォーカス先に戻る。**Esc は二重の経路を持つ**（ダイアログ自身の `onKeyDown` が通常時に処理し `stopPropagation`、フォーカスが外れた場合の保険として window レベルにも Esc 分岐がある）。確定はダイアログ内部 state を要するためダイアログ自身が処理する |
-| `systemCommand`（システムコマンド確認） | modal | （元の view） | 確定・Esc | 元の view が既定のフォーカス先に戻る。**現状は原則に違反しており、window レベルに独自の Enter 分岐と 300ms の猶予期間を持つ**。[是正方針](#system-command-enter-removal)のとおり、いずれも削除して `deleteFolder` と同じブラウザ標準経路へ統一する |
+| `systemCommand`（システムコマンド確認） | modal | （元の view） | 確定・Esc | 元の view が既定のフォーカス先に戻る。**原則に適合済み**（[是正](#system-command-enter-removal)により、window レベルの独自 Enter 分岐と 300ms の猶予期間はいずれも削除済み）。Esc は window レベルで処理し、確定は Tab でフォーカスした「実行」ボタン上の Enter（＝ブラウザ標準の `click` 発火）に委ねる。`deleteFolder` と同じ構造 |
 | `deleteFolder`（フォルダ削除確認） | modal | （元の view） | 確定・Esc | 元の view が既定のフォーカス先に戻る。**原則に適合した参照実装**：Esc のみ window レベルで処理し、確定は Tab でフォーカスした削除ボタン上の Enter（＝ブラウザ標準の `click` 発火）に委ねる |
 | `pathPaste`（フォルダ選択ステップ） | modal | `pathPaste`（名前編集ステップ）／（元の view） | 選択確定で次ステップへ・Esc で元の view へ | 名前編集ステップへ遷移する。↑↓・Enter・Esc をいずれも window レベルで処理する（候補行が SearchBox とは別要素のため、フォーカスが SearchBox から外れうる） |
 | `pathPaste`（名前編集ステップ） | modal | （元の view） | 確定でショートカット作成・Esc で1ステップ戻る | **Esc は「モーダルを閉じる」ではなく「フォルダ選択ステップへ戻る」**。この Esc の意味の違いは本ウィザード固有であり、他の modal と揃えていない |

@@ -757,22 +757,22 @@ export default function App() {
         !favoriteEditOpen &&
         search.pendingCommand
       ) {
-        // 400_テスト・バグ修正：システムコマンド確認モーダル（SystemCommandModal）も
-        // 登録ダイアログと同じ構造的な弱さを共有していた。こちらは自身の
-        // autoFocusすら持たず、Enter/Escapeの確定・キャンセルはSearchBoxの
-        // React onKeyDown（handleKeyDown）に委ねていたが、モーダル表示中は
-        // SearchBox自体がdisabledになり、直前まで表示名欄以上にフォーカスを
-        // 持ちやすいSearchBox自身が強制的にblurされるため、以降のEnter/Escapeが
-        // SearchBoxまで届かず確定・キャンセルできない状態になりうる。フォルダ
-        // 削除確認モーダル・登録ダイアログと同じ理由で、この window レベルの
-        // リスナーで確実に処理する（SearchBox側のhandleKeyDownは
-        // pendingCommand中は何もしないため、二重処理にはならない）。
-        if (e.key === "Enter") {
-          e.preventDefault();
-          // 400_テスト・バグ修正：調査用ログ（詳細は src/lib/uiDebugLog.ts を参照）。
-          void logUiEvent("[window-keydown] key=Enter");
-          search.confirmSystemCommand();
-        } else if (e.key === "Escape") {
+        // docs/external-design/01-screen-transitions.md「モーダル・ダイアログの
+        // キー操作原則」：キャンセル（Escape）のみフォーカス位置に依存させず
+        // window レベルで常に処理する。確定（Enter）は独自分岐を設けず、
+        // ブラウザ標準のフォーカス経路（Tabで移動した「実行」ボタン上のEnterで
+        // click発火）に委ねる（deleteFolder=FavoriteFolderDeleteModalと同じ
+        // 参照実装。旧・独自Enter分岐は、キーのチャタリング／WebView2の入力
+        // 二重発火により確認を経ず即実行される事故を招いたため撤去した。
+        // 詳細は同ドキュメント「systemCommandの是正方針」を参照）。
+        //
+        // モーダルを開いたトリガー要素がクリック後もフォーカスを持ち続ける
+        // ことがあるため、Escapeはフォーカス依存のローカル onKeyDown では
+        // 拾えない場合がある。フォルダ削除確認モーダル・登録ダイアログと
+        // 同じ理由で、この window レベルのリスナーで確実に処理する
+        // （SearchBox側のhandleKeyDownはpendingCommand中は何もしないため、
+        // 二重処理にはならない）。
+        if (e.key === "Escape") {
           e.preventDefault();
           void logUiEvent("[window-keydown] key=Escape");
           search.cancelSystemCommand();
@@ -786,7 +786,6 @@ export default function App() {
     showSettings,
     favoriteEditOpen,
     search.pendingCommand,
-    search.confirmSystemCommand,
     search.cancelSystemCommand,
     search.favoriteDialogTarget,
     search.closeFavoriteDialog,

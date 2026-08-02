@@ -54,16 +54,6 @@ const MONTH_MS = 30 * DAY_MS;
 // 非ユーザー起因の mouseenter が、キーボード操作の結果を横から上書きするのを防ぐため。
 const HOVER_SUPPRESS_AFTER_KEYBOARD_MS = 200;
 
-// 400_テスト・バグ修正（暫定対処）：システムコマンド確認モーダルを開いてから
-// この時間内の確定操作（Enter／「実行」ボタンクリックのいずれも confirmSystemCommand
-// という同じ合流点を通る）は無視する。キーボードのチャタリング・WebView2固有の
-// keydown二重発火等により、モーダルを開いた直後の極めて短い間隔（実測3ms）で
-// 2回目の Enter keydown が届き、ユーザーの意図に反してシステムコマンド
-// （シャットダウン・再起動・スリープ）が即座に実行されてしまう不具合の暫定対処。
-// 詳細な原因分析・恒久対応（「開く」と「確定する」を同一キー・同一の合流点に
-// 無条件で紐付けている設計自体の見直し）は別チケットで扱う。
-const SYSTEM_COMMAND_CONFIRM_GRACE_MS = 300;
-
 function decayFactor(lastUsed: number, now: number): number {
   const elapsed = now - lastUsed;
   if (elapsed <= HOUR_MS) return 1.0;
@@ -412,11 +402,6 @@ export function useSearch(
   const [pendingCommand, setPendingCommand] = useState<SystemCommand | null>(
     null
   );
-  // 400_テスト・バグ修正（暫定対処）：pendingCommand を開いた時刻（ms）。
-  // confirmSystemCommand がこの時刻からの経過時間を判定するために使う
-  // （SYSTEM_COMMAND_CONFIRM_GRACE_MS を参照）。再レンダリングを起こす必要が
-  // ないため useState ではなく useRef で保持する。
-  const pendingCommandOpenedAtRef = useRef<number>(0);
   const [frecency, setFrecency] = useState<FrecencyMap>({});
   const frecencyRef = useRef<FrecencyMap>({});
   const [prefixCommandFrecency, setPrefixCommandFrecency] =
@@ -2086,9 +2071,6 @@ export function useSearch(
   const requestSystemCommand = useCallback((cmd: SystemCommand) => {
     // 400_テスト・バグ修正：調査用ログ（詳細は src/lib/uiDebugLog.ts を参照）。
     void logUiEvent(`[open] action=${cmd.action}`);
-    // 400_テスト・バグ修正（暫定対処）：開いた時刻を記録する
-    // （SYSTEM_COMMAND_CONFIRM_GRACE_MS・confirmSystemCommand を参照）。
-    pendingCommandOpenedAtRef.current = Date.now();
     setPendingCommand(cmd);
   }, []);
 
@@ -2121,24 +2103,14 @@ export function useSearch(
     setPendingCommand(null);
   }, []);
 
+  // docs/external-design/01-screen-transitions.md「モーダル・ダイアログのキー操作原則」：
+  // 確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動したボタン上のEnterで
+  // click発火）に委ね、window レベルリスナーに独自の Enter 分岐を設けない。
+  // このコールバックは SystemCommandModal の「実行」ボタンの onClick からのみ呼ばれる
+  // （旧・window レベルリスナーの独自 Enter 分岐は撤去済み。撤去の経緯・キーの
+  // チャタリング／WebView2の入力二重発火による誤実行事故は同ドキュメントを参照）。
   const confirmSystemCommand = useCallback(async () => {
     if (!pendingCommand) return;
-    // 400_テスト・バグ修正（暫定対処）：モーダルを開いてから
-    // SYSTEM_COMMAND_CONFIRM_GRACE_MS 未満しか経過していない確定操作は無視する。
-    // windowレベルkeydownリスナーのEnter分岐（App.tsx）・SystemCommandModal の
-    // 「実行」ボタンクリックのどちらもこの confirmSystemCommand という単一の
-    // 合流点を経由するため、ここ1箇所でガードすれば経路を問わず一律に効く。
-    // 猶予期間中は何もせず return するのみで、エラー表示等のフィードバックは
-    // 行わない（REQUIREMENTS.mdに追加の仕様が無い限りこれで十分と判断）。
-    if (
-      Date.now() - pendingCommandOpenedAtRef.current <
-      SYSTEM_COMMAND_CONFIRM_GRACE_MS
-    ) {
-      void logUiEvent(
-        `[confirm-ignored-grace-period] action=${pendingCommand.action}`
-      );
-      return;
-    }
     // 400_テスト・バグ修正：調査用ログ。execute_system_command（OS操作）の発火より
     // 前に必ず await し、この呼び出しがあった事実をディスクへfsync済みにしてから
     // 進める（詳細は src/lib/uiDebugLog.ts を参照）。
