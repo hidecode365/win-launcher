@@ -90,7 +90,7 @@ const closeWindow = useCallback(
 
 <a id="search-overlay-active-consolidation"></a>
 
-**window レベルリスナーが対象とするオーバーレイstateの一覧化（`searchOverlayActive`）**：対象は `favoriteDialogTarget`（登録ダイアログ）／`pendingCommand`（システムコマンド確認）／`pendingDeleteFavoriteFolder`（フォルダ削除確認）／`pathPasteWizardMode`（パス貼り付けウィザード）の4state。いずれも「`SearchBox` を隠す/`disabled`（実装上は `readOnly`。後述）にする検索ビュー内オーバーレイ」という共通の性質を持つが、この「4state」という列挙は以下の3箇所に独立して存在していた：
+**window レベルリスナーが対象とするオーバーレイstateの一覧化（`searchOverlayActive`）**：対象は `favoriteDialogTarget`（登録ダイアログ）／`pendingCommand`（システムコマンド確認）／`pendingDeleteFavoriteFolder`（フォルダ削除確認）／`pathPasteWizardMode`（パス貼り付けウィザード）の4state。**このうち `pendingDeleteFavoriteFolder` は、`/favorite` ブラウジング側の暫定削除UI撤去後は検索ビューでは非 `null` にならない**（[前述の再フォーカス範囲の節](#modal-keydown-window-level)を参照）ため、「`SearchBox` を隠す/`disabled`（実装上は `readOnly`。後述）にする検索ビュー内オーバーレイ」という他3stateと共通の性質を厳密には持たない。当初4stateがこの性質を共有していた前提で `searchOverlayActive` へまとめて集約した経緯があり、`pendingDeleteFavoriteFolder` の配列上の残置自体に実害は無いが、この非対称性は認識しておくこと。この「4state」という列挙は以下の3箇所に独立して存在していた：
 
 1. `App.tsx` の検索ボックス再フォーカス `useEffect` の条件・依存配列
 2. `App.tsx` から `SearchBox` へ渡す `disabled` prop の算出式
@@ -103,9 +103,9 @@ const closeWindow = useCallback(
 - 例外：インライン編集用の通常のテキスト入力欄（お気に入り編集ビューのフォルダ作成／リネーム欄など）は、フォーカスが外れる余地がないため、ローカル `onKeyDown` ＋ `stopPropagation` のパターンのままでよい
 - 新しい同種のモーダル・ダイアログを追加する場合は、`searchOverlayActive` の配列への追記1箇所と、window レベルリスナーの分岐・依存配列への追記1箇所の、計2箇所を変更するだけでよい
 
-**`view` をまたいで共有される overlay state（`pendingDeleteFavoriteFolder`）の再フォーカス範囲**：`pendingDeleteFavoriteFolder`（フォルダ削除確認）は、検索ビュー（`view === "search"`、`/favorite` ブラウジングの暫定UI）と、お気に入り編集ビュー（`view === "favoriteEdit"`、`FavoriteEditView.tsx`）の両方から開かれうる、`useSearch.ts` 側の単一の共有 state である。一方、`App.tsx` の `searchOverlayActive` を参照する検索ボックス再フォーカス `useEffect` は `view === "search"` を条件に含んでおり、意図的に検索ビュー専用である（`SearchBox` の `inputRef` は検索ビューにしか存在しないため）。
+**`view` をまたいで共有される overlay state（`pendingDeleteFavoriteFolder`）の再フォーカス範囲**：`pendingDeleteFavoriteFolder`（フォルダ削除確認）は `useSearch.ts` 側の state で、型・保持場所は特定の `view` に縛られていない。**この不具合の発生当時（400_テスト・バグ修正）は検索ビュー（`view === "search"`、`/favorite` ブラウジングの暫定UI）とお気に入り編集ビューの両方から開かれる経路が存在したが、`/favorite` ブラウジング側の暫定削除UI・それに対応する `App.tsx` 側の描画／window レベル keydown 分岐はいずれも撤去済みで、現在は「お気に入り編集ビュー（`view === "favoriteEdit"`、`FavoriteEditView.tsx`）からのみ開かれうる」という制約が成り立つ**（呼び出し元を辿った調査で両方向とも確認済み。`favoriteEditOpen` が `false` の間に `pendingDeleteFavoriteFolder` が非 `null` になる経路は存在しない）。一方、`App.tsx` の `searchOverlayActive` を参照する検索ボックス再フォーカス `useEffect` は `view === "search"` を条件に含んでおり、意図的に検索ビュー専用である（`SearchBox` の `inputRef` は検索ビューにしか存在しないため）。
 
-400_テスト・バグ修正：この非対称性を見落とし、お気に入り編集ビュー側では「削除確認モーダルを閉じても何にも再フォーカスされない」不具合があった（`FavoriteEditView.tsx` 自身の絞り込み欄フォーカスeffectが、コンポーネントのマウント時（空の依存配列）にしか実行されておらず、`pendingDeleteFolder` の変化を見ていなかったため）。
+400_テスト・バグ修正：この非対称性を見落とし、お気に入り編集ビュー側では「削除確認モーダルを閉じても何にも再フォーカスされない」不具合があった（`FavoriteEditView.tsx` 自身の絞り込み欄フォーカスeffectが、コンポーネントのマウント時（空の依存配列）にしか実行されておらず、`pendingDeleteFolder` の変化を見ていなかったため）。当時はまだ検索ビュー側の暫定削除UIが存在しており、両ビューから開かれる前提での対応だった。
 
 対応方針：`App.tsx` 側の `searchOverlayActive` エフェクトを `view === "favoriteEdit"` にも対応させる（＝ビューをまたいだ1つの巨大なeffectにする）のではなく、**各ビューが自分自身のデフォルトフォーカス対象（検索ビューなら `inputRef`、編集ビューなら `filterInputRef`）を自分自身の責務として管理する**という既存の分離（`FavoriteEditView.tsx` が独自にマウント時フォーカスeffectを持っていたのと同じ設計）を維持したまま、`FavoriteEditView.tsx` 側のeffectの依存配列に `pendingDeleteFolder` を追加した。あわせて横並び調査の結果、同じビュー内でリネーム中（`renamingNodeId`）・フォルダ作成中（`creatingFolderAnchorKey`）のインライン入力欄も同じ抜け（確定/キャンセル後に絞り込み欄へ戻らない）を持っていたため、3state共通の条件へまとめて対応した（`FavoriteEditView.tsx` 内のコメントを参照）。`useSearch.ts` の `searchOverlayActive` 自体（検索ビュー用）は変更していない。
 

@@ -718,20 +718,6 @@ export default function App() {
       } else if (
         !showSettings &&
         !favoriteEditOpen &&
-        search.pendingDeleteFavoriteFolder
-      ) {
-        // 削除確認モーダルはマウス操作（キャンセル/削除ボタン）のみを主とするが、
-        // Escape だけは他のモーダル（システムコマンド確認等）と同様にキャンセル
-        // 扱いにする。モーダルを開いたトリガー（ゴミ箱アイコンボタン）がクリック後
-        // フォーカスを持つため、SearchBox の React onKeyDown ではなくこの window
-        // レベルのリスナーで処理する（パス貼り付けウィザードと同じ理由）。
-        if (e.key === "Escape") {
-          e.preventDefault();
-          search.cancelDeleteFavoriteFolder();
-        }
-      } else if (
-        !showSettings &&
-        !favoriteEditOpen &&
         search.favoriteDialogTarget
       ) {
         // 400_テスト・バグ修正：登録ダイアログ（RegisterEntryDialog）を開いた
