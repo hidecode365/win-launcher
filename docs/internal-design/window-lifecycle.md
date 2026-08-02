@@ -76,6 +76,8 @@ const closeWindow = useCallback(
 
 ### モーダル・ダイアログのキー操作は window レベルへ一本化する
 
+> ⚠️ **本節の「Enter も一本化する」という部分は、外部設計書の新しい原則により上書きされている。** 正本は [外部設計書 01-screen-transitions.md#modal-key-policy](../external-design/01-screen-transitions.md#modal-key-policy)：**キャンセル（Escape）のみ window レベルへ一本化し、確定（Enter）はブラウザ標準のフォーカス経路に委ねて独自の Enter 分岐を設けない。** 本節の記述のうち Escape に関する部分は引き続き有効だが、Enter に関する部分（および `SystemCommandModal` を Enter の一本化対象に含めている記述）は外部設計書の原則が優先する。本節を外部設計書の内容に合わせて整理する作業は、節の切り出し作業（次回）の対象。
+
 `SystemCommandModal`（システムコマンド確認）・`RegisterEntryDialog`（お気に入り登録ダイアログ）・`FavoriteFolderDeleteModal`（フォルダ削除確認）・`PathPasteWizard`（パス貼り付けウィザード）など、検索ビュー上に開閉するモーダル・ダイアログ・ウィザードの確定・キャンセル操作（Enter/Escape 等）は、DOM 上のフォーカス位置に依存させず、`App.tsx` の window レベルの共通 `keydown` リスナー（[ウィンドウを閉じる系アクションの共通設計](#close-window-common-design) 節と同じ `useEffect`）へ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない。
 
 **理由**：モーダルを開くトリガー要素（★ボタン・ゴミ箱アイコン等の `<button>`）はクリック直後もそれ自身がフォーカスを持ち続けることがある。ダイアログ自身のマウント時 `focus()`（`requestAnimationFrame` 越しでも）が何らかの理由で間に合わない、あるいは一覧行のルート要素が実在の `<button>` だった場合はクリックで選択した行自身にフォーカスが残り続ける（詳細は [result-list-and-selection.md](result-list-and-selection.md#row-focus-retention-bug) を参照）、といった事情により、意図した要素にフォーカスが無い瞬間に Enter/Escape が押されると、フォーカス依存のローカル `onKeyDown` ではキー操作を拾えず確定・キャンセルできなくなる（詳細は「経緯」節の[modal-keydown-focus-incidents](#modal-keydown-focus-incidents)を参照）。

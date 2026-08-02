@@ -2022,7 +2022,8 @@ export function useSearch(
           cleanup,
         });
       } else if (favoriteMode) {
-        // REQUIREMENTS.md「モード共存・排他一覧」節の /favorite の「確定時の処理」：
+        // docs/external-design/01-screen-transitions.md「モード共存・排他一覧」の
+        // /favorite の「確定時の処理」：
         // recentMode・clipboardMode と同様、クエリはプレフィックス部分
         // （"/favorite"）のみを残す（続く横断検索フィルタ文字列だけをクリアする）。
         await closeWindow({

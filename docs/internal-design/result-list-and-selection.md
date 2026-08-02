@@ -8,9 +8,11 @@
 
 <a id="selection-is-derived"></a>
 
-### 選択は intent ベースの導出値であり、書き込み可能な state ではない
+### 選択モデル（intent 方式）の実装
 
-`selected`（選択中の行インデックス）は state ではなく、「ユーザーの意図（intent）」と現在の行一覧から毎回導出する値である。
+**設計原則そのもの**（選択は行番号や位置ではなく対象の識別子から導出する intent として扱い、書き込み可能な state にしない／その原則を採用した理由／適用範囲の定義）は、外部設計書 [02-list-and-selection.md#selection-model](../external-design/02-list-and-selection.md#selection-model) へ移設した。**本節には実装の詳細のみを置き、原則を重複して書かない。**
+
+型と導出関数：
 
 ```ts
 type SelectIntent =
@@ -32,11 +34,11 @@ function resolveSelected(
 }
 ```
 
-`resolveSelected` が「見つからない場合」に `fallback`（直前に導出できた選択インデックス）をそのまま返す点が要：「見つからない」は「1行目へリセットする理由」ではなく「今探している対象がまだ rows に反映されていないだけ」を意味するため、見つかるかタイムアウトするまで現在の表示をそのまま維持する。
+外部設計書の「識別子が見つからない場合も現在の表示を維持する」という原則は、`resolveSelected` の第3引数 `fallback`（直前に導出できた選択インデックス）をそのまま返す実装として表現されている。`fallback` の実際の値は `selectedFallbackRef`（直前の解決結果を保持する `useRef`）から渡す。維持を打ち切るタイムアウトの実装は [reset-triggers](#reset-triggers) の7・8を参照。
 
 `selected` への書き込みは、`intent`／`rows`／`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになっている。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
 
-適用範囲は「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`。`/favorite` ブラウジング側の選択ドメイン）」の3つ（段階3・軸1で `favoriteMode` を追加）。お気に入り編集ビュー専用の選択ドメイン（`FavoriteEditTreeRow[]`、仮想固定行を含む）はこれとは別物で、同じ `resolveSelected` の実装を再利用しつつ独立した `intent`/`selected` を持つ（詳細は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row) を参照）。`prefixCommandMode`／`pathPasteWizardMode`／Web検索行の +1 特例（[web-search-row-exception](#web-search-row-exception) 参照）は、非同期の書き込み競合を追加する具体的な予定が無いため、現状の生インデックス書き込みのまま維持している。
+適用範囲の定義（どの選択ドメインが intent 方式に乗るか）は外部設計書 [02-list-and-selection.md の表3](../external-design/02-list-and-selection.md#list-structure-layers) が正本。実装上の対応は以下のとおり：`useSearch.ts` 内の単一の `intent`/`selected` が「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`）」の3ドメインをモード判定で切り替えて共有するのに対し、お気に入り編集ビューは `useFavoriteEditSelection.ts` が同じ `resolveSelected` の実装を再利用しつつ**独立した** `intent`/`selected` を持つ（詳細は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row) を参照）。Web検索行の +1 特例は [web-search-row-exception](#web-search-row-exception) を参照。
 
 `clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした。
 

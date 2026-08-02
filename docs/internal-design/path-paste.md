@@ -2,7 +2,7 @@
 
 対象コード: `src-tauri/src/path_paste.rs`（`read_pasted_hdrop_path`／`judge_pasted_path`／`write_shortcut_file`）、`src/hooks/useSearch.ts`（`detectPastedPath`／`wizardStep`）、`src/components/PathPasteWizard.tsx`。
 
-Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・「モード共存・排他一覧」節を参照。
+Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・[外部設計書「モード共存・排他一覧」](../external-design/01-screen-transitions.md#mode-coexistence-table)を参照。
 
 ## 現在の設計
 
