@@ -15,9 +15,11 @@
 
 <a id="dialog-plugin-parent-window"></a>
 
-### `tauri-plugin-dialog` は必ず Rust 側の Tauri コマンドとして実装する
+### `tauri-plugin-dialog` の実装方法
 
-フォルダ選択ダイアログには `tauri-plugin-dialog` を使うが、**必ず Rust 側の Tauri コマンド（`pick_folder`）として実装し、`FileDialogBuilder::set_parent` で WinLauncher のウィンドウを親に指定すること。** フロントエンドの JS API（`@tauri-apps/plugin-dialog` の `open()`/`save()`/`message()` 等）には親ウィンドウを指定する手段がなく、`alwaysOnTop: true` のウィンドウの背後にダイアログが回り込んでしまう不具合になる（実際に発生し修正済み。詳細は「経緯」節を参照）。本プロジェクトでは `@tauri-apps/plugin-dialog` は npm 依存にも加えておらず、フロントエンドから直接ダイアログ系 JS API を呼ぶ経路は存在しない。
+**「ダイアログ系プラグインは Rust 側のコマンドとして実装し親ウィンドウを指定する」という方針とその理由**は、外部設計書 [04-platform-policies.md#dialog-plugin-parent-window](../external-design/04-platform-policies.md#dialog-plugin-parent-window) へ移設した。
+
+実装上の対応：フォルダ選択ダイアログは Rust 側の Tauri コマンド `pick_folder` として実装し、`FileDialogBuilder::set_parent` で WinLauncher のウィンドウを親に指定している。`@tauri-apps/plugin-dialog` は npm 依存にも加えておらず、フロントエンドから直接ダイアログ系 JS API を呼ぶ経路は存在しない。実際に発生した不具合の詳細は「経緯」節を参照。
 
 <a id="plugin-list-rationale"></a>
 
@@ -38,9 +40,11 @@
 
 <a id="windows-api-first-policy"></a>
 
-### サードパーティクレートより Windows 標準 API を優先する方針
+### Windows 標準 API 直接呼び出しの実装箇所
 
-本プロジェクトは `ShellExecuteW`・`SHGetFileInfoW`・クリップボードの Win32 API 直接操作・OCR の WinRT 直呼び出し・`.lnk` 作成の `IShellLinkW`/`IPersistFile` 直接呼び出しなど、随所で「サードパーティ再実装に頼らず Windows 標準 API を直接呼ぶ」方針を採っている。`mslnk` クレートから `IShellLinkW` への切り替え（詳細は [path-paste.md](path-paste.md#mslnk-to-shell-link-history) を参照）はこの方針が実際に問題を回避した具体例である。新しい Windows 固有機能を実装する際、まずサードパーティクレートに便利な実装がないか探すより先に、標準 API で直接実装できないかを検討すること。
+**方針そのもの**（Windows 固有機能はまず標準 API で実装できないかを検討し、サードパーティクレートは代替手段として扱う）は、外部設計書 [04-platform-policies.md#windows-api-first-policy](../external-design/04-platform-policies.md#windows-api-first-policy) へ移設した。
+
+本プロジェクトで実際に標準 API を直接呼んでいる箇所：`ShellExecuteW`（ファイル起動）・`SHGetFileInfoW`（シェルアイコン取得）・クリップボードの Win32 API 直接操作・OCR の WinRT 直呼び出し（`Windows.Media.Ocr`）・`.lnk` 作成の `IShellLinkW`/`IPersistFile` 直接呼び出し。`mslnk` クレートから `IShellLinkW` への切り替え経緯は [path-paste.md](path-paste.md#mslnk-to-shell-link-history) を参照。
 
 ## 経緯
 

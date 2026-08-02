@@ -10,6 +10,8 @@ Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検�
 
 ### 貼り付け判定（Rust、`path_paste.rs`）
 
+**「OS のクリップボードから実ファイルパス（CF_HDROP）を読む場合は Rust 側で直接読み直す」という方針とその理由**は、外部設計書 [04-platform-policies.md#paste-detection](../external-design/04-platform-policies.md#paste-detection) へ移設した。本節には実装の詳細のみを記す。
+
 CF_HDROP の確認と、パスの実在判定（テキスト解釈）は、別々の2つのコマンド・別々のタイミングで行う1経路に統一している（統一前の経緯は「経緯」節を参照）。
 
 - `SearchBox.tsx` の `onPaste` は画像ペースト（OCR）以外のすべての貼り付けで `onPathPaste`（`detectPastedPath`）を呼ぶ。画像判定と異なり `e.preventDefault()` はしない（通常のテキスト貼り付け動作を妨げない）

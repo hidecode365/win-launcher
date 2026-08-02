@@ -10,25 +10,23 @@
 
 <a id="favorite-node-structure"></a>
 
-### データ構造（`FavoriteNode`）
+### データ構造（`FavoriteNode`）の実装
 
-ピン止め・お気に入り・メモの3機能を、単一の型 `FavoriteNode`（Rust: `main.rs` の `struct FavoriteNode`、フロントエンド: `src/types.ts` の `FavoriteNode` interface）で管理する。フィールドは `{ id, parentId, type, name, value, order }`。
+**データ構造の定義そのもの**（隣接リスト方式の採用理由・永続化方式・全量置き換え方式）は、外部設計書 [03-data-model.md#favorite-node-structure](../external-design/03-data-model.md#favorite-node-structure) へ移設した。本節には実装上の対応のみを記す。
 
-**`children` を持つ入れ子構造ではなく `parentId` を持つフラットな配列（隣接リスト方式）を採用した理由**：既存の `FolderEntry`（`folders: FolderEntry[]`）と同じく `Vec<T>`／配列としてそのまま扱えるため、Rust 側に再帰的な型定義（`Box<FavoriteNode>` を含む木構造）を導入する必要がない。将来「お気に入り」でツリー表示・ドラッグ&ドロップによる階層移動を実装する場合も、ノードの `parentId` を書き換えるだけで「別の親へ移動」を表現できる（再帰構造だと移動のたびに元の親の `children` から取り除いて新しい親の `children` へ挿入する、というツリー操作が必要になるのに対し、フラット配列なら1フィールドの更新で済む）。
-
-永続化：`settings.json` の新規キー `"favorites"`（`FAVORITES_STORE_KEY`）に `Vec<FavoriteNode>` をそのまま保存する。既存の `folders`/`appSettings` と同じストア・同じ「Rust コマンド経由で読み書きする」方式に統一しており、frecency・clipboardHistory のようなフロントエンドから JS の `@tauri-apps/plugin-store` API で直接読み書きする方式は**採用していない**（将来 `clipboard`/`command` 型のフィールドを追加する際、Rust 側の型定義に `#[serde(default)]` を付与するだけで後方互換を保証できるようにするため。全フィールドに `#[serde(default)]` を付与済み）。
-
-保存は全量置き換え方式（`set_favorites(favorites: Vec<FavoriteNode>)`）のみで、部分更新用のコマンド（例:「1件だけ追加」）は設けていない。書き込み頻度が低い（ユーザーがピン止め操作をするたびの低頻度な操作）ため、フロントエンド側で配列を組み立ててから丸ごと送る方式で十分と判断した。
+- 型定義の実体：Rust は `main.rs` の `struct FavoriteNode`、フロントエンドは `src/types.ts` の `FavoriteNode` interface
+- 永続化キーは `FAVORITES_STORE_KEY`（`"favorites"`）。保存コマンドは `set_favorites(favorites: Vec<FavoriteNode>)`
+- 後方互換のため、Rust 側の全フィールドに `#[serde(default)]` を付与済み
 
 <a id="reserved-folders"></a>
 
-### 予約フォルダ（固定ID）
+### 予約フォルダ（固定ID）の実装
 
-ルート直下の「ピン止め」「お気に入り」「メモ」の3ノードは、`main.rs` の定数 `PINNED_FOLDER_ID`（`"__pinned__"`）／`FAVORITES_FOLDER_ID`（`"__favorites__"`）／`MEMO_FOLDER_ID`（`"__memo__"`）という固定文字列IDを持つ。フロントエンド側も `src/types.ts` の `PINNED_FOLDER_ID` 定数で同じ値を持つ（**Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新すること**。両者は文字列リテラルの一致だけで結び付いており、型システムによる自動追従はない）。
+**固定IDを採用する方針とその理由、Rust 側での二重バリデーション方針**は、外部設計書 [03-data-model.md#reserved-folders](../external-design/03-data-model.md#reserved-folders) へ移設した。本節には実装上の対応と注意点のみを記す。
 
-固定IDを採用した理由：表示名（`name`。ユーザーが変更可能）で予約フォルダを参照すると、名前変更や多言語化時に参照が壊れる。IDで参照すれば `name` は自由に変更できる。
-
-`enforce_reserved_folders`（`main.rs`）が予約フォルダの整合性を保証する。起動時（`setup()` の `ensure_reserved_folders`）に加え、`set_favorites` コマンド内でも毎回呼ぶことで、フロントエンドから送られてきた配列に予約フォルダの改変（削除・リネーム・親付け替え）が含まれていても、保存直前に正しい値へ強制的に是正する。**UI側で編集不可にするだけでなく、Rust側でも防御する**という、本プロジェクトが `set_folder_settings` の `max_depth` 範囲チェック等で一貫して採っている「バリデーションはフロントエンドだけでなくRust側でも行う」方針を踏襲したもの。
+- 定数の実体：`main.rs` の `PINNED_FOLDER_ID`（`"__pinned__"`）／`FAVORITES_FOLDER_ID`（`"__favorites__"`）／`MEMO_FOLDER_ID`（`"__memo__"`）
+- **Rust 側の定数値を変更する場合、フロントエンド側（`src/types.ts` の `PINNED_FOLDER_ID`）の定数も必ず同時に更新すること。** 両者は文字列リテラルの一致だけで結び付いており、型システムによる自動追従はない
+- 整合性の是正は `enforce_reserved_folders`（`main.rs`）が担う。起動時（`setup()` の `ensure_reserved_folders`）に加え、`set_favorites` コマンド内でも毎回呼ぶ
 
 <a id="search-exclusion"></a>
 
@@ -78,31 +76,29 @@
 
 <a id="favorites-tree"></a>
 
-### お気に入り機能：ピン止めとの違い（実際にツリーを組む）
+### お気に入り機能：ピン止めとの違い（実装）
 
-ピン止めは `PINNED_FOLDER_ID` の直下にしかノードを追加しない運用のため、データ構造上は隣接リストだが実質的にはフラットな1階層リストとして機能してきた。お気に入りは `FAVORITES_FOLDER_ID` 配下に `type: "folder"` のノードを中間ノードとして自由に作成・ネストできる、初めて「実際に木を組む」機能である。この違いにより、以下の3つはお気に入り実装で新規に必要になったもので、ピン止めには存在しない：
+**構造上の違いそのもの**（ピン止めは実質1階層、お気に入りは実際に木を組む）と、そこから導かれる**メモ機能実装時の判断基準**は、外部設計書 [03-data-model.md#favorites-tree](../external-design/03-data-model.md#favorites-tree) へ移設した。本節には、外部設計書が挙げる3概念の実装上の実体のみを記す。
 
-- `is_descendant_of(favorites, parent_id, ancestor_id)`（Rust, `main.rs`）とそのフロントエンド鏡 `isDescendantOfFolder`（`useSearch.ts`）：あるノードが特定の祖先の子孫かどうかを祖先チェーンをたどって判定する。フォルダ削除時の子孫巻き込み判定・重複登録判定（`/favorite` からの★追加時、既に同じ実体が `FAVORITES_FOLDER_ID` の子孫に存在するか）の両方で使う。任意の深さを想定するため、無限ループ防止の深さ上限ガード（64）を持たせている（ピン止めは常に深さ1のため元々この種のガードが不要だった）
-- `src/lib/nodeTree.ts` の `groupNodesByParent`/`walkGroupedTree`：`parentId` でグルーピングしてから深さ優先で辿る、ツリーの平坦化ロジック共通部分
-- 登録ダイアログ（`RegisterEntryDialog.tsx`）の配置先フォルダ選択：ピン止めには「配置先を選ぶ」という概念自体が存在しない（常に `PINNED_FOLDER_ID` 直下に追加するだけ）のに対し、お気に入りは登録の都度どのフォルダ配下に置くかをユーザーが選択する
-
-今後「メモ」機能を実装する場合も、メモを単純な一覧（ピン止め型）にするか、フォルダ分類を持つツリー（お気に入り型）にするかで、上記のうちどれが必要になるかが変わる。フォルダ分類を持たせるなら、この3つはそのまま再利用できる設計にしてある。
+- **祖先チェーンをたどる子孫判定**：`is_descendant_of(favorites, parent_id, ancestor_id)`（Rust, `main.rs`）とそのフロントエンド鏡 `isDescendantOfFolder`（`useSearch.ts`）。フォルダ削除時の子孫巻き込み判定・重複登録判定（`/favorite` からの★追加時、既に同じ実体が `FAVORITES_FOLDER_ID` の子孫に存在するか）の両方で使う。任意の深さを想定するため、無限ループ防止の深さ上限ガード（64）を持たせている（ピン止めは常に深さ1のため元々この種のガードが不要だった）
+- **ツリーの平坦化**：`src/lib/nodeTree.ts` の `groupNodesByParent`/`walkGroupedTree`。`parentId` でグルーピングしてから深さ優先で辿る
+- **登録時の配置先フォルダ選択**：登録ダイアログ（`RegisterEntryDialog.tsx`）の配置先プルダウン
 
 <a id="duplicate-folder-name-validation"></a>
 
-### 同一階層内の同名フォルダ作成を禁止するバリデーション
+### 同一階層内の同名フォルダ作成を禁止するバリデーション（実装）
 
-`add_favorite_folder`（Rust）に、同一の親フォルダ配下で同名（トリム後・大小文字区別なし）のフォルダを重複作成できないバリデーションを追加した。判定の作法は `validate_unique_keyword`（システムコマンド機能のキーワード重複チェック。詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md) を参照）と同じ「トリム＋小文字化して比較」の慣習にそのまま合わせている。経緯は「経緯」節を参照。
+**バリデーションの仕様と設ける理由**は、外部設計書 [03-data-model.md#duplicate-folder-name-validation](../external-design/03-data-model.md#duplicate-folder-name-validation) へ移設した。
+
+実装は `add_favorite_folder`（Rust）。判定の作法は `validate_unique_keyword`（システムコマンド機能のキーワード重複チェック。詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md) を参照）と同じ「トリム＋小文字化して比較」の慣習にそのまま合わせている。導入の経緯は「経緯」節を参照。
 
 <a id="favorite-mode-ordering"></a>
 
-### `/favorite` モードの並び順方針（フォルダ/ファイルの混在を許可）
+### `/favorite` モードの並び順（実装）
 
-`/favorite` の一覧はファイル検索結果のような機械的な並び替え（frecency・アルファベット順等）を一切行わず、`order` フィールドが示す通りの並び順をそのまま表示する。**フォルダとファイルを種別ごとにグルーピングせず、同一階層内で自由に混在・入れ替え可能な設計を意図的に採用した。**
+**並び順を再整列しないという方針とその理由**は、外部設計書 [03-data-model.md#favorite-mode-ordering](../external-design/03-data-model.md#favorite-mode-ordering) へ移設した。
 
-理由：お気に入りは「少数を厳選して登録する」用途であることを前提にすると、機械的な整列（種別ごとにまとめる等）はユーザーが意図して行った手動の並び替え（上下移動）を無意味化してしまう。ファイル検索結果のような「大量の項目から目的のものを見つける」用途とは異なり、お気に入りではユーザー自身が並び順そのものに意味を持たせたいはずだという判断から、システム側で並び順を再解釈・再整列しない方針にした。
-
-視覚的な区別（フォルダ見出し行とアイテム行）の意匠は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
+実装上は `order` フィールドの昇順でそのまま並べるだけで、ソート・グルーピングの処理を一切持たない。視覚的な区別（フォルダ見出し行とアイテム行）の意匠は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
 
 <a id="favorite-mode-provisional-features"></a>
 
@@ -116,19 +112,17 @@
 
 <a id="favorite-edit-virtual-root-row"></a>
 
-### お気に入り編集ビューの仮想固定行（表示名「お気に入り」、内部識別子は `top`）
+### お気に入り編集ビューの仮想固定行（実装。内部識別子は `top`）
 
-お気に入り編集ビュー（`FavoriteEditTree.tsx`／`useFavoriteEditSelection.ts`）は、一覧の先頭に実体を持たない仮想固定行を常時表示する。「フォルダ選択→その配下に作成」という既存ルールの下ではルート直下に新規フォルダを作る手段が無い問題を解決するためのもの。リネーム・削除・★解除の対象外。
+**仮想固定行の定義・目的・制約**（実体を持たない／リネーム・削除・★解除の対象外／絞り込み中も表示を維持／既存センチネル値 `FAVORITES_FOLDER_ID` を流用する方針／共有データを汚染しない方針）は、外部設計書 [03-data-model.md#favorite-edit-virtual-root-row](../external-design/03-data-model.md#favorite-edit-virtual-root-row) へ移設した。本節には実装上の対応と注意点のみを記す。
 
-**表示名は「Top」→「お気に入り」に改称済み（内部識別子は維持）**：実装時点（段階3・軸4f）では英語表記「Top」で仮実装し、`kind: "top"`／`FAVORITE_TOP_ROW_KEY`（`"favoriteTop"`）という内部識別子で管理していた。その後の手動GUIテストの指摘を受け、表示文言のみを「お気に入り」へ変更した（コミット `65db645`）。**内部識別子（`kind: "top"`／`FAVORITE_TOP_ROW_KEY`／`useFavoriteEditSelection.ts` 内の `TOP_ROW` 変数名）はコード全体で変更していない。** 今後この行に関わるコードを読む際は、表示上「お気に入り」でも内部的には `top` という名前で扱われている点に注意すること。表示名の変更に合わせてコード上の識別子名まで機械的に追従させる必要はない、という前例でもある。
+実装箇所は `FavoriteEditTree.tsx`／`useFavoriteEditSelection.ts`。
 
-**既存のルート・センチネル値をそのまま流用**：ルートを表す専用の仮想ID（`"__root__"` 等）を新設せず、[reserved-folders](#reserved-folders) の `FAVORITES_FOLDER_ID`（`"__favorites__"`）をそのまま「フォルダ作成のデフォルト先」「再親化のドロップ先」として使う。`FAVORITES_FOLDER_ID` は元々 `walkGroupedTree` の起点・フォルダ作成のデフォルト先・`move_favorite_node_to` の移動先バリデーションの全てで「ルート」として扱われていたため、新規実装の前に既存のセンチネル値が流用できないか確認すること。
+**⚠️ 表示名と内部識別子が一致していない**：実装時点（段階3・軸4f）では英語表記「Top」で仮実装し、`kind: "top"`／`FAVORITE_TOP_ROW_KEY`（`"favoriteTop"`）という内部識別子で管理していた。その後の手動GUIテストの指摘を受け、**表示文言のみ**を「お気に入り」へ変更した（コミット `65db645`）。**内部識別子（`kind: "top"`／`FAVORITE_TOP_ROW_KEY`／`useFavoriteEditSelection.ts` 内の `TOP_ROW` 変数名）はコード全体で変更していない。** この行に関わるコードを読む際は、表示上「お気に入り」でも内部的には `top` という名前で扱われている点に注意すること。表示名の変更に合わせてコード上の識別子名まで機械的に追従させる必要はない、という前例でもある。
 
-**`resolveSelected` の `{type:"top"}` と自然に一致**：編集ビューの選択状態は [result-list-and-selection.md](result-list-and-selection.md#selection-is-derived) と同じ `resolveSelected` の実装をそのまま再利用している（`useFavoriteEditSelection.ts`）。`{type:"top"}` intent が常にインデックス0を返す既存仕様と、仮想固定行をツリー配列の先頭に合成する設計が一致したため、`resolveSelected` 自体の実装変更は不要だった。
+**`resolveSelected` の `{type:"top"}` と自然に一致**：編集ビューの選択状態は [result-list-and-selection.md](result-list-and-selection.md#selection-is-derived) と同じ `resolveSelected` の実装をそのまま再利用している。`{type:"top"}` intent が常にインデックス0を返す既存仕様と、仮想固定行をツリー配列の先頭に合成する設計が一致したため、`resolveSelected` 自体の実装変更は不要だった。
 
-**共有 `favoriteTree` を汚染しない**：仮想固定行は `/favorite` ブラウジング側の共有 `favoriteTree`（`useSearch.ts`）には含めず、編集ビュー専用の合成ツリー（`useFavoriteEditSelection.ts` が `FavoriteEditTreeRow[]` として `[仮想固定行, ...favoriteTree]` を都度合成）としてのみ存在する。機能ごとにデータソースを分離する設計判断。
-
-**絞り込み中も表示を維持**：`favoriteFilterText` が非空でも仮想固定行は表示し続ける（ルート直下への新規作成操作自体は絞り込み中でも成立するため、隠す理由がない）。
+**合成の実装**：`useFavoriteEditSelection.ts` が `FavoriteEditTreeRow[]` として `[仮想固定行, ...favoriteTree]` を都度合成する（`useSearch.ts` の共有 `favoriteTree` 自体は変更しない）。
 
 ## 経緯
 
@@ -178,9 +172,9 @@
 
 ## 今後の指針
 
+> 外部設計相当の指針（予約フォルダの固定ID・Rust 側での二重バリデーション・同名フォルダ禁止の理由・メモ機能実装時の再利用判断）は、外部設計書 [03-data-model.md](../external-design/03-data-model.md) へ移設した。以下には実装上の指針のみを残す。
+
 - 予約フォルダの固定IDをRust側で変更する場合は、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）
-- バリデーションはフロントエンド側だけでなく、Rust側（保存直前）でも必ず行う（`enforce_reserved_folders` と同じ二重防御の考え方）
 - 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない
-- ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」といった報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、**同名・同一表示内容のノードが複数存在してユーザーが取り違えていないか**を先に確認すること。表示上の識別性（一意な名前）が担保されていないツリーは、アルゴリズムが正しくてもユーザー体感としての「順序の不整合」を生む
 - 新しい行の種類（★お気に入り・メモ等）を追加する場合、個別のオフセット変数は新設しない（詳細は [result-list-and-selection.md](result-list-and-selection.md#adding-a-row-kind) を参照）
-- メモ機能を実装する際、フォルダ分類（ツリー構造）を持たせるなら `is_descendant_of`／`groupNodesByParent`+`walkGroupedTree`／配置先選択 UI の3点をそのまま再利用する
+- メモ機能でフォルダ分類（ツリー構造）を持たせる場合、再利用する実装は `is_descendant_of`／`groupNodesByParent`+`walkGroupedTree`／配置先選択 UI の3点（判断基準は外部設計書側を参照）

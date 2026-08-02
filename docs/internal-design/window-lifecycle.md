@@ -74,13 +74,19 @@ const closeWindow = useCallback(
 
 <a id="modal-keydown-window-level"></a>
 
-### モーダル・ダイアログのキー操作は window レベルへ一本化する
+### モーダル・ダイアログのキー操作の実装
 
-> ⚠️ **本節の「Enter も一本化する」という部分は、外部設計書の新しい原則により上書きされている。** 正本は [外部設計書 01-screen-transitions.md#modal-key-policy](../external-design/01-screen-transitions.md#modal-key-policy)：**キャンセル（Escape）のみ window レベルへ一本化し、確定（Enter）はブラウザ標準のフォーカス経路に委ねて独自の Enter 分岐を設けない。** 本節の記述のうち Escape に関する部分は引き続き有効だが、Enter に関する部分（および `SystemCommandModal` を Enter の一本化対象に含めている記述）は外部設計書の原則が優先する。本節を外部設計書の内容に合わせて整理する作業は、節の切り出し作業（次回）の対象。
+**原則そのもの**（キャンセル（Escape）はフォーカス位置に依存させず window レベルへ一本化し、確定（Enter）はブラウザ標準のフォーカス経路に委ねて独自の Enter 分岐を設けない、という非対称な扱い）は、外部設計書 [01-screen-transitions.md#modal-key-policy](../external-design/01-screen-transitions.md#modal-key-policy) へ移設した。本節には実装パターンのみを記す。
 
-`SystemCommandModal`（システムコマンド確認）・`RegisterEntryDialog`（お気に入り登録ダイアログ）・`FavoriteFolderDeleteModal`（フォルダ削除確認）・`PathPasteWizard`（パス貼り付けウィザード）など、検索ビュー上に開閉するモーダル・ダイアログ・ウィザードの確定・キャンセル操作（Enter/Escape 等）は、DOM 上のフォーカス位置に依存させず、`App.tsx` の window レベルの共通 `keydown` リスナー（[ウィンドウを閉じる系アクションの共通設計](#close-window-common-design) 節と同じ `useEffect`）へ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない。
+**Escape（キャンセル）の実装**：`SystemCommandModal`（システムコマンド確認）・`RegisterEntryDialog`（お気に入り登録ダイアログ）・`FavoriteFolderDeleteModal`（フォルダ削除確認）・`PathPasteWizard`（パス貼り付けウィザード）など、検索ビュー上に開閉するモーダル・ダイアログ・ウィザードの Escape は、`App.tsx` の window レベルの共通 `keydown` リスナー（[ウィンドウを閉じる系アクションの共通設計](#close-window-common-design) 節と同じ `useEffect`）で処理する。個別コンポーネントのローカル `onKeyDown` によるフォーカス依存の判定を新設しない。
 
-**理由**：モーダルを開くトリガー要素（★ボタン・ゴミ箱アイコン等の `<button>`）はクリック直後もそれ自身がフォーカスを持ち続けることがある。ダイアログ自身のマウント時 `focus()`（`requestAnimationFrame` 越しでも）が何らかの理由で間に合わない、あるいは一覧行のルート要素が実在の `<button>` だった場合はクリックで選択した行自身にフォーカスが残り続ける（詳細は [result-list-and-selection.md](result-list-and-selection.md#row-focus-retention-bug) を参照）、といった事情により、意図した要素にフォーカスが無い瞬間に Enter/Escape が押されると、フォーカス依存のローカル `onKeyDown` ではキー操作を拾えず確定・キャンセルできなくなる（詳細は「経緯」節の[modal-keydown-focus-incidents](#modal-keydown-focus-incidents)を参照）。
+フォーカス位置に依存させられない具体的な事情：モーダルを開くトリガー要素（★ボタン・ゴミ箱アイコン等の `<button>`）はクリック直後もそれ自身がフォーカスを持ち続けることがある。ダイアログ自身のマウント時 `focus()`（`requestAnimationFrame` 越しでも）が間に合わない、あるいは一覧行のルート要素が実在の `<button>` だった場合はクリックで選択した行自身にフォーカスが残り続ける（詳細は [result-list-and-selection.md](result-list-and-selection.md#row-focus-retention-bug) を参照）。これらの事情により、意図した要素にフォーカスが無い瞬間に Escape が押されると、フォーカス依存のローカル `onKeyDown` では拾えずキャンセルできなくなる（詳細は「経緯」節の [modal-keydown-focus-incidents](#modal-keydown-focus-incidents) を参照）。
+
+**Enter（確定）の実装**：window レベルリスナーに Enter 分岐を書かない。Tab でフォーカスを移動し、フォーカスされたボタン上で Enter を押すと `click` が発火する、というブラウザ既定の挙動をそのまま使う。`FavoriteFolderDeleteModal` がこのパターンの参照実装。
+
+- **例外1**：`RegisterEntryDialog` の Enter は、表示名・保存先フォルダ等のダイアログ内部 state を必要とするため、ダイアログ自身の `onKeyDown` で処理する（window レベルではなく、かつ `stopPropagation` する）
+- **例外2**：`PathPasteWizard` の Enter は、ステップ遷移という「ボタンの click では表現されない操作」のため window レベルで処理する
+- **⚠️ 現状の違反**：`SystemCommandModal` は window レベルに独自の Enter 分岐と 300ms の猶予期間（`SYSTEM_COMMAND_CONFIRM_GRACE_MS`）を持つ。外部設計書の[是正方針](../external-design/01-screen-transitions.md#system-command-enter-removal)によりいずれも削除予定（実装は別途、優先度高で着手）
 
 <a id="search-overlay-active-consolidation"></a>
 

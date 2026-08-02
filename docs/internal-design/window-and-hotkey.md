@@ -19,6 +19,14 @@
 
 ### 透過・角丸・シャドウ
 
+**原則：以下3つの設定は個別に変更せず、常にセットで扱う。**
+
+1. `tauri.conf.json` の `backgroundColor` を alpha 0 にする
+2. DOM 側（`html`／`body`／`#root`）に `background: transparent` を明示する
+3. `tauri.conf.json` の `shadow` を `false` にする（影は CSS で代替する）
+
+**1つだけ変更すると、角のアーティファクト（角丸の外側に残る薄い線・にじみ）が再発する。** 3つはいずれも「ウィンドウ・WebView・DOM という異なるレイヤーの透過を一貫させる」という同一の目的のための設定であり、どれか1つでも欠けるとそのレイヤーだけが不透明のまま残るため。以下は各設定の具体的な理由。
+
 `transparent: true` + CSS `border-radius` で角丸を実現（Fluent ライクなアクリル風 UI）。
 
 - `tauri.conf.json` の `backgroundColor` を `[0, 0, 0, 0]`（alpha 0）に明示設定する。Windows では WebView2 のデフォルト背景が不透明なため、未設定だと角丸の外側にうっすら線（コーナーのにじみ）が見えるアーティファクトが出る
@@ -42,9 +50,9 @@
 
 ### リサイズとサイズの永続化
 
-`resizable: true` でウィンドウ枠からのリサイズを許可する。`tauri.conf.json` の `width` / `height`（デフォルトサイズ）と `minWidth` / `minHeight`（最小サイズ）はいずれも 640 / 420 とする。
+**「位置は永続化せずサイズのみ永続化する」という方針とその理由**（意図的な非対称であり矛盾ではない）は、外部設計書 [04-platform-policies.md#window-position-vs-size](../external-design/04-platform-policies.md#window-position-vs-size) へ移設した。本節には実装上の対応のみを記す。
 
-位置とは異なり、サイズは永続化する（再起動後も最後に設定したサイズを維持する）。位置を永続化しない既存方針とは非対称な扱いになるが、これは要件上の明示的な区別であり矛盾ではない。
+`resizable: true` でウィンドウ枠からのリサイズを許可する。`tauri.conf.json` の `width` / `height`（デフォルトサイズ）と `minWidth` / `minHeight`（最小サイズ）はいずれも 640 / 420 とする。
 
 - **保存**：フロントエンドが `getCurrentWindow().onResized` イベントを購読し、リサイズ確定から 500ms デバウンスしたうえで `@tauri-apps/plugin-store` の JS API（frecency・クリップボード履歴と同じ `storeRef`／`settings.json`）の `"windowSize"` キーへ `{ width, height }`（論理ピクセル。`scaleFactor()` で物理→論理に変換）を直接書き込む。Rust コマンドは追加しない
 - **復元**：Rust 側の `setup()` で `settings.json` の `"windowSize"` を読み込み、存在すればメインウィンドウ生成直後に `window.set_size(LogicalSize::new(width, height))` を呼んで適用する（フロントエンドの描画・表示前に確定させるため、`show()` より前に行う）。キーが存在しない場合（初回起動等）は `tauri.conf.json` のデフォルトサイズ（640×420）のままにする

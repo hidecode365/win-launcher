@@ -10,8 +10,8 @@
 
 - `appSettings.calcEnabled` が `false` の場合、入力内容に関わらず `calculate` コマンドを呼ばない（計算結果表示欄自体を出さない）
 - `calcEnabled` が `true` のとき、入力文字列が数字と演算子（`+ - * /`）・括弧のみで構成され、数字と演算子を1文字以上含む場合（`isCalcExpression`）に自動で `calculate` を呼び出す
-- 数式らしい入力であってもファイル検索（`search_files`）とは排他にせず、両方を独立して実行する。計算結果はファイル検索結果を置き換えず、その先頭の別枠固定表示領域に共存表示する（URLエンコード/デコード結果と同じ位置づけ）
-  - `isCalcExpression`（数字・演算子・括弧のみ）と `isUrlLikeInput`（`http(s)://` 始まり、レターを含む）は許容文字クラスが構造上排他のため、計算結果と URL変換結果が同時に発生することはない。ただし将来どちらかの判定条件が緩んだ場合に備え、計算結果 → URL変換結果の順という表示順序をルールとして明記している
+- **「暗黙判定モードはファイル検索と共存させ、表示順序を固定する」という方針**は外部設計書 [04-platform-policies.md#implicit-mode-coexistence](../external-design/04-platform-policies.md#implicit-mode-coexistence) へ移設した。実装上は、数式らしい入力であっても `search_files` とは排他にせず両方を独立して実行し、計算結果を別枠固定表示領域に描画する
+  - 判定関数の実体は `isCalcExpression`（数字・演算子・括弧のみ）と `isUrlLikeInput`（`http(s)://` 始まり、レターを含む）。許容文字クラスが構造上排他のため、現状は両者が同時に成立しない
   - 選択中に Enter またはクリックで結果をクリップボードにコピーしてウィンドウを閉じる挙動は `urlConvertResult` と同一
 - Rust 側で四則演算・括弧（優先順位対応の再帰下降パーサ）を評価し、結果を返す。自前実装（外部クレート未使用）。`tokenize`（字句解析）→ `Parser`（`parse_expr` → `parse_term` → `parse_factor` の3段構成の再帰下降パーサ）→ `calculate_expr`（トークン列が丁度消費し切れているかを検証してから評価結果を返す）の流れで評価する
   - `Token` は `Num` / `Plus` / `Minus` / `Star` / `Slash` に加え `LParen`（`(`） / `RParen`（`)`）を持つ
@@ -43,6 +43,8 @@
 <a id="prefix-command-candidates"></a>
 
 ### プレフィックスコマンド候補表示（フロントエンド）
+
+**拡張ポイントとしての方針**（新機能は候補生成ロジックに1つ追加するだけで既存の表示・選択・frecency に乗る／個別の候補表示 UI を新設しない／キーワードの重複チェック／OFF 時の除外）は、外部設計書 [04-platform-policies.md#prefix-command-extension-point](../external-design/04-platform-policies.md#prefix-command-extension-point) へ移設した。本節には実装の詳細のみを記す。
 
 検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`buildPrefixCommandCandidates`）。
 

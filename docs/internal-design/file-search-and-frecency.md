@@ -34,9 +34,7 @@
   - キー名は `"frecency"`、値は `{ [path: string]: { count: number, lastUsed: number } }`（`lastUsed` は UNIX タイムスタンプ ms）
 - アプリ起動時（マウント時）に `frecency` を読み込み、`useState` と同期する `useRef` の両方で保持する（`useRef` は `useCallback` の古いクロージャ参照を避けるため、`useState` は再レンダリングのトリガー用）
 - ファイル起動時（Enter／クリックいずれも `launchFile` 経由）に対象パスの `count` をインクリメントし `lastUsed` を現在時刻で更新、`store.set` → `store.save` で即時永続化する
-- スコア計算：`score = count * decay(lastUsed)`。`decay` は経過時間に応じた係数（1時間以内 `1.0`、1日以内 `0.9`、1週間以内 `0.7`、1ヶ月以内 `0.5`、それ以上 `0.3`）
-- 履歴のないファイルはスコア `0` として扱う。並び替えはスコア降順、スコアが同じ場合（未起動のファイル同士を含む）はファイル名のアルファベット順を二次キーとする
-- この機能の ON/OFF トグルは設けない（常時有効）
+- **スコア計算式・減衰係数・二次キー・常時有効である旨の正本は [REQUIREMENTS.md](../../REQUIREMENTS.md)「ファイル検索結果のランキング（frecency）」節**。ここには重複して書かない（外部設計書にも置かない）。**理由**：スコア計算式は「検索結果がどういう順で並ぶか」というユーザー体験の定義そのものであり、実装の都合ではなく要件そのものであるため。係数を変更する場合は REQUIREMENTS.md を更新し、実装をそれに合わせる
 - `recordFrecency(path)` はファイル起動時の後処理として `launchFile` の `closeWindow({ cleanup })` の `cleanup` 内で呼ぶ（詳細は [window-lifecycle.md](window-lifecycle.md#close-window-common-design) を参照）。ウィンドウが実際に隠れた後にのみ実行されるため、この呼び出しが引き起こす再レンダーのタイミングを個別に気にする必要はない
 
 同じ frecency の仕組みは [calc-and-prefix-commands.md](calc-and-prefix-commands.md) の「プレフィックスコマンド候補表示」でも `path` を `keyword` に変えて再利用されている。
@@ -47,14 +45,15 @@
 
 設定画面「ファイル検索」タブの検索フォルダ一覧の各行に歯車アイコンボタンを配置し、押下すると `FolderDetailSettingsModal.tsx` が中央オーバーレイのモーダルとして開く。
 
-データ構造：Rust の `FolderEntry`（`folders: FolderEntry[]`）に既存の `path`/`enabled` と並べてフォルダごとの詳細設定5項目を追加している。
+**データ構造の定義そのもの**（5項目の内容とデフォルト値・ブラックリスト用/ホワイトリスト用を独立フィールドとする方針・後方互換の方針・拡張子フィルタの境界条件）は、外部設計書 [03-data-model.md#folder-detail-settings](../external-design/03-data-model.md#folder-detail-settings) へ移設した。本節には実装上の対応のみを記す。
 
-- `max_depth: u32`（検索階層数。デフォルト3。バリデーション範囲は1〜20）
-- `include_folders: bool`（フォルダ自体を検索対象に含めるか。デフォルト `false`）
-- `extension_filter_mode: ExtensionFilterMode`（`"blacklist"` | `"whitelist"` の2値 enum。`#[serde(rename_all = "camelCase")]` により JS 側は小文字の文字列として扱う。デフォルト `"blacklist"`）
-- `blacklist_extensions: Vec<String>` / `whitelist_extensions: Vec<String>`（拡張子タグの配列。いずれもデフォルト空。保存時に Rust 側でトリム・先頭 `.` 除去・小文字化・重複除去を行ってから保存する）
+Rust の `FolderEntry`（`folders: FolderEntry[]`）のフィールド実体：
 
-新規5フィールドはすべて `#[serde(default = ...)]` を付与している。旧バージョンで保存された `folders` エントリ（これらのキーを持たない）を読み込んだ場合、deserialize 時にこのデフォルト値が自動的に補われる（マイグレーション処理は別途必要ない）。
+- `max_depth: u32` / `include_folders: bool`
+- `extension_filter_mode: ExtensionFilterMode`（`"blacklist"` | `"whitelist"` の2値 enum。`#[serde(rename_all = "camelCase")]` により JS 側は小文字の文字列として扱う）
+- `blacklist_extensions: Vec<String>` / `whitelist_extensions: Vec<String>`（保存時に Rust 側でトリム・先頭 `.` 除去・小文字化・重複除去を行ってから保存する）
+
+新規5フィールドはすべて `#[serde(default = ...)]` を付与しており、外部設計書の後方互換方針（マイグレーション処理を書かない）はこれによって実現している。
 
 `FolderEntry::new(path)` コンストラクタで新規フォルダ登録時（`add_folder`／`add_search_folder_from_paste` の両方）にも同じデフォルト値を設定する（`FolderEntry { path, enabled: true }` のようなリテラル構築を残すと新フィールドの初期値がその都度バラバラになりうるため、コンストラクタに一本化した）。
 
@@ -67,7 +66,7 @@
 - `WalkDir::new(...).max_depth(dir.max_depth as usize)` でフォルダごとの階層数を反映する
 - `entry.depth() == 0`（走査ルート＝検索フォルダ自身）は `include_folders` の値に関わらず常にスキップする
 - `is_dir && dir.include_folders` の場合のみディレクトリエントリを結果候補に含める。ファイル（`is_file`）は従来通り常に候補
-- 拡張子フィルタリング（`passes_extension_filter`）はファイルのみに適用し、ディレクトリには適用しない。`dir.extension_filter_mode` に応じて `dir.blacklist_extensions`／`dir.whitelist_extensions` のどちらを使うかは呼び出し側（`search_files`）で選んでから渡す。ブラックリストは空リストなら常に許可、ホワイトリストは空リストなら常に拒否（`*` のような全許可特殊タグは実装しない）。拡張子を持たないファイルは、ブラックリストの個々のタグに一致しようがないため許可、ホワイトリストの個々のタグに一致しようがないため拒否、という扱いになる
+- 拡張子フィルタリング（`passes_extension_filter`）はファイルのみに適用し、ディレクトリには適用しない。`dir.extension_filter_mode` に応じて `dir.blacklist_extensions`／`dir.whitelist_extensions` のどちらを使うかは呼び出し側（`search_files`）で選んでから渡す（空リスト時・拡張子なしファイルの扱いは外部設計書の「拡張子フィルタの境界条件」を参照）
 - アイコン取得（`shell_icon::get_icon_data_url`）はファイル・フォルダ双方に対して既存のまま動作する（`SHGetFileInfoW` はディレクトリにも有効なため個別対応不要）
 
 このロジックは `/recent` の「表示対象設定」（[recent-files.md](recent-files.md) を参照）とも `normalize_extensions`／`passes_extension_filter` を共有している。

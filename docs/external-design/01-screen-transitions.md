@@ -11,7 +11,7 @@
 - [モーダル・ダイアログのキー操作原則](#modal-key-policy)
 - [表1: モード共存・排他一覧](#mode-coexistence-table)
 - [表2: view/modal 状態遷移一覧](#view-modal-transition-table)
-- [表への収録可否が未確定の状態](#pending-inclusion)
+- [第3の分類「fullscreen overlay」を認めた理由](#fullscreen-overlay)
 
 <a id="modal-key-policy"></a>
 
@@ -91,25 +91,22 @@
 | `deleteFolder`（フォルダ削除確認） | modal | （元の view） | 確定・Esc | 元の view が既定のフォーカス先に戻る。**原則に適合した参照実装**：Esc のみ window レベルで処理し、確定は Tab でフォーカスした削除ボタン上の Enter（＝ブラウザ標準の `click` 発火）に委ねる |
 | `pathPaste`（フォルダ選択ステップ） | modal | `pathPaste`（名前編集ステップ）／（元の view） | 選択確定で次ステップへ・Esc で元の view へ | 名前編集ステップへ遷移する。↑↓・Enter・Esc をいずれも window レベルで処理する（候補行が SearchBox とは別要素のため、フォーカスが SearchBox から外れうる） |
 | `pathPaste`（名前編集ステップ） | modal | （元の view） | 確定でショートカット作成・Esc で1ステップ戻る | **Esc は「モーダルを閉じる」ではなく「フォルダ選択ステップへ戻る」**。この Esc の意味の違いは本ウィザード固有であり、他の modal と揃えていない |
-| `ocrPreview` | **要判断（下記注記を参照）** | （元の view） | Ctrl+V での画像ペーストで起動・「閉じる」で検索画面へ・「コピーして閉じる」でウィンドウを閉じる | 180ms のフェードアウト中間状態（`ocrClosing`）を持ち、**`closeWindow()` を経由しない唯一の例外**（ウィンドウが可視のまま意図的に見せる演出のため） |
+| `ocrPreview` | **fullscreen overlay**（[定義](#fullscreen-overlay)） | （元の view） | Ctrl+V での画像ペーストで起動・「閉じる」で検索画面へ・「コピーして閉じる」でウィンドウを閉じる | 180ms のフェードアウト中間状態（`ocrClosing`）を持ち、**`closeWindow()` を経由しない唯一の例外**（ウィンドウが可視のまま意図的に見せる演出のため） |
 | `updateDialog`（アップデート確認/DL中） | modal | （元の view） | **マウス操作のみ。キー操作の割当を持たない**（window レベルリスナーにも分岐がなく、Esc も Enter も効かない） | 元の view が既定のフォーカス先に戻る。キー操作を割り当てるかどうかは未検討（現状は意図的に割当なし、という状態） |
 
-<a id="pending-inclusion"></a>
+<a id="fullscreen-overlay"></a>
 
-## 表への収録可否が未確定の状態
+## 第3の分類「fullscreen overlay」を認めた理由
 
-### `iconMeasureOverlayOpen`（Ctrl+Alt+M のデバッグオーバーレイ）
+表2の `ocrPreview` の種別は、view でも modal でもない第3の分類 **fullscreen overlay** として確定した（PO 決定）。
 
-`IconSlot` の実測サイズを画面内に表示する開発者向けオーバーレイ。window レベル `keydown` リスナーの**最優先分岐**として実装されており（該当時は以降の分岐を一切実行せず `return`）、Esc で閉じる。
+**fullscreen overlay の定義**：**画面の中身をまるごと覆うが、下位の view の状態・ロジックは動き続けるもの。** 現時点の該当は `ocrPreview` のみ。
 
-**恒久機能でない可能性があるため、今回は表2に含めていない。表への収録可否は PO 判断待ち。** 恒久機能として残すなら表2へ1行追加し、一時的な調査用機能なら削除対象として別途扱う。
+view・modal のどちらかに寄せず第3の分類を新設したのは、どちらに寄せても歪みが出るためである。
 
-### `ocrPreview` の「種別」（view か modal か）
+- **view として `MainView` 型へ統合すると**、「view が切り替わっているのに検索ロジックは動き続ける」という現状の挙動と噛み合わない（`ocrPreview` 表示中もクエリの入力・検索の実行・内部 state の更新はすべて通常どおり継続する）
+- **modal と呼ぶと**、「全画面を覆う modal」という他に例のない例外分類を認めることになる（他の modal はいずれも元の画面の上に重なるだけで、下位の画面要素を隠しきらない）
 
-表2では判断を保留し「要判断」としている。CC の見解は以下のとおりで、**断定せず論点として残す**。
+どちらに寄せても実態と食い違う説明が残るため、**実態どおり「view でも modal でもない第3のもの」として名前を与える方が、後から読む人の混乱が少ない**と判断した。
 
-- **view 寄りと考える根拠**：`ocrPreview` 表示中は `ResultList`／`ClipboardPanel`／`StatusFooter` を**すべて非表示**にする。これは「元の画面の上に重なる」という modal の性質ではなく、「画面の中身がまるごと入れ替わる」という view の性質に近い
-- **modal 寄りと考える根拠**：`MainView` 型（`search`／`settings`／`favoriteEdit`）には含まれておらず、`search` view の内部状態として管理されている。また閉じると元の画面へ戻るという遷移構造は modal と同じ
-- **論点**：これを view と定義するなら `MainView` 型へ 4 番目の値として統合するのが一貫するが、そうすると「view の切り替え」と「検索ロジックは動き続ける」（`ocrPreview` 中もクエリ・内部 state は影響を受けない）という現状の挙動が噛み合わなくなる。逆に modal と定義するなら、「全画面を覆う modal」という他に例のない分類を1つ認めることになる
-
-判断が必要になるのは、`ocrPreview` に対して他の view と同じ扱い（独立したウィンドウサイズ永続化キー、既定フォーカス先の定義等）を与えたくなった時点である。それまでは現状の実装（`search` view の内部状態）のままで支障はない。
+**新しい状態を追加する際の判断基準**：画面の中身をまるごと覆うかどうか（覆わないなら modal）、および下位の view の状態・ロジックが動き続けるかどうか（止まるなら view）の2軸で分類する。両方に該当する場合のみ fullscreen overlay とする。
