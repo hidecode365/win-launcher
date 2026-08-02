@@ -33,9 +33,9 @@ WinLauncher の開発は、PO（発案・最終判断）・CA（claude.ai。要�
 
 ### CC側に900番台（横断ファイル）が存在しない理由
 
-CC 側にとっての「工程を問わず参照する恒久的な内容」は、`CLAUDE.md`（行動規範＋原則ダイジェスト）と `docs/design/*.md`（詳細な仕様・経緯）が既にその役割を担っている。CA 側の `ca_app_900_*`（プロンプトの書き方、UI規約等）とは参照される情報の実体が異なるため、対称に `cc_app_900_*` を新設する必要はない。
+CC 側にとっての「工程を問わず参照する恒久的な内容」は、`CLAUDE.md`（行動規範＋原則ダイジェスト）と `docs/internal-design/*.md`（詳細な仕様・経緯）が既にその役割を担っている。CA 側の `ca_app_900_*`（プロンプトの書き方、UI規約等）とは参照される情報の実体が異なるため、対称に `cc_app_900_*` を新設する必要はない。
 
-**この判断は `app` 領域固有の事情に基づくものである。** 将来 `site` 領域が合流する際、`site` 側に `CLAUDE.md`/`docs/design/*.md` に相当する恒久ドキュメントが存在しなければこの非対称性の理由はそのまま転用できない。`site` 領域合流時に改めて再検証すること。誤って `cc_app_900_*` や `cc_app_000_*`（CC側の運用管理ファイル）を機械的に新設しないよう、ここに明記しておく。
+**この判断は `app` 領域固有の事情に基づくものである。** 将来 `site` 領域が合流する際、`site` 側に `CLAUDE.md`/`docs/internal-design/*.md` に相当する恒久ドキュメントが存在しなければこの非対称性の理由はそのまま転用できない。`site` 領域合流時に改めて再検証すること。誤って `cc_app_900_*` や `cc_app_000_*`（CC側の運用管理ファイル）を機械的に新設しないよう、ここに明記しておく。
 
 ## 工程定義表
 
@@ -71,7 +71,7 @@ CC 側にとっての「工程を問わず参照する恒久的な内容」は�
 ### 200_設計
 
 - CA INPUT: 更新済み `REQUIREMENTS.md`（200 は要件確定後にのみ発動する工程であり、REQUIREMENTS.md 確定前に実装コスト等を照会する場合は 100_要件定義 内の事前調査として扱う。詳細は 100_要件定義 節を参照）
-- CC INPUT: CA の設計案（過去の関連議論の要約を含む）、`DESIGN_LOG.md`、関連する `docs/design/*.md`（CC 自身が判断し明示的に読む。自動ロードされない点に注意）
+- CC INPUT: CA の設計案（過去の関連議論の要約を含む）、`DESIGN_LOG.md`、関連する `docs/internal-design/*.md`（CC 自身が判断し明示的に読む。自動ロードされない点に注意）
 - PROCESS: 1. CA が設計案を起草 2. CC へ批評依頼 3. 必要なら往復 4. POが結論を判断 5. `DESIGN_LOG.md` へトピック単位の見出しで記録
 - CA OUTPUT: 設計案、批評依頼プロンプト
 - CC OUTPUT: 設計への批評（懸念なしの場合も明記）、`DESIGN_LOG.md` への追記
@@ -82,7 +82,7 @@ CC 側にとっての「工程を問わず参照する恒久的な内容」は�
 ### 300_実装
 
 - CA INPUT: `DESIGN_LOG.md` の結論、`REQUIREMENTS.md`
-- CC INPUT: CA からの実装プロンプト、関連する `docs/design/*.md`（CC 自身が判断し明示的に読む）
+- CC INPUT: CA からの実装プロンプト、関連する `docs/internal-design/*.md`（CC 自身が判断し明示的に読む）
 - PROCESS: 1. CA が実装プロンプト作成 2. CC が実装 3. `cargo build`/`tsc --noEmit`
 - CA OUTPUT: 実装プロンプト
 - CC OUTPUT: 実装済みコード、ビルド結果報告
@@ -106,9 +106,9 @@ CC 側にとっての「工程を問わず参照する恒久的な内容」は�
 
 - CA INPUT: テスト合格の報告
 - CC INPUT: CA からのドキュメント反映依頼
-- PROCESS: 1. `CLAUDE.md`/`docs/design/` への正式反映 2. `README.md` への反映（必要時のみ。英語指定を含める） 3. 反映確認 4. `DESIGN_LOG.md` の該当セクションのみクリア 5. 依存関係最終確認
+- PROCESS: 1. `CLAUDE.md`/`docs/internal-design/` への正式反映 2. `README.md` への反映（必要時のみ。英語指定を含める） 3. 反映確認 4. `DESIGN_LOG.md` の該当セクションのみクリア 5. 依存関係最終確認
 - CA OUTPUT: 反映確認結果
-- CC OUTPUT: 更新済み `CLAUDE.md`/`docs/design/`、更新済み `README.md`（該当時）
+- CC OUTPUT: 更新済み `CLAUDE.md`/`docs/internal-design/`、更新済み `README.md`（該当時）
 - CA実施要領: `ca_app_500_pre-release.md`（CA 側で管理）
 - CC実施要領: [cc_app_500_pre-release.md](docs/process/cc_app_500_pre-release.md)（`DESIGN_LOG.md` のクリア漏れが無いかを次回セッション開始時に機械的に確認する運用ルールを含む）
 - 役割・振る舞い: CC はドキュメント反映と `DESIGN_LOG.md` の該当セクションクリアを実施。CA は反映内容を確認する

@@ -1164,7 +1164,7 @@ fn remove_favorite_folder(app: AppHandle, id: String) -> Result<Vec<FavoriteNode
 /// お気に入り編集ビューのドラッグ&ドロップによる並び替え・再親化（4e）。
 /// 隣接スワップ専用（up/downのみ）の `move_favorite_node` を段階3当初の暫定実装
 /// として持っていたが、/favorite ブラウジング側の暫定UI撤去とともに呼び出し元が
-/// 無くなったため削除した（経緯は docs/design/favorites-data-model.md
+/// 無くなったため削除した（経緯は docs/internal-design/favorites-data-model.md
 /// #favorite-mode-provisional-features を参照）。1回の呼び出しで移動先の親
 /// （`new_parent_id`）と、移動先の兄弟内での挿入位置（`target_index`。自分自身を
 /// 除いた兄弟一覧を order 昇順に並べたときの添字。同じ親内での並び替えも

@@ -1,6 +1,6 @@
 // フォルダ削除確認モーダル。お気に入り編集ビュー（FavoriteEditView.tsx。4c）が使う
 // （/favorite ブラウジング側の暫定削除UIは編集ビュー完成に伴い撤去済み。詳細は
-// docs/design/favorites-data-model.md#favorite-mode-provisional-features を参照）。
+// docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features を参照）。
 // 既存の SystemCommandModal・FileSearchSettings.tsx の削除確認モーダルと同じ見た目の
 // パターンを踏襲する。
 //

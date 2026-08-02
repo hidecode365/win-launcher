@@ -569,7 +569,7 @@ export function FavoriteEditTree({
   // 選択中の行からしか呼ばれないため実質的に selected は常に true だが、
   // 将来の呼び出し元の変化に備えて規約通りの分岐を持たせる。
   // アイコン間の間隔は個別の `ml-2` ではなく、呼び出し元の行が持つ `gap-2` の
-  // flexコンテナに委ねる（詳細は docs/design/favorites-ui-iconography.md
+  // flexコンテナに委ねる（詳細は docs/internal-design/favorites-ui-iconography.md
   // 「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。
   const renderCreateFolderIcon = (selected: boolean) => (
     <IconSlot
@@ -651,7 +651,7 @@ export function FavoriteEditTree({
                   </span>
                   {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
                       `gap-2` に一本化する（詳細は
-                      docs/design/favorites-ui-iconography.md
+                      docs/internal-design/favorites-ui-iconography.md
                       「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
                   <div className="flex items-center gap-2 ml-2">
                     {isSelected && renderCreateFolderIcon(isSelected)}
@@ -741,7 +741,7 @@ export function FavoriteEditTree({
                       のため IconSlot に `interactive={false}` を渡し、ホバー円・
                       Tooltipは持たせないが、他のアイコンと同じ「箱」サイズ
                       （p-1込み）にすることで隣接要素との間隔を統一する（詳細は
-                      docs/design/favorites-ui-iconography.md「行内アイコンの
+                      docs/internal-design/favorites-ui-iconography.md「行内アイコンの
                       共通ラッパー化（IconSlot）」節を参照）。 */}
                   <div className="flex items-center gap-2 ml-2">
                     <IconSlot
@@ -884,7 +884,7 @@ export function FavoriteEditTree({
                 </div>
                 {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
                     `gap-2` に一本化する（詳細は
-                    docs/design/favorites-ui-iconography.md「行内アイコンの
+                    docs/internal-design/favorites-ui-iconography.md「行内アイコンの
                     共通ラッパー化（IconSlot）」節を参照）。 */}
                 <div className="flex items-center gap-2 ml-2">
                   {!row.exists && <WarningIcon selected={isSelected} />}

@@ -1,10 +1,22 @@
 # ウィンドウのライフサイクル管理（表示・非表示・クローズ処理）
 
-対象コード: `src/App.tsx`（フォーカス監視・`showSettingsRef`）、`src/hooks/useSearch.ts`（`closeWindow`・世代ID管理・フォーカス回復時再取得テーブル）、`src/lib/window.ts`（`hideWindow`）、`src-tauri/src/main.rs`（`window.center()`・`show()`・グローバルショートカットの表示/非表示トグル）。
+対象コード: `src/App.tsx`（`MainView` 型・フォーカス監視・`showSettingsRef`）、`src/hooks/useSearch.ts`（`closeWindow`・世代ID管理・フォーカス回復時再取得テーブル）、`src/lib/window.ts`（`hideWindow`）、`src-tauri/src/main.rs`（`window.center()`・`show()`・グローバルショートカットの表示/非表示トグル）。
 
 横断アーキテクチャ系のファイル。ウィンドウを閉じる・フォーカスを失う・"/" プレフィックスモードへ切り替わるといった「表示状態の変化」に関わる設計は、機能ごとに個別実装せずすべてここに記載されたパターンへ乗せること。
 
 ## 現在の設計
+
+<a id="main-view-enum"></a>
+
+### 3枚の全画面ビューの状態管理（`MainView` 型）
+
+`App.tsx` は「検索」「設定」「お気に入り編集」の3枚の全画面ビューを、単一の `type MainView = "search" | "settings" | "favoriteEdit"`（`useState<MainView>`）で管理する。いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは作らない。
+
+**導入経緯**：お気に入り編集ビュー（段階3・軸4a）を追加する以前は、検索画面と設定画面の二択を単一の `boolean`（`showSettings`）で管理していた。3枚目のビューは `boolean` の二値では表現できないため、文字列リテラルの Union 型（enum 相当）へ変更した。
+
+**既存分岐との後方互換**：`showSettings` という名前で `boolean` を直接参照する既存分岐が多数あったため（[focus-out-auto-hide](#focus-out-auto-hide) の `showSettingsRef` 等）、`view` の導入後も `const showSettings = view === "settings"` という派生値をそのまま残し、呼び出し側の書き換えを最小限にとどめた。同様に、お気に入り編集ビューかどうかの判定用に `favoriteEditOpen = view === "favoriteEdit"` も派生値として用意している。フォーカスアウト自動非表示の適用除外条件（[focus-out-auto-hide](#focus-out-auto-hide) 参照）も、旧来「`showSettings` のときだけ除外」だったものを「検索ビュー（`view === "search"`）以外では除外」という条件へ一般化した。
+
+**今後の指針**：4枚目以降の全画面ビューを追加する場合は、`MainView` の Union 型へ新しい文字列リテラルを1つ追加するだけにすること。独立した `boolean` state（かつての `showSettings` のような形）を新設しない。3画面化のときに二値では表現しきれず enum 化した経緯を繰り返さないため。
 
 <a id="focus-out-auto-hide"></a>
 
@@ -58,7 +70,7 @@ const closeWindow = useCallback(
 
 **再表示時（`cleanup` がまだ完了していない場合）の挙動方針**：`closeWindow()` の `cleanup` は `hideWindow()` の解決後に開始される。理論上、ユーザーが極めて素早く再度ウィンドウを表示した場合、`cleanup` の非同期部分（`recordFrecency` の store 書き込み、`search_files`/`get_recent_files` の再取得等）が完了していない状態で画面が見える可能性がある。採用した方針は「再表示時は一旦ニュートラルな状態を先に描画し、`cleanup` の結果は次のクエリ変化まで気にしない」（検討した他の2方針との比較は「経緯」節を参照）。
 
-**適用対象外の例外**：OCR プレビューの「コピーして閉じる」（`App.tsx` の `handleOcrCopyAndClose`）は、`closeWindow()` を経由せず独自に 180ms のフェードアウト演出を挟んでから `hideWindow()` を呼ぶ（詳細は [docs/design/clipboard-and-ocr.md](clipboard-and-ocr.md) を参照）。これはウィンドウが可視のまま意図的に見せる演出であり、「隠れるまで state を変更しない」という本節の原則とは目的が異なる。同様に `Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない。
+**適用対象外の例外**：OCR プレビューの「コピーして閉じる」（`App.tsx` の `handleOcrCopyAndClose`）は、`closeWindow()` を経由せず独自に 180ms のフェードアウト演出を挟んでから `hideWindow()` を呼ぶ（詳細は [clipboard-and-ocr.md](clipboard-and-ocr.md) を参照）。これはウィンドウが可視のまま意図的に見せる演出であり、「隠れるまで state を変更しない」という本節の原則とは目的が異なる。同様に `Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない。
 
 <a id="modal-keydown-window-level"></a>
 

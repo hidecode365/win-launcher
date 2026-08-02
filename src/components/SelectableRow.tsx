@@ -4,7 +4,7 @@ import type { MouseEvent, ReactNode } from "react";
 // クリップボード履歴等）の共通ルート要素。行のルートは実在の <button> ではなく
 // 常に <div role="button"> にする（キーボード操作は行そのものにフォーカスを
 // 当てず、検索ボックス側の keydown リスナー・↑↓キーによる選択インデックス管理で
-// 完結させる設計のため。詳細は docs/design/result-list-and-selection.md
+// 完結させる設計のため。詳細は docs/internal-design/result-list-and-selection.md
 // 「結果行の DOM 構造」節・「行ルート要素のフォーカス残留によるシステムコマンド
 // 誤実行」節を参照）。行の実装者がこの2点（role="button" と tabIndexを
 // 付与しないこと）を毎回意識せずに済むよう、このラッパーへ一本化する。

@@ -103,7 +103,7 @@ export function FavoriteEditView({
   // フォルダ削除確認モーダル（pendingDeleteFolder）をトリガーのゴミ箱アイコン
   // ボタンから開いて閉じても絞り込み欄へ再フォーカスされない不具合があった
   // （トリガーのボタン自身がクリック後もフォーカスを持ち続けるため。詳細は
-  // docs/design/result-list-and-selection.md「行ルート要素のフォーカス残留による
+  // docs/internal-design/result-list-and-selection.md「行ルート要素のフォーカス残留による
   // システムコマンド誤実行」節と同種の理由）。横並び調査の結果、リネーム中
   // （renamingNodeId）・フォルダ作成中（creatingFolderAnchorKey）のインライン
   // 入力欄も、確定/キャンセル後に絞り込み欄へ戻す処理を持たない同じ構造的な

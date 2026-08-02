@@ -21,7 +21,7 @@ import { FavoriteTreeRow, FileEntry } from "../types";
 // FavoriteEditTree.tsx）が担う。/favorite モードは「見る・呼び出す・★解除のみ」に
 // 限定する（段階2で前倒し実装した「上へ/下へ移動」「フォルダ削除」の暫定UIは、
 // 編集ビュー（4a〜4e）が揃った時点で撤去済み。詳細は
-// docs/design/favorites-data-model.md#favorite-mode-provisional-features を参照）。
+// docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features を参照）。
 //
 // ResultList.tsx とは別の専用コンポーネントにしている理由：ResultList の
 // `rows: ResultRow[]` はフラットな1階層の判別可能 Union であり、フォルダ見出し行
@@ -107,7 +107,7 @@ export function FavoriteListPanel({
               {/* 行末アイコン群を1つのflexコンテナに包む（現状はこの件数バッジ
                   単独だが、ResultList.tsx・FavoriteEditTree.tsx と同じ
                   IconSlot＋gapの共通ラッパー化規約に揃える。詳細は
-                  docs/design/favorites-ui-iconography.md「行内アイコンの
+                  docs/internal-design/favorites-ui-iconography.md「行内アイコンの
                   共通ラッパー化（IconSlot）」節を参照）。件数バッジ自体は
                   表示専用（クリック不可）のため interactive=false とする。
                   軸4m：以前は桁数に応じて幅が変わるピル型
@@ -186,7 +186,7 @@ export function FavoriteListPanel({
             </div>
             {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
                 `gap-2` に一本化する（詳細は
-                docs/design/favorites-ui-iconography.md「行内アイコンの
+                docs/internal-design/favorites-ui-iconography.md「行内アイコンの
                 共通ラッパー化（IconSlot）」節を参照）。 */}
             <div className="flex items-center gap-2 ml-2">
               {!row.exists && <WarningIcon selected={isSelected} />}

@@ -1,6 +1,6 @@
 # ピン止め・お気に入り・メモ機能のデータ構造
 
-対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`enforce_reserved_folders`／`is_descendant_of`／`add_favorite_folder`／`move_favorite_node`／`remove_favorite_folder`）、`src/types.ts`（`FavoriteNode`／`PINNED_FOLDER_ID`）、`src/hooks/useSearch.ts`（ピン止め・お気に入りの state・アクション）、`src/lib/nodeTree.ts`。
+対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`enforce_reserved_folders`／`is_descendant_of`／`add_favorite_folder`／`move_favorite_node`／`remove_favorite_folder`）、`src/types.ts`（`FavoriteNode`／`PINNED_FOLDER_ID`）、`src/hooks/useSearch.ts`（ピン止め・お気に入りの state・アクション）、`src/lib/nodeTree.ts`、`src/hooks/useFavoriteEditSelection.ts`（お気に入り編集ビュー専用の選択ドメイン・仮想固定行）。
 
 要件・仕様の詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照。本ファイルは実装上の設計判断・注意点のみを記す。段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装。
 
@@ -113,6 +113,22 @@
 編集ビュー（フォルダ作成・削除・リネーム・D&D並び替え。段階3 軸4a〜4e）が完成した時点で、`/favorite` モード内のこれら暫定機能（上下移動ボタン・削除アイコン・関連する確認モーダル）は**撤去済み**（`FavoriteListPanel.tsx`）。`/favorite` モードは当初の設計意図通り、`/recent` と同様に「見る・呼び出す・★解除のみ」の一覧に戻した。
 
 `remove_favorite_folder`（削除確認モーダル `FavoriteFolderDeleteModal.tsx` 含む）は編集ビュー側の削除機能がそのまま再利用しているため存続する。一方 `move_favorite_node`（隣接スワップ専用の up/down 方式）は、編集ビューが D&D 専用の新規コマンド `move_favorite_node_to` を使うようになったことで呼び出し元が無くなったため、Rust コマンド自体も削除した（他に呼び出し箇所が無いことを確認済み）。
+
+<a id="favorite-edit-virtual-root-row"></a>
+
+### お気に入り編集ビューの仮想固定行（表示名「お気に入り」、内部識別子は `top`）
+
+お気に入り編集ビュー（`FavoriteEditTree.tsx`／`useFavoriteEditSelection.ts`）は、一覧の先頭に実体を持たない仮想固定行を常時表示する。「フォルダ選択→その配下に作成」という既存ルールの下ではルート直下に新規フォルダを作る手段が無い問題を解決するためのもの。リネーム・削除・★解除の対象外。
+
+**表示名は「Top」→「お気に入り」に改称済み（内部識別子は維持）**：実装時点（段階3・軸4f）では英語表記「Top」で仮実装し、`kind: "top"`／`FAVORITE_TOP_ROW_KEY`（`"favoriteTop"`）という内部識別子で管理していた。その後の手動GUIテストの指摘を受け、表示文言のみを「お気に入り」へ変更した（コミット `65db645`）。**内部識別子（`kind: "top"`／`FAVORITE_TOP_ROW_KEY`／`useFavoriteEditSelection.ts` 内の `TOP_ROW` 変数名）はコード全体で変更していない。** 今後この行に関わるコードを読む際は、表示上「お気に入り」でも内部的には `top` という名前で扱われている点に注意すること。表示名の変更に合わせてコード上の識別子名まで機械的に追従させる必要はない、という前例でもある。
+
+**既存のルート・センチネル値をそのまま流用**：ルートを表す専用の仮想ID（`"__root__"` 等）を新設せず、[reserved-folders](#reserved-folders) の `FAVORITES_FOLDER_ID`（`"__favorites__"`）をそのまま「フォルダ作成のデフォルト先」「再親化のドロップ先」として使う。`FAVORITES_FOLDER_ID` は元々 `walkGroupedTree` の起点・フォルダ作成のデフォルト先・`move_favorite_node_to` の移動先バリデーションの全てで「ルート」として扱われていたため、新規実装の前に既存のセンチネル値が流用できないか確認すること。
+
+**`resolveSelected` の `{type:"top"}` と自然に一致**：編集ビューの選択状態は [result-list-and-selection.md](result-list-and-selection.md#selection-is-derived) と同じ `resolveSelected` の実装をそのまま再利用している（`useFavoriteEditSelection.ts`）。`{type:"top"}` intent が常にインデックス0を返す既存仕様と、仮想固定行をツリー配列の先頭に合成する設計が一致したため、`resolveSelected` 自体の実装変更は不要だった。
+
+**共有 `favoriteTree` を汚染しない**：仮想固定行は `/favorite` ブラウジング側の共有 `favoriteTree`（`useSearch.ts`）には含めず、編集ビュー専用の合成ツリー（`useFavoriteEditSelection.ts` が `FavoriteEditTreeRow[]` として `[仮想固定行, ...favoriteTree]` を都度合成）としてのみ存在する。機能ごとにデータソースを分離する設計判断。
+
+**絞り込み中も表示を維持**：`favoriteFilterText` が非空でも仮想固定行は表示し続ける（ルート直下への新規作成操作自体は絞り込み中でも成立するため、隠す理由がない）。
 
 ## 経緯
 

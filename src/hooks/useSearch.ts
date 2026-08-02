@@ -158,7 +158,7 @@ export function isDescendantOfFolder(
 // 作成する）、`favoriteTree` にまだ新しい行が反映されていない状態で選択解決
 // （resolveSelected）が行われ、直前の選択（古い行）にフォールバックしたまま
 // 次の操作の対象になってしまう不具合があった（詳細は
-// docs/design/favorites-data-model.md「経緯」節を参照）。`saved` から同期的に
+// docs/internal-design/favorites-data-model.md「経緯」節を参照）。`saved` から同期的に
 // 導出すればこの非同期の隙間自体が生じない。
 //
 // 新規のファイルパスを登録する操作（`confirmFavoriteDialog`。実体の有無を
@@ -1779,7 +1779,7 @@ export function useSearch(
           // （直前に作成した行を選択してすぐ次を作成する）と、この隙間の間は
           // favoriteTree にまだ新しい行が無いため選択解決が直前の選択に
           // フォールバックし続け、次の作成先の親を取り違える不具合があった
-          // （詳細は docs/design/favorites-data-model.md「経緯」節を参照）。
+          // （詳細は docs/internal-design/favorites-data-model.md「経緯」節を参照）。
           setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
           const added = saved.find(
             (f) => !before.some((b) => b.id === f.id)
@@ -1867,7 +1867,7 @@ export function useSearch(
   // （favoriteTree が再取得された後も同じ key で解決される）。
   // 重複名・循環参照・予約フォルダ保護等のバリデーションは Rust側で行い、失敗時は
   // エラーメッセージ文字列を返す契約に統一する（他の set_* 系フックコールバックと
-  // 同じ Promise<string | null> の契約。docs/design/settings-panel-architecture.md
+  // 同じ Promise<string | null> の契約。docs/internal-design/settings-panel-architecture.md
   // 「エラー状態の保持場所」を参照）。
   const moveFavoriteNodeTo = useCallback(
     (id: string, newParentId: string, targetIndex: number): Promise<string | null> => {
@@ -1891,7 +1891,7 @@ export function useSearch(
   // FavoriteNode.name も変更できる（重複チェック・予約フォルダ保護は Rust側
   // rename_favorite_node が行う）。他の set_* 系フックコールバックと同じ
   // 「成功時 null、失敗時エラーメッセージ文字列」の契約に統一する（詳細は
-  // docs/design/settings-panel-architecture.md「エラー状態の保持場所」を参照。
+  // docs/internal-design/settings-panel-architecture.md「エラー状態の保持場所」を参照。
   // 呼び出し元（FavoriteEditTree.tsx の RenameInput）がこの戻り値をそのまま
   // ローカルのエラー表示に使う）。
   //
@@ -2369,7 +2369,7 @@ export function useSearch(
   // オーバーレイstateを追加する場合はこの配列に追記するだけで、上記3箇所は
   // 自動的に追従する（window レベルのkeydownリスナーだけはオーバーレイごとに
   // Enter/Escapeの意味が異なるため個別分岐が必要で、この値だけでは代替できない。
-  // 詳細は docs/design/window-lifecycle.md「検索ビュー上のオーバーレイstate一覧の
+  // 詳細は docs/internal-design/window-lifecycle.md「検索ビュー上のオーバーレイstate一覧の
   // 単一化（searchOverlayActive）」節を参照）。
   const searchOverlayActive = [
     favoriteDialogTarget,

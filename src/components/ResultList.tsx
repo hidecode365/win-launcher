@@ -265,7 +265,7 @@ export function ResultList({
                     </div>
                     {/* 行末アイコン群はまとめて1つのflexコンテナに包み、アイコン間の
                         間隔を個々の `ml-2` ではなくこの `gap-2` に一本化する
-                        （詳細は docs/design/favorites-ui-iconography.md
+                        （詳細は docs/internal-design/favorites-ui-iconography.md
                         「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
                     <div className="flex items-center gap-2 ml-2">
                       {!exists && <WarningIcon selected={isSelected} />}
@@ -523,7 +523,7 @@ export function ResultList({
                     </div>
                     {/* 行末アイコン群はまとめて1つのflexコンテナに包み、アイコン間の
                         間隔を個々の `ml-2` ではなくこの `gap-2` に一本化する
-                        （詳細は docs/design/favorites-ui-iconography.md
+                        （詳細は docs/internal-design/favorites-ui-iconography.md
                         「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
                     <div className="flex items-center gap-2 ml-2">
                       {/* 未ピン止め・非選択の組み合わせではアイコン自体を表示しない

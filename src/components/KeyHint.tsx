@@ -7,7 +7,7 @@
 // （`border border-black/10`）を追加し、輪郭で区切りを明確にする方式。
 // 1案目の `bg-gray-200`（背景を一段濃くするだけの方式）は「まだ見づらい」との
 // フィードバックを受け、この案と比較検証するために変更した（経緯は
-// docs/design/status-footer.md を参照）。
+// docs/internal-design/status-footer.md を参照）。
 // 件数バッジ（FavoriteEditTree.tsx の `directChildCount` 表示）とは別の配色・
 // 形状（角丸長方形のチップ、円形バッジではない）のため、意匠を混同しない。
 export function KeyHint({ keys, label }: { keys: string; label: string }) {

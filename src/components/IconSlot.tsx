@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Tooltip } from "./Tooltip";
 
 // 行末アイコン群（ピン・★・フォルダ作成・削除・件数バッジ等）の「箱」を一括
-// 管理する共通ラッパー。経緯・原則は docs/design/favorites-ui-iconography.md
+// 管理する共通ラッパー。経緯・原則は docs/internal-design/favorites-ui-iconography.md
 // 「行内アイコンの共通ラッパー化（IconSlot）」節を参照。
 //
 // 呼び出し元は、これらを並べる1つのflexコンテナに `gap-2` を指定し、
@@ -30,7 +30,7 @@ import { Tooltip } from "./Tooltip";
 // ための指定）に変更した際、絶対配置要素は通常のレイアウト計算から除外される
 // ため、箱には「サイズを決める根拠となる in-flow の中身」が無くなり、
 // `p-1` の分（8px）だけの大きさに縮んでしまう不具合が発生した（実測で
-// W=H=circle=8 と判明。詳細は docs/design/favorites-ui-iconography.md
+// W=H=circle=8 と判明。詳細は docs/internal-design/favorites-ui-iconography.md
 // 「行内アイコンの共通ラッパー化（IconSlot）」節の経緯を参照）。
 // `w-6 h-6` を明示することで、中身が in-flow か absolute かに関わらず箱自体の
 // 外形サイズが常に24×24に固定される（`absolute inset-0` の子要素は、箱の

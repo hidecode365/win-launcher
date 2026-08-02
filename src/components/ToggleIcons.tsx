@@ -110,7 +110,7 @@ export function FavoriteIcon({ filled }: { filled: boolean }) {
 //
 // 軸4l：以前は Tooltip 側に `mr-1` の個別マージンを持たせていたが、行内アイコン
 // 群の余白を「これらを包むflexコンテナの gap」に一本化する方針（
-// docs/design/favorites-ui-iconography.md「行内アイコンの共通ラッパー化
+// docs/internal-design/favorites-ui-iconography.md「行内アイコンの共通ラッパー化
 // （IconSlot）」節を参照）に伴い撤去した。呼び出し元（ResultList.tsx・
 // FavoriteEditTree.tsx・FavoriteListPanel.tsx）が、隣接する PinToggleButton /
 // FavoriteToggleButton とあわせて `gap-2` のflexコンテナで包む。
@@ -145,7 +145,7 @@ export function WarningIcon({ selected }: { selected: boolean }) {
 //
 // 呼び出し元は、隣接する他の行内アイコン（★・件数バッジ等）とあわせて
 // `gap-2` のflexコンテナで包む前提のため、このコンポーネント自身は個別の
-// マージンを持たない（詳細は docs/design/favorites-ui-iconography.md
+// マージンを持たない（詳細は docs/internal-design/favorites-ui-iconography.md
 // 「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。
 export function PinToggleButton({
   active,

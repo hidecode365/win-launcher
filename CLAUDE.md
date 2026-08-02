@@ -6,24 +6,24 @@
 
 ## 変更時の同期チェックリスト
 
-コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`REQUIREMENTS.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は `docs/design/settings-panel-architecture.md` の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
+コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`REQUIREMENTS.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は `docs/internal-design/settings-panel-architecture.md` の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
 
 - **原則**：コードから読み取れる情報は、原則として `CLAUDE.md`・`REQUIREMENTS.md` に重複して書かない。書く場合は正本を1箇所だけ定め、他の箇所は参照に留める（同じ一覧を2箇所以上に独立して書かない）
-- **表記の正本はコード**（タブラベル等の実際の文字列）であり、`REQUIREMENTS.md` と `CLAUDE.md`／`docs/design/*.md` はそれに従う。表記を変更する場合は、コード・`REQUIREMENTS.md`・該当する `docs/design/*.md` の3つを同時に更新する
+- **表記の正本はコード**（タブラベル等の実際の文字列）であり、`REQUIREMENTS.md` と `CLAUDE.md`／`docs/internal-design/*.md` はそれに従う。表記を変更する場合は、コード・`REQUIREMENTS.md`・該当する `docs/internal-design/*.md` の3つを同時に更新する
 - **設定画面のタブを追加・削除・改名した場合に更新が必要な箇所**（すべて同時に更新すること）：
   - コード：`SettingsPanel.tsx` の `SettingsTab` 型・`SETTINGS_TABS` 配列・分岐、対応する `XxxSettings.tsx`
   - `REQUIREMENTS.md`「設定画面」節のカテゴリ一覧
-  - `docs/design/settings-panel-architecture.md` のカテゴリナビ一覧（正本1箇所。`#settings-tabs-list` を参照）
+  - `docs/internal-design/settings-panel-architecture.md` のカテゴリナビ一覧（正本1箇所。`#settings-tabs-list` を参照）
   - `CLAUDE.md` のディレクトリ構成図（タブの実体ファイルのみ。共通コンポーネントは対象外。次項を参照）
-- **ディレクトリ構成図は「全体像の把握」用の簡略版であり、網羅性の責任を持たない。** コンポーネントファイルを追加した場合、それがタブの実体でなければ構成図への追記は不要（本文の該当節・`docs/design/*.md` で説明すればよい）。既存の共通コンポーネント（`SettingsIndent.tsx`／`SettingsGroup.tsx`／`SettingsSaveBar.tsx`／`FeatureBlock.tsx`／`FolderDetailSettingsModal.tsx`／`ExtensionFilterEditor.tsx`／`Tooltip.tsx` 等）も同様の理由で構成図には列挙していない
+- **ディレクトリ構成図は「全体像の把握」用の簡略版であり、網羅性の責任を持たない。** コンポーネントファイルを追加した場合、それがタブの実体でなければ構成図への追記は不要（本文の該当節・`docs/internal-design/*.md` で説明すればよい）。既存の共通コンポーネント（`SettingsIndent.tsx`／`SettingsGroup.tsx`／`SettingsSaveBar.tsx`／`FeatureBlock.tsx`／`FolderDetailSettingsModal.tsx`／`ExtensionFilterEditor.tsx`／`Tooltip.tsx` 等）も同様の理由で構成図には列挙していない
 - **設定項目を追加・変更した場合（タブ自体は増減しない場合）に更新が必要な箇所**：
   - コード：該当する `XxxSettings.tsx`、`AppSettings`（`types.ts`）のフィールド、Rust側の `set_*` コマンド
   - `REQUIREMENTS.md`「設定画面」節の該当タブの記述
-  - `CLAUDE.md`／`docs/design/*.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/design/*.md` にその部分だけを追記する）
-- **CLAUDE.md・docs/design/*.md には「どう作られているか」を書き、「何ができるか」は `REQUIREMENTS.md` に書く。** 両方に同じ内容を書かない
-- **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`CLAUDE.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
+  - `CLAUDE.md`／`docs/internal-design/*.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/internal-design/*.md` にその部分だけを追記する）
+- **CLAUDE.md・docs/internal-design/*.md には「どう作られているか」を書き、「何ができるか」は `REQUIREMENTS.md` に書く。** 両方に同じ内容を書かない
+- **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`CLAUDE.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/internal-design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/internal-design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
   - アンカーIDは見出し文言の自動スラッグ化に頼らず、見出し直前に `<a id="...">` を明示的に振る（英語kebab-case）。見出しの日本語文言をリネームしてもアンカーIDは変えない（アンカーIDと見出し文言は独立して管理する）
-  - `docs/design/*.md` 側でアンカーIDを変更・削除した場合、`CLAUDE.md` 側の対応するポインタを同時に更新する（放置すると壊れたリンクが残る）
+  - `docs/internal-design/*.md` 側でアンカーIDを変更・削除した場合、`CLAUDE.md` 側の対応するポインタを同時に更新する（放置すると壊れたリンクが残る）
   - ダイジェスト側の箇条書きの順序は、対応する detail doc 内のアンカー出現順と一致させる（両ファイルの構造的な対応関係を保ち、片方だけ並び替えて食い違う事故を防ぐため）
 
 ## 言語方針
@@ -43,7 +43,7 @@
 | アプリ内更新ダイアログ（latest.json） | 日本語 | last-release-notes.md の内容を反映 |
 | last-release-notes.md | 日本語 | latest.json 用の一時保存ファイル |
 | REQUIREMENTS.md | 日本語 | 仕様書 |
-| CLAUDE.md／docs/design/*.md | 日本語 | CC向けコンテキストファイル自体 |
+| CLAUDE.md／docs/internal-design/*.md | 日本語 | CC向けコンテキストファイル自体 |
 | X（@hidecode365）告知文 | 日本語 | 140字以内 |
 | GitHub Issueテンプレート | 英日併記 | 項目名は英語+日本語併記 |
 
@@ -74,7 +74,7 @@
 4. **原因の性質を判定する（個数によらず初回から必ず行う）**：「そのアクション固有の実装ミスなのか」「今回使った設計パターンそのものが持つ構造的な弱さなのか」を判定する。「同種の個別対応が何個目か」は判断基準にしない。後者（構造的な弱さ）に該当すると判断したら、たとえ初回のバグであっても全体設計の見直しを検討する。個別対応で済ませる場合は、「なぜ全体設計の見直しをしなかったか」を判断根拠として明示すること
 5. **個別対応 or 全体設計見直しの実施**：全体設計を見直す場合は、設計案を複数比較した上で「なぜその設計が良いか」を言語化し、対象範囲全体に一括適用する。既存の個別対応（その場しのぎのフラグ・ガード等）のうち、新しい設計に統合できるものは削除し、複雑化を解消する
 6. **検証範囲の明示**：3の洗い出し結果に基づき、確認すべき項目をチェックリスト化してから動作確認を依頼する
-7. **知見の型化**：CLAUDE.md／`docs/design/*.md` への追記は、個別の不具合事例の列挙ではなく、再利用可能な「設計原則」として記載する。個別の不具合事例そのもの（症状・原因・検討した設計案・対応）は該当する `docs/design/*.md` の「経緯」節に記録し、`CLAUDE.md` にはそこから抽出した原則のみをダイジェストとして残す
+7. **知見の型化**：CLAUDE.md／`docs/internal-design/*.md` への追記は、個別の不具合事例の列挙ではなく、再利用可能な「設計原則」として記載する。個別の不具合事例そのもの（症状・原因・検討した設計案・対応）は該当する `docs/internal-design/*.md` の「経緯」節に記録し、`CLAUDE.md` にはそこから抽出した原則のみをダイジェストとして残す
 
 基本姿勢：症状ごとの場当たり的なパッチ（モグラ叩き）は最も避けるべき対応であり、急がば回れで根本原因・共通設計に向き合うことを常に優先する。
 
@@ -88,7 +88,7 @@ Windows 11 向けキーボードランチャー。Alt+Space でウィンドウ�
 
 ## アーキテクチャ
 
-> この構成図は主要なコンポーネントのみを示す簡略版であり、網羅性は保証しない。共通コンポーネントの詳細は本文の各節・`docs/design/*.md` を参照（詳細は「変更時の同期チェックリスト」節を参照）。
+> この構成図は主要なコンポーネントのみを示す簡略版であり、網羅性は保証しない。共通コンポーネントの詳細は本文の各節・`docs/internal-design/*.md` を参照（詳細は「変更時の同期チェックリスト」節を参照）。
 
 ```text
 win-launcher/
@@ -161,7 +161,7 @@ win-launcher/
 | Tailwind CSS | 3 |
 | Vite | 6 |
 
-依存バージョンの更新状況・保留理由は [dependencies.md](docs/design/dependencies.md#dependency-update-status) を参照。
+依存バージョンの更新状況・保留理由は [dependencies.md](docs/internal-design/dependencies.md#dependency-update-status) を参照。
 
 ## Tauri プラグイン
 
@@ -171,146 +171,146 @@ win-launcher/
 | `tauri-plugin-shell` | ファイル起動・Web検索の URL をデフォルトブラウザで開く（`open()`） |
 | `tauri-plugin-autostart` | Windows スタートアップ登録 |
 | `tauri-plugin-store` | 検索フォルダ・各機能 ON/OFF・ホットキー設定・ウィンドウサイズ・ファイル起動の frecency 履歴の永続化（`settings.json`）。frecency 履歴・ウィンドウサイズは Rust コマンドを介さず、フロントエンドが JS パッケージ `@tauri-apps/plugin-store` で直接読み書きする |
-| `tauri-plugin-dialog` | フォルダ選択ダイアログ。**必ず Rust 側の Tauri コマンド（`pick_folder`）として実装し、`set_parent` で親ウィンドウを指定すること**（理由は [dependencies.md](docs/design/dependencies.md#dialog-plugin-parent-window) を参照） |
+| `tauri-plugin-dialog` | フォルダ選択ダイアログ。**必ず Rust 側の Tauri コマンド（`pick_folder`）として実装し、`set_parent` で親ウィンドウを指定すること**（理由は [dependencies.md](docs/internal-design/dependencies.md#dialog-plugin-parent-window) を参照） |
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
 | `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
 | `tauri-plugin-updater` | 自動アップデート（GitHub Releases + `latest.json` の確認・ダウンロード・インストール） |
 | `tauri-plugin-notification` | パス貼り付けによる検索フォルダ管理（検索フォルダ追加・ショートカット配置）完了時の Windows トースト通知 |
 | `tauri` (tray-icon feature) | システムトレイ常駐 |
 
-プラグインの選定理由の詳細は [dependencies.md](docs/design/dependencies.md#plugin-list-rationale) を参照。
+プラグインの選定理由の詳細は [dependencies.md](docs/internal-design/dependencies.md#plugin-list-rationale) を参照。
 
 ## 設計原則ダイジェスト
 
-以下は `docs/design/*.md` から抽出した「今後の指針・再利用可能な原則」のみを収めたダイジェストである。**各原則の背景（現状仕様の詳細・経緯・却下案・不具合の記録）は必ずポインタ先で確認すること。** 原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある。
+以下は `docs/internal-design/*.md` から抽出した「今後の指針・再利用可能な原則」のみを収めたダイジェストである。**各原則の背景（現状仕様の詳細・経緯・却下案・不具合の記録）は必ずポインタ先で確認すること。** 原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある。
 
 見出しは横断アーキテクチャ系4ファイル・機能単位系10ファイルの計14ファイルに対応する。
 
 ### ウィンドウ・ホットキー
 
-→ 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md)
+→ 詳細: [window-and-hotkey.md](docs/internal-design/window-and-hotkey.md)
 
-- ウィンドウは常に画面中央に表示し、位置は永続化しない。ウィンドウを表示するすべての箇所（グローバルホットキー／トレイ）で `show()` 直前に `window.center()` を呼ぶ。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#frameless-and-centering)
-- 透過・角丸・シャドウ（`backgroundColor` alpha 0／DOM側 `background: transparent`／`tauri.conf.json` の `shadow: false`）の3点セットは個別に変更せず、常にセットで扱う。1つだけ変更すると角のアーティファクトが再発する。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#transparency-and-shadow)
-- 新しいドラッグ可能領域を追加する場合は必ず `data-tauri-drag-region="deep"` を使う（値なしの bare 指定は子要素で発火しないため避ける）。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#basic-window-config)
-- ウィンドウの位置は永続化しないが、サイズは永続化する（この非対称は意図的な仕様であり矛盾ではない）。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#resizing-and-size-persistence)
-- ホットキー変更（`set_hotkey`）は unregister → register の順で行い、新ホットキーの register が失敗したら旧ホットキーを再登録して維持する。フロントエンドはライブキーキャプチャを行わず、修飾キーのチェックボックス＋通常キーのプルダウンからアクセラレータ文字列を直接組み立てる。 → 詳細: [window-and-hotkey.md](docs/design/window-and-hotkey.md#hotkey-registration)
+- ウィンドウは常に画面中央に表示し、位置は永続化しない。ウィンドウを表示するすべての箇所（グローバルホットキー／トレイ）で `show()` 直前に `window.center()` を呼ぶ。 → 詳細: [window-and-hotkey.md](docs/internal-design/window-and-hotkey.md#frameless-and-centering)
+- 透過・角丸・シャドウ（`backgroundColor` alpha 0／DOM側 `background: transparent`／`tauri.conf.json` の `shadow: false`）の3点セットは個別に変更せず、常にセットで扱う。1つだけ変更すると角のアーティファクトが再発する。 → 詳細: [window-and-hotkey.md](docs/internal-design/window-and-hotkey.md#transparency-and-shadow)
+- 新しいドラッグ可能領域を追加する場合は必ず `data-tauri-drag-region="deep"` を使う（値なしの bare 指定は子要素で発火しないため避ける）。 → 詳細: [window-and-hotkey.md](docs/internal-design/window-and-hotkey.md#basic-window-config)
+- ウィンドウの位置は永続化しないが、サイズは永続化する（この非対称は意図的な仕様であり矛盾ではない）。 → 詳細: [window-and-hotkey.md](docs/internal-design/window-and-hotkey.md#resizing-and-size-persistence)
+- ホットキー変更（`set_hotkey`）は unregister → register の順で行い、新ホットキーの register が失敗したら旧ホットキーを再登録して維持する。フロントエンドはライブキーキャプチャを行わず、修飾キーのチェックボックス＋通常キーのプルダウンからアクセラレータ文字列を直接組み立てる。 → 詳細: [window-and-hotkey.md](docs/internal-design/window-and-hotkey.md#hotkey-registration)
 
 ### ウィンドウのライフサイクル（表示・非表示・クローズ処理）
 
-→ 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md)
+→ 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md)
 
-- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#focus-out-auto-hide)
-- ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#close-window-common-design)
-- モーダル・ダイアログ（システムコマンド確認・お気に入り登録ダイアログ・フォルダ削除確認・パス貼り付けウィザード等）のEnter/Escape確定・キャンセルは、DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#modal-keydown-window-level)
-- 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#search-overlay-active-consolidation)
-- 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得は `focusRegainTableRef.current` にエントリを1つ追加するだけにし、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#prefix-mode-architecture)
-- 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる。 → 詳細: [window-lifecycle.md](docs/design/window-lifecycle.md#suppress-next-search-ref-removed)
+- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
+- ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
+- モーダル・ダイアログ（システムコマンド確認・お気に入り登録ダイアログ・フォルダ削除確認・パス貼り付けウィザード等）のEnter/Escape確定・キャンセルは、DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化する。個別コンポーネントのローカル `onKeyDown` やフォーカス依存の判定を新設しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)
+- 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#search-overlay-active-consolidation)
+- 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得は `focusRegainTableRef.current` にエントリを1つ追加するだけにし、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture)
+- 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#suppress-next-search-ref-removed)
 
 ### 検索結果一覧の選択状態・行構造
 
-→ 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md)
+→ 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md)
 
-- 選択（`selected`）は識別子（`ResultRow.key`）を持つ「意図（intent）」と現在の `rows` から `resolveSelected()` で導出する値であり、書き込み可能な state ではない。「意図」と「現在の候補一覧」から導出する設計を優先し、新設する類似の値を直接 state 化しない。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#selection-is-derived)
-- intent を `{type:'top'}` へリセットするのは「query/settings/closeRefreshTick の変化」という汎用トリガー1本のみに一本化する。モード固有の強制リセットeffectや、「次の1回だけ抑止する」一度きりのフラグは新設しない。reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"操作の副作用として変化する値"を含めない。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#reset-triggers)
-- 移動先が操作時点で確定的に分かる場合（末尾追加・D&D確定等）は intent を同期的に設定してよい。移動先が非同期でしか確定しない場合のみ、識別子照合＋タイムアウトの復元機構に乗せる。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#sync-vs-async-restore)
-- 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#adding-a-row-kind)
-- Web検索行は現在 `rows` に未統合で `baseLength+1` の特例（意図的な保留）。選択のずれ・消失の不具合はまずこの特例を疑うこと。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#web-search-row-exception)
-- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。この規約は `ResultList.tsx` の行に限らず、選択可能な一覧行を描画する全コンポーネント（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する（行が実在の `<button>` だとクリック後にDOMフォーカスが残留し、モーダル確認等の window レベル `keydown` リスナーを誤って発火させる不具合の実例があった）。個別の内部操作ボタン・D&D等の事情が無い新しい一覧行は、まず共通ラッパー `SelectableRow.tsx` の利用を検討する。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/design/result-list-and-selection.md#dom-structure-and-dividers)
+- 選択（`selected`）は識別子（`ResultRow.key`）を持つ「意図（intent）」と現在の `rows` から `resolveSelected()` で導出する値であり、書き込み可能な state ではない。「意図」と「現在の候補一覧」から導出する設計を優先し、新設する類似の値を直接 state 化しない。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#selection-is-derived)
+- intent を `{type:'top'}` へリセットするのは「query/settings/closeRefreshTick の変化」という汎用トリガー1本のみに一本化する。モード固有の強制リセットeffectや、「次の1回だけ抑止する」一度きりのフラグは新設しない。reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"操作の副作用として変化する値"を含めない。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#reset-triggers)
+- 移動先が操作時点で確定的に分かる場合（末尾追加・D&D確定等）は intent を同期的に設定してよい。移動先が非同期でしか確定しない場合のみ、識別子照合＋タイムアウトの復元機構に乗せる。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#sync-vs-async-restore)
+- 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#adding-a-row-kind)
+- Web検索行は現在 `rows` に未統合で `baseLength+1` の特例（意図的な保留）。選択のずれ・消失の不具合はまずこの特例を疑うこと。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#web-search-row-exception)
+- 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。この規約は `ResultList.tsx` の行に限らず、選択可能な一覧行を描画する全コンポーネント（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する（行が実在の `<button>` だとクリック後にDOMフォーカスが残留し、モーダル確認等の window レベル `keydown` リスナーを誤って発火させる不具合の実例があった）。個別の内部操作ボタン・D&D等の事情が無い新しい一覧行は、まず共通ラッパー `SelectableRow.tsx` の利用を検討する。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#dom-structure-and-dividers)
 
 ### フッター表示
 
-→ 詳細: [status-footer.md](docs/design/status-footer.md)
+→ 詳細: [status-footer.md](docs/internal-design/status-footer.md)
 
-- フッターは「キーボードだけで何ができるかを示す領域」とする規約（正本は REQUIREMENTS.md「フッター表示規約（全画面共通）」節）に従う。新しい画面・モードのフッターを追加・変更する場合、既存画面の現状表示内容は複製せず `docs/design/status-footer.md` の実装マップを参照し、同じ表に追記する。 → 詳細: [status-footer.md](docs/design/status-footer.md#footer-implementation-map)
+- フッターは「キーボードだけで何ができるかを示す領域」とする規約（正本は REQUIREMENTS.md「フッター表示規約（全画面共通）」節）に従う。新しい画面・モードのフッターを追加・変更する場合、既存画面の現状表示内容は複製せず `docs/internal-design/status-footer.md` の実装マップを参照し、同じ表に追記する。 → 詳細: [status-footer.md](docs/internal-design/status-footer.md#footer-implementation-map)
 
 ### 設定画面の共通アーキテクチャ
 
-→ 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md)
+→ 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md)
 
-- 設定パネルのタブを追加・削除・改名する場合、タブ一覧の正本（`#settings-tabs-list`）を含む全箇所（コード・REQUIREMENTS.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#settings-tabs-list)
-- 設定画面のどの箇所にも縦ラインによる区切り（`border-l`）を使わない。階層構造は `SettingsIndent`、グループ見出しは `SettingsGroup` を使う。区切りは `gap` の広さ、または見出し＋横罫線で表現する。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#indent-and-group)
-- 新しい設定項目を追加する場合、テキスト・数値・タグ入力は `useSettingsDraft` ＋ `SettingsSaveBar` の一括保存パターンに乗せ、トグル・チェックボックス・ラジオボタンは即時保存のパターンに乗せる。どちらにも当てはまらない独自の保存 UI を新設しない。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#save-model)
-- バリデーションエラーは常にそれを表示するコンポーネント自身のローカル state として持つ。タブより上位のフック（`useSettings`/`useHotkey` 等）にエラー state を持たせない。`set_*` 系フックコールバックは「成功時 `null`、失敗時エラーメッセージ文字列」という `Promise<string | null>` の契約に統一する。 → 詳細: [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#error-state-location)
+- 設定パネルのタブを追加・削除・改名する場合、タブ一覧の正本（`#settings-tabs-list`）を含む全箇所（コード・REQUIREMENTS.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list)
+- 設定画面のどの箇所にも縦ラインによる区切り（`border-l`）を使わない。階層構造は `SettingsIndent`、グループ見出しは `SettingsGroup` を使う。区切りは `gap` の広さ、または見出し＋横罫線で表現する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#indent-and-group)
+- 新しい設定項目を追加する場合、テキスト・数値・タグ入力は `useSettingsDraft` ＋ `SettingsSaveBar` の一括保存パターンに乗せ、トグル・チェックボックス・ラジオボタンは即時保存のパターンに乗せる。どちらにも当てはまらない独自の保存 UI を新設しない。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#save-model)
+- バリデーションエラーは常にそれを表示するコンポーネント自身のローカル state として持つ。タブより上位のフック（`useSettings`/`useHotkey` 等）にエラー state を持たせない。`set_*` 系フックコールバックは「成功時 `null`、失敗時エラーメッセージ文字列」という `Promise<string | null>` の契約に統一する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#error-state-location)
 
 ### ファイル検索・frecency・検索フォルダ詳細設定
 
-→ 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md)
+→ 詳細: [file-search-and-frecency.md](docs/internal-design/file-search-and-frecency.md)
 
-- 拡張子フィルタリングを持つ設定を新設する場合、ブラックリスト用・ホワイトリスト用は必ず独立フィールドとして持たせる（共有フィールドにしない。モード切替で入力内容が意図せず流用される事故を防ぐため）。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#folder-detail-settings)
-- frecencyスコアは `count * decay(lastUsed)`。この仕組み（decay係数・二次キー）はプレフィックスコマンド候補（`docs/design/calc-and-prefix-commands.md`）でもキーを `path` から `keyword` に変えて再利用する。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#frecency)
-- ファイル起動は `ShellExecuteW` を直接呼ぶ（`cmd /C start` はコマンドインジェクションのリスクがあるため使わない）。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#file-launch)
-- 拡張子タグ編集 UI は `ExtensionFilterEditor.tsx` を再利用し、個別実装を増やさない。 → 詳細: [file-search-and-frecency.md](docs/design/file-search-and-frecency.md#extension-filter-editor-extraction)
+- 拡張子フィルタリングを持つ設定を新設する場合、ブラックリスト用・ホワイトリスト用は必ず独立フィールドとして持たせる（共有フィールドにしない。モード切替で入力内容が意図せず流用される事故を防ぐため）。 → 詳細: [file-search-and-frecency.md](docs/internal-design/file-search-and-frecency.md#folder-detail-settings)
+- frecencyスコアは `count * decay(lastUsed)`。この仕組み（decay係数・二次キー）はプレフィックスコマンド候補（`docs/internal-design/calc-and-prefix-commands.md`）でもキーを `path` から `keyword` に変えて再利用する。 → 詳細: [file-search-and-frecency.md](docs/internal-design/file-search-and-frecency.md#frecency)
+- ファイル起動は `ShellExecuteW` を直接呼ぶ（`cmd /C start` はコマンドインジェクションのリスクがあるため使わない）。 → 詳細: [file-search-and-frecency.md](docs/internal-design/file-search-and-frecency.md#file-launch)
+- 拡張子タグ編集 UI は `ExtensionFilterEditor.tsx` を再利用し、個別実装を増やさない。 → 詳細: [file-search-and-frecency.md](docs/internal-design/file-search-and-frecency.md#extension-filter-editor-extraction)
 
 ### ピン止め・お気に入り・メモのデータ構造
 
-→ 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md)
+→ 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md)
 
-- `FavoriteNode` は `parentId` を持つフラットな配列（隣接リスト）で管理する。再帰的な木構造にせず、ノードの移動は1フィールドの更新で表現する。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#favorite-node-structure)
-- 予約フォルダ（ピン止め／お気に入り／メモ）は固定IDで参照する。Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）。バリデーションはフロントエンドだけでなくRust側（保存直前）でも必ず行う。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#reserved-folders)
-- 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#search-exclusion)
-- `dragDropEnabled: false` によりOSネイティブD&Dは無効化済み。HTML5 D&Dによる並び替えとOSからのファイルドロップ受け入れは現状の実装では二者択一の関係にある。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#dnd-reordering)
-- `/recent` 等の一覧に新しい行アクション（★・メモ等）を追加する場合、`recentMode` を理由にした除外分岐を新設しない。表示可否を切り替える必要がある場合は既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を再利用する。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#pinning-from-recent)
-- ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#duplicate-folder-name-validation)
-- `/favorite` モードの上下移動ボタン・フォルダ削除アイコンは、段階3の設定画面側ツリー編集UIが完成した時点で撤去予定の暫定実装である（Rustコマンド自体は再利用可能性があるため無条件に削除しない）。 → 詳細: [favorites-data-model.md](docs/design/favorites-data-model.md#favorite-mode-provisional-features)
+- `FavoriteNode` は `parentId` を持つフラットな配列（隣接リスト）で管理する。再帰的な木構造にせず、ノードの移動は1フィールドの更新で表現する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-node-structure)
+- 予約フォルダ（ピン止め／お気に入り／メモ）は固定IDで参照する。Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）。バリデーションはフロントエンドだけでなくRust側（保存直前）でも必ず行う。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#reserved-folders)
+- 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#search-exclusion)
+- `dragDropEnabled: false` によりOSネイティブD&Dは無効化済み。HTML5 D&Dによる並び替えとOSからのファイルドロップ受け入れは現状の実装では二者択一の関係にある。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#dnd-reordering)
+- `/recent` 等の一覧に新しい行アクション（★・メモ等）を追加する場合、`recentMode` を理由にした除外分岐を新設しない。表示可否を切り替える必要がある場合は既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を再利用する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#pinning-from-recent)
+- ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#duplicate-folder-name-validation)
+- `/favorite` モードの上下移動ボタン・フォルダ削除アイコンは、段階3の設定画面側ツリー編集UIが完成した時点で撤去予定の暫定実装である（Rustコマンド自体は再利用可能性があるため無条件に削除しない）。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features)
 
 ### ピン止め・お気に入りアイコンとツールチップ
 
-→ 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md)
+→ 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md)
 
-- 一覧の全項目が登録済みであることが自明な文脈（ピン止めブロック・`/favorite` 一覧）では、★・ピンアイコンは選択中（selected）のときのみ表示する。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#toggle-icon-visibility)
-- トグルアイコンの状態（登録済み/未登録）は色ではなく形状（輪郭／塗りつぶし）で表現する。色は行の文字色（`currentColor`）に追従させるだけにする。単色シルエットは二色構成よりサイズを一段下げることを検討する。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#toggle-icon-shape-and-color)
-- アイコンは単色を一律適用せず、行が取りうる3状態（通常／選択中／グレーアウト）ごとに個別にコントラストを検証する。「視覚的に目立たせたい要素」と「控えめにしたい要素」が同じ行に混在する場合、`opacity` は控えめにしたい要素側だけに付与する。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#warning-icon)
-- 新しい操作アイコンにツールチップを付ける場合は必ず `Tooltip` 共通コンポーネントを使い、`title` 属性を使わない（「省略テキストの全体表示」目的の場合のみ `title` 属性を許容）。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#tooltip-component)
-- 新しい行末アイコン（ピン・★・件数バッジ・フォルダ作成・削除等）を追加する場合は必ず共通ラッパー `IconSlot` を使い、個々のコンポーネントが独自の `ml-2`・ホバー円・Tooltipラップを実装しない。余白はアイコン群を束ねる親要素の `gap-2` に一本化する。「サイズ・マージンの数値は揃えたのに見た目が揃わない」という報告を受けた場合、数値の再調整より先に各要素の実際のDOM構造（パディングの有無・ラッパーの層数）の違いを疑う。 → 詳細: [favorites-ui-iconography.md](docs/design/favorites-ui-iconography.md#icon-slot-wrapper)
+- 一覧の全項目が登録済みであることが自明な文脈（ピン止めブロック・`/favorite` 一覧）では、★・ピンアイコンは選択中（selected）のときのみ表示する。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#toggle-icon-visibility)
+- トグルアイコンの状態（登録済み/未登録）は色ではなく形状（輪郭／塗りつぶし）で表現する。色は行の文字色（`currentColor`）に追従させるだけにする。単色シルエットは二色構成よりサイズを一段下げることを検討する。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#toggle-icon-shape-and-color)
+- アイコンは単色を一律適用せず、行が取りうる3状態（通常／選択中／グレーアウト）ごとに個別にコントラストを検証する。「視覚的に目立たせたい要素」と「控えめにしたい要素」が同じ行に混在する場合、`opacity` は控えめにしたい要素側だけに付与する。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#warning-icon)
+- 新しい操作アイコンにツールチップを付ける場合は必ず `Tooltip` 共通コンポーネントを使い、`title` 属性を使わない（「省略テキストの全体表示」目的の場合のみ `title` 属性を許容）。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#tooltip-component)
+- 新しい行末アイコン（ピン・★・件数バッジ・フォルダ作成・削除等）を追加する場合は必ず共通ラッパー `IconSlot` を使い、個々のコンポーネントが独自の `ml-2`・ホバー円・Tooltipラップを実装しない。余白はアイコン群を束ねる親要素の `gap-2` に一本化する。「サイズ・マージンの数値は揃えたのに見た目が揃わない」という報告を受けた場合、数値の再調整より先に各要素の実際のDOM構造（パディングの有無・ラッパーの層数）の違いを疑う。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#icon-slot-wrapper)
 
 ### 計算機能・システムコマンド・プレフィックスコマンド候補
 
-→ 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md)
+→ 詳細: [calc-and-prefix-commands.md](docs/internal-design/calc-and-prefix-commands.md)
 
-- 計算結果はファイル検索結果と排他にせず、先頭の別枠固定表示領域で共存させる。将来 `isCalcExpression`/`isUrlLikeInput` の判定条件が緩んだ場合に備え、計算結果→URL変換結果の表示順序をルールとして維持する。 → 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md#calc-feature)
-- 呼び出しキーワードの重複チェックは必ず `validate_unique_keyword` を経由させる。新しいキーワードフィールドを追加した場合は、この関数のチェック対象リストに追加する。 → 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md#system-command-feature)
-- 新しい "/" プレフィックス機能を追加する場合、`buildPrefixCommandCandidates` に候補生成ロジックを追加するだけで既存の表示・選択・frecencyの仕組みにそのまま乗せられる。個別の候補表示 UI を新設しない。 → 詳細: [calc-and-prefix-commands.md](docs/design/calc-and-prefix-commands.md#prefix-command-candidates)
+- 計算結果はファイル検索結果と排他にせず、先頭の別枠固定表示領域で共存させる。将来 `isCalcExpression`/`isUrlLikeInput` の判定条件が緩んだ場合に備え、計算結果→URL変換結果の表示順序をルールとして維持する。 → 詳細: [calc-and-prefix-commands.md](docs/internal-design/calc-and-prefix-commands.md#calc-feature)
+- 呼び出しキーワードの重複チェックは必ず `validate_unique_keyword` を経由させる。新しいキーワードフィールドを追加した場合は、この関数のチェック対象リストに追加する。 → 詳細: [calc-and-prefix-commands.md](docs/internal-design/calc-and-prefix-commands.md#system-command-feature)
+- 新しい "/" プレフィックス機能を追加する場合、`buildPrefixCommandCandidates` に候補生成ロジックを追加するだけで既存の表示・選択・frecencyの仕組みにそのまま乗せられる。個別の候補表示 UI を新設しない。 → 詳細: [calc-and-prefix-commands.md](docs/internal-design/calc-and-prefix-commands.md#prefix-command-candidates)
 
 ### クリップボード履歴・OCR
 
-→ 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md)
+→ 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md)
 
-- クリップボード画像を扱う処理は画像本体を JS 側へ渡さず Rust 側で完結させる（IPC 越しの重量データ転送を避ける）。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#clipboard-history)
-- `clipboardPaneWidthRef`（mouseup用）と `clipboardPaneWidth` state（props用）は必ず同時に更新する。ref のみ更新すると、パネル再マウント時に古い幅が渡されるバグになる。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#clipboard-history)
-- OCR前処理（拡大・グレースケール化・コントラスト補正）による精度改善は検証済みで却下・見送り確定。同じアプローチを再検証しない。改善が必要な場合はWindows OCRエンジン自体の限界を前提に別モデルの導入を検討する。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#ocr-preprocessing-rejected)
-- ウィンドウを閉じる新しい演出（フェードアウト等）を追加する場合、`closeWindow()` の「隠れるまで state を変更しない」原則の例外にするかどうかを明確に判断し、例外にする場合は理由を明記する。 → 詳細: [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#ocr-feature)
+- クリップボード画像を扱う処理は画像本体を JS 側へ渡さず Rust 側で完結させる（IPC 越しの重量データ転送を避ける）。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history)
+- `clipboardPaneWidthRef`（mouseup用）と `clipboardPaneWidth` state（props用）は必ず同時に更新する。ref のみ更新すると、パネル再マウント時に古い幅が渡されるバグになる。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history)
+- OCR前処理（拡大・グレースケール化・コントラスト補正）による精度改善は検証済みで却下・見送り確定。同じアプローチを再検証しない。改善が必要な場合はWindows OCRエンジン自体の限界を前提に別モデルの導入を検討する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-preprocessing-rejected)
+- ウィンドウを閉じる新しい演出（フェードアウト等）を追加する場合、`closeWindow()` の「隠れるまで state を変更しない」原則の例外にするかどうかを明確に判断し、例外にする場合は理由を明記する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature)
 
 ### 最近使ったファイル一覧
 
-→ 詳細: [recent-files.md](docs/design/recent-files.md)
+→ 詳細: [recent-files.md](docs/internal-design/recent-files.md)
 
-- `/recent` はフォーカス復帰のたびに再取得する（プッシュ通知を持たないため、モード遷移時の1回きりの取得だと非表示中の変化が反映されない）。 → 詳細: [recent-files.md](docs/design/recent-files.md#recent-mode-and-fetch)
-- OneDriveのURL→ローカルパス変換ロジックに手を入れる場合、`FullRemotePath`/`UrlNamespace` の使い分けとパーセントエンコーディングの正規化の両方を必ず踏まえる。個人OneDriveのテストだけではTeamsサイト・SharePoint固有の不具合を再現できない。 → 詳細: [recent-files.md](docs/design/recent-files.md#onedrive-double-folder-bug)
-- 「軽い判定→重い処理」の順で処理できる項目（`.url`の表示対象設定等）は、軽い判定を先に行って対象外を早期リターンする最適化を検討する。 → 詳細: [recent-files.md](docs/design/recent-files.md#url-filter-order-optimization)
+- `/recent` はフォーカス復帰のたびに再取得する（プッシュ通知を持たないため、モード遷移時の1回きりの取得だと非表示中の変化が反映されない）。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#recent-mode-and-fetch)
+- OneDriveのURL→ローカルパス変換ロジックに手を入れる場合、`FullRemotePath`/`UrlNamespace` の使い分けとパーセントエンコーディングの正規化の両方を必ず踏まえる。個人OneDriveのテストだけではTeamsサイト・SharePoint固有の不具合を再現できない。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#onedrive-double-folder-bug)
+- 「軽い判定→重い処理」の順で処理できる項目（`.url`の表示対象設定等）は、軽い判定を先に行って対象外を早期リターンする最適化を検討する。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#url-filter-order-optimization)
 
 ### パス貼り付けによる検索フォルダ管理
 
-→ 詳細: [path-paste.md](docs/design/path-paste.md)
+→ 詳細: [path-paste.md](docs/internal-design/path-paste.md)
 
-- OSのクリップボードから実ファイルパス（CF_HDROP）を読む必要が生じた場合、WebView2の `clipboardData` 経由では取得できないことを前提に、Rust側で直接クリップボードを読み直す設計にする。 → 詳細: [path-paste.md](docs/design/path-paste.md#paste-detection)
-- 複数ステップのウィザード形式インタラクションを追加する場合、キー操作は window レベルのリスナーに一本化し、個別ステップのローカル `onKeyDown` を併存させない（二重ハンドラによるリグレッションの再発を防ぐため）。 → 詳細: [path-paste.md](docs/design/path-paste.md#wizard-keydown-unification-history)
-- Windowsのファイルシステム／シェル関連の機能でサードパーティクレートに不具合が疑われた場合、まず本プロジェクトが一貫して採る「Windows標準API直接呼び出し」への切り替えを検討する。 → 詳細: [path-paste.md](docs/design/path-paste.md#mslnk-to-shell-link-history)
+- OSのクリップボードから実ファイルパス（CF_HDROP）を読む必要が生じた場合、WebView2の `clipboardData` 経由では取得できないことを前提に、Rust側で直接クリップボードを読み直す設計にする。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-detection)
+- 複数ステップのウィザード形式インタラクションを追加する場合、キー操作は window レベルのリスナーに一本化し、個別ステップのローカル `onKeyDown` を併存させない（二重ハンドラによるリグレッションの再発を防ぐため）。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#wizard-keydown-unification-history)
+- Windowsのファイルシステム／シェル関連の機能でサードパーティクレートに不具合が疑われた場合、まず本プロジェクトが一貫して採る「Windows標準API直接呼び出し」への切り替えを検討する。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#mslnk-to-shell-link-history)
 
 ### システムトレイ・自動起動・自動アップデート
 
-→ 詳細: [tray-autostart-updater.md](docs/design/tray-autostart-updater.md)
+→ 詳細: [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md)
 
-- トレイメニューに新しい項目を追加する場合、既存の並び順（Show → Check for Updates → Start with Windows → Restart → Quit）を踏まえた位置に追加する。 → 詳細: [tray-autostart-updater.md](docs/design/tray-autostart-updater.md#system-tray)
-- アップデートダイアログの新しい状態を追加する場合、`SystemCommandModal` と同じオーバーレイ＋カードのデザインパターンを踏襲する。`download_and_install_update` はダウンロード完了後にプロセスが終了し制御が戻らない前提を維持する。 → 詳細: [tray-autostart-updater.md](docs/design/tray-autostart-updater.md#auto-update)
+- トレイメニューに新しい項目を追加する場合、既存の並び順（Show → Check for Updates → Start with Windows → Restart → Quit）を踏まえた位置に追加する。 → 詳細: [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md#system-tray)
+- アップデートダイアログの新しい状態を追加する場合、`SystemCommandModal` と同じオーバーレイ＋カードのデザインパターンを踏襲する。`download_and_install_update` はダウンロード完了後にプロセスが終了し制御が戻らない前提を維持する。 → 詳細: [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md#auto-update)
 
 ### 依存ライブラリ・プラグインの選定理由
 
-→ 詳細: [dependencies.md](docs/design/dependencies.md)
+→ 詳細: [dependencies.md](docs/internal-design/dependencies.md)
 
-- 新しいダイアログ・ポップアップ的なUIをTauriプラグインで実装する場合、`alwaysOnTop: true` のメインウィンドウとの重なりが問題にならないか必ず確認する。フロントエンドのJS APIに親ウィンドウ指定の手段がない場合はRust側のTauriコマンドとして実装し直す。 → 詳細: [dependencies.md](docs/design/dependencies.md#dialog-plugin-parent-window)
-- Windows固有の機能を実装する際は、まずWindows標準API（Win32／WinRT／COM）で直接実装できないかを検討し、サードパーティクレートは標準APIでの実装が著しく煩雑になる場合の代替手段として扱う。 → 詳細: [dependencies.md](docs/design/dependencies.md#windows-api-first-policy)
-- 依存の更新保留（`glib` 等）は、保留理由（上流の制約）を明記したまま残す。理由を書かずに「保留中」とだけ記録しない。 → 詳細: [dependencies.md](docs/design/dependencies.md#dependency-update-status)
+- 新しいダイアログ・ポップアップ的なUIをTauriプラグインで実装する場合、`alwaysOnTop: true` のメインウィンドウとの重なりが問題にならないか必ず確認する。フロントエンドのJS APIに親ウィンドウ指定の手段がない場合はRust側のTauriコマンドとして実装し直す。 → 詳細: [dependencies.md](docs/internal-design/dependencies.md#dialog-plugin-parent-window)
+- Windows固有の機能を実装する際は、まずWindows標準API（Win32／WinRT／COM）で直接実装できないかを検討し、サードパーティクレートは標準APIでの実装が著しく煩雑になる場合の代替手段として扱う。 → 詳細: [dependencies.md](docs/internal-design/dependencies.md#windows-api-first-policy)
+- 依存の更新保留（`glib` 等）は、保留理由（上流の制約）を明記したまま残す。理由を書かずに「保留中」とだけ記録しない。 → 詳細: [dependencies.md](docs/internal-design/dependencies.md#dependency-update-status)
 
 ## Tauri コマンド
 
@@ -341,8 +341,8 @@ win-launcher/
 | `paste_clipboard_image(id)` | `ClipboardImageCache` から `id` に対応する画像バイナリを取得し、Win32 API でクリップボードへ直接書き込む |
 | `set_recent_files_enabled(enabled)` | 最近使ったファイル一覧機能の ON/OFF を切り替えて `AppSettings` を返す |
 | `set_recent_keyword(keyword)` | 最近使ったファイル一覧の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の4キーワードのいずれかと重複する場合はエラーを返して保存しない |
-| `set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）をまとめて保存して `AppSettings` を返す。`FolderEntry` とは独立した /recent 機能全体のグローバル設定。拡張子タグの正規化は `set_folder_settings` と同じ `normalize_extensions` を使う（詳細は [recent-files.md](docs/design/recent-files.md#recent-display-settings) を参照） |
-| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件）。「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を反映する（詳細は [recent-files.md](docs/design/recent-files.md#recent-display-settings) を参照） |
+| `set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）をまとめて保存して `AppSettings` を返す。`FolderEntry` とは独立した /recent 機能全体のグローバル設定。拡張子タグの正規化は `set_folder_settings` と同じ `normalize_extensions` を使う（詳細は [recent-files.md](docs/internal-design/recent-files.md#recent-display-settings) を参照） |
+| `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件）。「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を反映する（詳細は [recent-files.md](docs/internal-design/recent-files.md#recent-display-settings) を参照） |
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
 | `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（各文字が `is_ascii_alphanumeric()` を満たすか `chars().all(...)` で判定）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
 | `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |
@@ -362,21 +362,21 @@ win-launcher/
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
   - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード・最近使ったファイル一覧モードの判定もここで行う。パス貼り付けによる検索フォルダ管理（機能1・機能2のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクションを持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している
-    - 選択インデックスの操作を「キーボード操作」と「マウスホバー」で分離しているロジック（ホバー抑制）は [result-list-and-selection.md](docs/design/result-list-and-selection.md#hover-suppression) を参照
-    - 非同期呼び出しの世代 ID 管理とフォーカス回復時の再取得は [window-lifecycle.md](docs/design/window-lifecycle.md#prefix-mode-architecture) を、ウィンドウを閉じる処理は [window-lifecycle.md](docs/design/window-lifecycle.md#close-window-common-design) を参照。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれのポインタ先の規約に従うこと
-    - ファイル起動やコピー等でウィンドウを閉じる直前の空クエリへの変化でも `search_files("")` を抑止しない設計の経緯は [window-lifecycle.md](docs/design/window-lifecycle.md#suppress-next-search-ref-removed) を参照
+    - 選択インデックスの操作を「キーボード操作」と「マウスホバー」で分離しているロジック（ホバー抑制）は [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
+    - 非同期呼び出しの世代 ID 管理とフォーカス回復時の再取得は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture) を、ウィンドウを閉じる処理は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design) を参照。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれのポインタ先の規約に従うこと
+    - ファイル起動やコピー等でウィンドウを閉じる直前の空クエリへの変化でも `search_files("")` を抑止しない設計の経緯は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#suppress-next-search-ref-removed) を参照
   - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う
-  - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](docs/design/tray-autostart-updater.md#auto-update) を参照）
+  - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md#auto-update) を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
 - 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+S` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
 - `Ctrl+D`：`Ctrl+S`（設定パネルの開閉トグル）と同じ `window` への `keydown` イベントリスナーで一括処理する。OCR プレビュー表示中は「閉じる」ボタンと同じハンドラを呼び出し、それ以外の全モードでは `search.setQuery("")` でクエリを完全に空文字へ戻す。設定パネル表示中は対象外
-- クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（詳細は [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#clipboard-history) を参照）
-- OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。閉じる／コピーして閉じるの挙動詳細は [clipboard-and-ocr.md](docs/design/clipboard-and-ocr.md#ocr-feature) を参照
-- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/design/settings-panel-architecture.md#settings-tabs-list) を参照。`Ctrl+S` または Esc で検索 UI に戻る
+- クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history) を参照）
+- OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。閉じる／コピーして閉じるの挙動詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature) を参照
+- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list) を参照。`Ctrl+S` または Esc で検索 UI に戻る
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
 - `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` / `check-for-update-requested` イベントを受信する
-- `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス（詳細は [window-lifecycle.md](docs/design/window-lifecycle.md#focus-out-auto-hide) を参照）
+- `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide) を参照）
 
 ## コマンド実行時の注意
 

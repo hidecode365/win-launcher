@@ -36,7 +36,7 @@ function resolveSelected(
 
 `selected` への書き込みは、`intent`／`rows`／`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになっている。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
 
-適用範囲は「通常モード（`rows`）」と「`clipboardMode`（`clipboardSelectionItems`）」のみ。`prefixCommandMode`／`pathPasteWizardMode`／Web検索行の +1 特例（[web-search-row-exception](#web-search-row-exception) 参照）は、非同期の書き込み競合を追加する具体的な予定が無いため、現状の生インデックス書き込みのまま維持している。
+適用範囲は「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`。`/favorite` ブラウジング側の選択ドメイン）」の3つ（段階3・軸1で `favoriteMode` を追加）。お気に入り編集ビュー専用の選択ドメイン（`FavoriteEditTreeRow[]`、仮想固定行を含む）はこれとは別物で、同じ `resolveSelected` の実装を再利用しつつ独立した `intent`/`selected` を持つ（詳細は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row) を参照）。`prefixCommandMode`／`pathPasteWizardMode`／Web検索行の +1 特例（[web-search-row-exception](#web-search-row-exception) 参照）は、非同期の書き込み競合を追加する具体的な予定が無いため、現状の生インデックス書き込みのまま維持している。
 
 `clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした。
 
@@ -58,7 +58,12 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 4. `togglePin` 追加分岐：`{type:'key', key: "pinned:<path>", expiresAt: now+1000}`
 5. `togglePin` 解除分岐：`{type:'key', key: "file:<path>", expiresAt: now+1000}`
 6. `reorderPinned`：`{type:'key', key: "pinned:<moved.path>", expiresAt: now+1000}`
-7. タイムアウト効果（`intent.expiresAt` を過ぎても対象が見つからない場合）：`{type:'top'}`
+7. `toggleFavorite` の★解除分岐（`favoriteMode` 中、`/favorite` 一覧自身から解除した場合のみ）：解除で消える行の次（無ければ前）のアイテム行の識別子を `{type:'key', key: <neighbor.key>, expiresAt: now+1000}` として積む（見つからなければ `{type:'top'}`）。`togglePin` の解除分岐と同じ「削除後に別の場所へ移動する対象を識別子で追う」パターン
+8. タイムアウト効果（`intent.expiresAt` を過ぎても対象が見つからない場合）：`{type:'top'}`
+
+上記7のようなモード別の `expiresAt` 付き intent を扱うため、8のタイムアウト判定は「見つからない」を判定する対象一覧をモードに応じて `rows`／`clipboardSelectionItems`／`favoriteTree` の3つに切り替える。実装は `rowsRef`／`clipboardSelectionItemsRef`／`favoriteTreeRef` という3つの `useRef` ミラーをモードごとに用意し、`useEffect` 内で最新値を都度書き込むことで、タイムアウト判定effect自体の依存配列に `rows` 等の頻繁に変化する値を含めずに済ませている（依存配列に含めると、変化のたびにタイマーの期限が延長され「`expiresAt` の時点で強制的に諦める」というタイムアウトの意味が失われるため）。
+
+**経緯（段階3・軸1のCC実装批評で指摘・実装前に解消）**：お気に入り編集ビュー実装当初の設計案では、この分岐に `favoriteMode`（`favoriteTree`）が無く、`favoriteMode` 中に発行された `expiresAt` 付き intent（`toggleFavorite` の★解除等）が常に `rowsRef`（`favoriteMode` 中は空配列）を参照して「見つからない」と誤判定し、正しく選択解決された直後でも約1秒後に `{type:'top'}` へ強制的にリセットされる潜在バグとして指摘された。`clipboardSelectionItemsRef` と同じ鏡写しパターンで `favoriteTreeRef` を追加して解消した。**新しい選択ドメインを追加する場合、この分岐（タイムアウト判定effect内の `items` 算出）にも対応するモードの鏡refを追加すること**（追加を忘れると、そのドメインの `expiresAt` 付き intent がすべて誤ってタイムアウト扱いになる）。
 
 <a id="sync-vs-async-restore"></a>
 

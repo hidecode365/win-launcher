@@ -128,7 +128,7 @@ export default function App() {
     // モーダルを追加する場合も、ここではなく useSearch.ts の
     // searchOverlayActive の配列へ1state追加するだけでよい（この effect・
     // SearchBox の disabled 判定・handleKeyDown の早期return の3箇所が自動的に
-    // 追従する。詳細は docs/design/window-lifecycle.md
+    // 追従する。詳細は docs/internal-design/window-lifecycle.md
     // 「検索ビュー上のオーバーレイstate一覧の単一化（searchOverlayActive）」節を参照）。
     if (view === "search" && !search.searchOverlayActive) {
       inputRef.current?.focus();
@@ -616,7 +616,7 @@ export default function App() {
             // ナビゲーションアクセラレーターとして処理され、JavaScript側の
             // keydownイベントとは別経路で消費されるためpreventDefaultでは
             // 抑止できず無反応になる不具合があった（詳細はDESIGN_LOG・
-            // docs/design/window-and-hotkey.md を参照）。Altなしの単独の←は、
+            // docs/internal-design/window-and-hotkey.md を参照）。Altなしの単独の←は、
             // 検索ボックスのテキストカーソル移動と競合するため割り当てない
             // （/favorite モードの「←→キーには階層操作を割り当てない」方針と
             // 同じ）。
@@ -942,7 +942,7 @@ export default function App() {
         // 入力欄が自己完結で処理し、window レベルはEscapeの保険用）。理由は
         // オーバーレイの種類によって異なる（フォーカスが行の `<button>` に残留する・
         // SearchBoxがdisabledになる等）ため、個別の理由は
-        // docs/design/window-lifecycle.md の該当節と App.tsx の window レベル
+        // docs/internal-design/window-lifecycle.md の該当節と App.tsx の window レベル
         // keydown リスナー側のコメントを参照。ここでは二重ハンドラによる
         // リグレッション再発防止のため何もしない（CLAUDE.md
         // 「複数ステップのウィザード形式インタラクション」節を参照）。
