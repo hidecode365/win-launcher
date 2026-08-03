@@ -15,6 +15,9 @@ For a detailed introduction and screenshots, visit the [introduction site](https
 ## Features
 
 - **File Search** — Incremental search across configured folders with frecency-based ranking
+- **Pinned Files** — Keep frequently used files at the top of the result list
+- **Favorites** — Organize files into a folder tree and recall them with `/favorite`
+- **Recent Files** — Browse recently opened files with `/recent`
 - **Calculator** — Type expressions like `1000 + 200` for instant results
 - **Clipboard History** — Browse and restore text & image history with `cb`
 - **OCR (Image to Text)** — Paste an image (`Ctrl+V`) into the search box to extract text via Windows OCR, with mixed Japanese/English support
@@ -28,7 +31,9 @@ For a detailed introduction and screenshots, visit the [introduction site](https
 
 Download the installer from [Releases](https://github.com/hidecode365/win-launcher/releases).
 
-> winget support coming soon
+```bash
+winget install hidecode365.WinLauncher
+```
 
 ## Usage
 
@@ -39,7 +44,9 @@ Download the installer from [Releases](https://github.com/hidecode365/win-launch
 | `Enter` | Launch / execute |
 | `Esc` | Close |
 | `Ctrl+S` | Open settings |
-| `cb` | Open clipboard history |
+| `/cb` | Open clipboard history |
+| `/recent` | Browse recently opened files |
+| `/favorite` | Browse favorites |
 | `Ctrl+V` (with image) | Extract text from clipboard image via OCR |
 
 ## Security Note
