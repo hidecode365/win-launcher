@@ -28,11 +28,17 @@
 
 **永続化方式**：`settings.json` の `"favorites"` キーに `Vec<FavoriteNode>` をそのまま保存する。読み書きは既存の `folders`/`appSettings` と同じく **Rust コマンド経由**とし、frecency・clipboardHistory のようなフロントエンドから JS の plugin-store API で直接読み書きする方式は**採用しない**（将来 `clipboard`/`command` 型のフィールドを追加する際、Rust 側の型定義に `#[serde(default)]` を付与するだけで後方互換を保証できるようにするため）。
 
-**保存方式は機能ごとに異なる。** ピン止め（`PINNED_FOLDER_ID` 直下のフラットな並び替え）は書き込み頻度が低くフロントエンドでの組み立ても容易なため、更新後の `Vec<FavoriteNode>` 全体を組み立てて `set_favorites` へ渡す**全量置き換え方式**を採る。一方、お気に入りツリーの編集操作（フォルダ作成・リネーム・削除・移動・開閉状態の変更等）は、対象ノード1件に対する変更をコマンド内で完結させる**個別コマンド方式**（`add_favorite`／`add_favorite_folder`／`rename_favorite_node`／`remove_favorite`／`remove_favorite_folder`／`move_favorite_node_to`／`set_favorite_folder_collapsed`）を採る。各コマンドは「読み込み→対象ノードの変更→保存」を1回のコマンド呼び出しで完結させる、**「1操作＝1即時Rustコマンド呼び出し」方式**である（REQUIREMENTS.md「お気に入り編集ビュー」節の保存モデルと同じ方式）。
+**保存方式は2案を比較して機能ごとに使い分けている。**
 
-採用理由：お気に入りツリーはフォルダ作成・リネーム・削除・並び替え・再親化と操作の種類が多く、`order` の再計算・同名重複チェック・循環参照防止といったバリデーションをRust側で一元管理する必要がある。フロントエンドが全量を計算してから `set_favorites` へ渡す方式にすると、これらのバリデーションをフロントエンド側にも重複実装することになり、Rust側との判定のずれが生じるリスクがある。個別コマンド方式であれば、バリデーションをRust側の1箇所（各コマンド、および `has_duplicate_favorite_name`／`is_descendant_of` 等の共有ヘルパー）に閉じ込められる。
+| | 案A：全量置き換え方式 | 案B：個別コマンド方式 |
+| --- | --- | --- |
+| 呼び出し方法 | 更新後の配列全体を組み立てて `set_favorites` へ渡す | `add_favorite`／`remove_favorite`／`rename_favorite_node`／`move_favorite_node_to` 等、1操作＝1コマンド |
+| フロント側の負担 | 呼び出し前に配列全体を組み立て直す必要がある | 対象ノードのIDと変更内容だけを渡せばよい |
+| 書き込み頻度との相性 | 低頻度な操作（追加・解除・並び替えのみ）に向く | 1件ずつ都度確定させたい操作が多いUIに向く |
 
-`get_favorites`／`set_favorites`（配列全体の取得・全量置き換え）は、ピン止め用途に加えて汎用的な読み書きコマンドとしても引き続き提供しており、個別コマンド方式とは排他ではなく併存する。
+採用結果：ピン止め（`PINNED_FOLDER_ID` 直下の追加・解除・並び替え）は**案A**（`set_favorites`）、お気に入りツリーの編集操作（`add_favorite`／`add_favorite_folder`／`rename_favorite_node`／`remove_favorite`／`remove_favorite_folder`／`move_favorite_node_to`／`set_favorite_folder_collapsed`）は**案B**を採用した（REQUIREMENTS.md「お気に入り編集ビュー」節の「1操作＝1即時Rustコマンド呼び出し」方式と同じ）。
+
+**採用理由の明文化状況**：機能によって異なる方式を採った理由そのものは、コミット履歴・REQUIREMENTS.md・`docs/internal-design/favorites-data-model.md` のいずれにも明記されていない。REQUIREMENTS.mdは「既存の `/favorite` 暫定UI（段階2で前倒し実装した上下移動・削除）と同じ方式を踏襲する」と既存パターンへの追従を述べるのみで、案Aではなく案Bを選んだ根拠自体の記載はない。
 
 <a id="reserved-folders"></a>
 
