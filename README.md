@@ -19,7 +19,7 @@ For a detailed introduction and screenshots, visit the [introduction site](https
 - **Favorites** — Organize files into a folder tree and recall them with `/favorite`
 - **Recent Files** — Browse recently opened files with `/recent`
 - **Calculator** — Type expressions like `1000 + 200` for instant results
-- **Clipboard History** — Browse and restore text & image history with `cb`
+- **Clipboard History** — Browse and restore text & image history with `/cb`
 - **OCR (Image to Text)** — Paste an image (`Ctrl+V`) into the search box to extract text via Windows OCR, with mixed Japanese/English support
 - **Web Search** — Search Google directly from the launcher
 - **System Commands** — Shutdown, restart, or sleep with confirmation
