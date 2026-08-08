@@ -65,7 +65,7 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 
 上記7のようなモード別の `expiresAt` 付き intent を扱うため、8のタイムアウト判定は「見つからない」を判定する対象一覧をモードに応じて `rows`／`clipboardSelectionItems`／`favoriteTree` の3つに切り替える。実装は `rowsRef`／`clipboardSelectionItemsRef`／`favoriteTreeRef` という3つの `useRef` ミラーをモードごとに用意し、`useEffect` 内で最新値を都度書き込むことで、タイムアウト判定effect自体の依存配列に `rows` 等の頻繁に変化する値を含めずに済ませている（依存配列に含めると、変化のたびにタイマーの期限が延長され「`expiresAt` の時点で強制的に諦める」というタイムアウトの意味が失われるため）。
 
-**経緯（段階3・軸1のCC実装批評で指摘・実装前に解消）**：お気に入り編集ビュー実装当初の設計案では、この分岐に `favoriteMode`（`favoriteTree`）が無く、`favoriteMode` 中に発行された `expiresAt` 付き intent（`toggleFavorite` の★解除等）が常に `rowsRef`（`favoriteMode` 中は空配列）を参照して「見つからない」と誤判定し、正しく選択解決された直後でも約1秒後に `{type:'top'}` へ強制的にリセットされる潜在バグとして指摘された。`clipboardSelectionItemsRef` と同じ鏡写しパターンで `favoriteTreeRef` を追加して解消した。**新しい選択ドメインを追加する場合、この分岐（タイムアウト判定effect内の `items` 算出）にも対応するモードの鏡refを追加すること**（追加を忘れると、そのドメインの `expiresAt` 付き intent がすべて誤ってタイムアウト扱いになる）。
+**経緯（段階3・軸1のAD実装批評で指摘・実装前に解消）**：お気に入り編集ビュー実装当初の設計案では、この分岐に `favoriteMode`（`favoriteTree`）が無く、`favoriteMode` 中に発行された `expiresAt` 付き intent（`toggleFavorite` の★解除等）が常に `rowsRef`（`favoriteMode` 中は空配列）を参照して「見つからない」と誤判定し、正しく選択解決された直後でも約1秒後に `{type:'top'}` へ強制的にリセットされる潜在バグとして指摘された。`clipboardSelectionItemsRef` と同じ鏡写しパターンで `favoriteTreeRef` を追加して解消した。**新しい選択ドメインを追加する場合、この分岐（タイムアウト判定effect内の `items` 算出）にも対応するモードの鏡refを追加すること**（追加を忘れると、そのドメインの `expiresAt` 付き intent がすべて誤ってタイムアウト扱いになる）。
 
 <a id="sync-vs-async-restore"></a>
 
