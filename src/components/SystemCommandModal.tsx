@@ -3,7 +3,7 @@ import { logUiEvent } from "../lib/uiDebugLog";
 
 // 確定（Enter）は独自のキー分岐を持たず、ブラウザ標準のフォーカス経路
 // （Tabで「実行」ボタンへ移動し、フォーカス中のEnterでclickが発火する）にのみ
-// 委ねる（docs/external-design/01-screen-transitions.md「モーダル・ダイアログの
+// 委ねる（external-design/01-screen-transitions.md「モーダル・ダイアログの
 // キー操作原則」）。autoFocusは設けない（FavoriteFolderDeleteModal.tsx と同じ、
 // 初期フォーカスを持たせない実装に揃えている）。キャンセル（Escape）はApp.tsx
 // の window レベルリスナーが処理する。

@@ -2,7 +2,7 @@
 
 対象コード: `src-tauri/src/path_paste.rs`（`read_pasted_hdrop_path`／`judge_pasted_path`／`write_shortcut_file`）、`src/hooks/useSearch.ts`（`detectPastedPath`／`wizardStep`）、`src/components/PathPasteWizard.tsx`。
 
-Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・[外部設計書「モード共存・排他一覧」](../external-design/01-screen-transitions.md#mode-coexistence-table)を参照。
+Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・`external-design/01-screen-transitions.md#mode-coexistence-table`を参照。
 
 ## 現在の設計
 
@@ -10,7 +10,7 @@ Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検�
 
 ### 貼り付け判定（Rust、`path_paste.rs`）
 
-**「OS のクリップボードから実ファイルパス（CF_HDROP）を読む場合は Rust 側で直接読み直す」という方針とその理由**は、外部設計書 [04-platform-policies.md#paste-detection](../external-design/04-platform-policies.md#paste-detection) へ移設した。本節には実装の詳細のみを記す。
+**「OS のクリップボードから実ファイルパス（CF_HDROP）を読む場合は Rust 側で直接読み直す」という方針とその理由**は、外部設計書 `external-design/04-platform-policies.md#paste-detection` へ移設した。本節には実装の詳細のみを記す。
 
 CF_HDROP の確認と、パスの実在判定（テキスト解釈）は、別々の2つのコマンド・別々のタイミングで行う1経路に統一している（統一前の経緯は「経緯」節を参照）。
 

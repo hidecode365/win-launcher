@@ -10,7 +10,7 @@
 
 ### クリップボード履歴（Rust / フロントエンド）
 
-**「重量データ（クリップボード画像）を IPC に通さず Rust 側で完結させる」という方針とその理由**は、外部設計書 [04-platform-policies.md#heavy-data-ipc-policy](../external-design/04-platform-policies.md#heavy-data-ipc-policy) へ移設した。本節には実装の詳細のみを記す。
+**「重量データ（クリップボード画像）を IPC に通さず Rust 側で完結させる」という方針とその理由**は、外部設計書 `external-design/04-platform-policies.md#heavy-data-ipc-policy` へ移設した。本節には実装の詳細のみを記す。
 
 **検出（Rust）**：メインウィンドウの HWND を `SetWindowSubclass`（`windows-rs` の `Win32_UI_Shell`）でサブクラス化し、`AddClipboardFormatListener`（`Win32_System_DataExchange` feature）でクリップボード変更通知の受信者として登録する。
 

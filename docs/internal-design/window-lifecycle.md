@@ -76,7 +76,7 @@ const closeWindow = useCallback(
 
 ### モーダル・ダイアログのキー操作の実装
 
-**原則そのもの**（キャンセル（Escape）はフォーカス位置に依存させず window レベルへ一本化し、確定（Enter）はブラウザ標準のフォーカス経路に委ねて独自の Enter 分岐を設けない、という非対称な扱い）は、外部設計書 [01-screen-transitions.md#modal-key-policy](../external-design/01-screen-transitions.md#modal-key-policy) へ移設した。本節には実装パターンのみを記す。
+**原則そのもの**（キャンセル（Escape）はフォーカス位置に依存させず window レベルへ一本化し、確定（Enter）はブラウザ標準のフォーカス経路に委ねて独自の Enter 分岐を設けない、という非対称な扱い）は、外部設計書 `external-design/01-screen-transitions.md#modal-key-policy` へ移設した。本節には実装パターンのみを記す。
 
 **Escape（キャンセル）の実装**：`SystemCommandModal`（システムコマンド確認）・`RegisterEntryDialog`（お気に入り登録ダイアログ）・`FavoriteFolderDeleteModal`（フォルダ削除確認）・`PathPasteWizard`（パス貼り付けウィザード）など、検索ビュー上に開閉するモーダル・ダイアログ・ウィザードの Escape は、`App.tsx` の window レベルの共通 `keydown` リスナー（[ウィンドウを閉じる系アクションの共通設計](#close-window-common-design) 節と同じ `useEffect`）で処理する。個別コンポーネントのローカル `onKeyDown` によるフォーカス依存の判定を新設しない。
 
@@ -86,7 +86,7 @@ const closeWindow = useCallback(
 
 - **例外1**：`RegisterEntryDialog` の Enter は、表示名・保存先フォルダ等のダイアログ内部 state を必要とするため、ダイアログ自身の `onKeyDown` で処理する（window レベルではなく、かつ `stopPropagation` する）
 - **例外2**：`PathPasteWizard` の Enter は、ステップ遷移という「ボタンの click では表現されない操作」のため window レベルで処理する
-- **是正済み**：`SystemCommandModal` はかつて window レベルに独自の Enter 分岐と 300ms の猶予期間（`SYSTEM_COMMAND_CONFIRM_GRACE_MS`）を持っていたが、外部設計書の[是正方針](../external-design/01-screen-transitions.md#system-command-enter-removal)に従いいずれも削除済み。現在は `deleteFolder` と同じくブラウザ標準のフォーカス経路のみに統一されている
+- **是正済み**：`SystemCommandModal` はかつて window レベルに独自の Enter 分岐と 300ms の猶予期間（`SYSTEM_COMMAND_CONFIRM_GRACE_MS`）を持っていたが、外部設計書の`external-design/01-screen-transitions.md#system-command-enter-removal`に従いいずれも削除済み。現在は `deleteFolder` と同じくブラウザ標準のフォーカス経路のみに統一されている
 
 <a id="search-overlay-active-consolidation"></a>
 
@@ -159,7 +159,7 @@ const closeWindow = useCallback(
 - **横並び調査の結果**：検索ビュー上に開くオーバーレイ4種（登録ダイアログ・システムコマンド確認・フォルダ削除確認・パス貼り付けウィザード）のうち、フォルダ削除確認モーダル・パス貼り付けウィザードは既に window レベルリスナーで確定/キャンセルを処理する設計になっており対象外だった。登録ダイアログとシステムコマンド確認の2件が、ローカル `onKeyDown`・`SearchBox` の `onKeyDown` というフォーカス依存の実装のまま残っていたことが判明した
 - **原因の性質判定**：「モーダルを開くトリガーがクリック後もフォーカスを持ち続けうる」「モーダル表示中に元のフォーカス先が disabled/blur されうる」というのは特定のダイアログ固有の実装ミスではなく、フォーカス依存でキー操作を処理するモーダル実装パターン全般が共有する構造的な弱さと判定した。個別対応ではなく、既に一部（フォルダ削除確認・パス貼り付けウィザード）で採用していた「windowレベルリスナーへの一本化」を全4種に統一する設計見直しを行った（[modal-keydown-window-level](#modal-keydown-window-level)節）
 - **対応**：登録ダイアログはEscapeのみwindowレベルリスナーへ保険として追加（Enterは表示名・保存先フォルダ等ダイアログ内部stateが必要なため引き続きダイアログ自身が処理）。システムコマンド確認はEnter/Escapeともwindowレベルリスナーへ完全移管し、`SearchBox`側の実処理は削除した
-- **その後の訂正**：上記「Enterもwindowレベルへ完全移管」した設計が、キーのチャタリング／WebView2の入力二重発火により確認を経ず即実行される事故を招いたため、Enterは window レベルの分岐を撤去しブラウザ標準のフォーカス経路へ戻した（[modal-keydown-window-level](#modal-keydown-window-level)節「Enter（確定）の実装」・外部設計書 [01-screen-transitions.md#modal-key-policy-history](../external-design/01-screen-transitions.md#modal-key-policy-history) を参照）。Escapeの一本化は維持している
+- **その後の訂正**：上記「Enterもwindowレベルへ完全移管」した設計が、キーのチャタリング／WebView2の入力二重発火により確認を経ず即実行される事故を招いたため、Enterは window レベルの分岐を撤去しブラウザ標準のフォーカス経路へ戻した（[modal-keydown-window-level](#modal-keydown-window-level)節「Enter（確定）の実装」・外部設計書 `external-design/01-screen-transitions.md#modal-key-policy-history` を参照）。Escapeの一本化は維持している
 
 <a id="suppress-next-search-ref-removed"></a>
 
@@ -174,6 +174,6 @@ const closeWindow = useCallback(
 - 新しいウィンドウクローズ系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない
 - 画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。この順序さえ守れば、後処理の重さや連鎖的な再レンダリングを個別に気にする必要はない
 - 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得が必要なら `focusRegainTableRef.current` にエントリを1つ追加するだけで済ませ、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない
-- モーダル・ダイアログ（`SystemCommandModal`／`RegisterEntryDialog`／`FavoriteFolderDeleteModal`／`PathPasteWizard` 等）のキー操作は、外部設計書 [01-screen-transitions.md#modal-key-policy](../external-design/01-screen-transitions.md#modal-key-policy) の非対称原則に従う：Escapeのみ DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化し、Enterはブラウザ標準のフォーカス経路（Tab で移動したボタン上の Enter）に委ねて window レベルに独自分岐を設けない
+- モーダル・ダイアログ（`SystemCommandModal`／`RegisterEntryDialog`／`FavoriteFolderDeleteModal`／`PathPasteWizard` 等）のキー操作は、外部設計書 `external-design/01-screen-transitions.md#modal-key-policy` の非対称原則に従う：Escapeのみ DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化し、Enterはブラウザ標準のフォーカス経路（Tab で移動したボタン上の Enter）に委ねて window レベルに独自分岐を設けない
 - 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の `searchOverlayActive`（[search-overlay-active-consolidation](#search-overlay-active-consolidation)）を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。ただしオーバーレイごとにEnter/Escapeの意味が異なる window レベルリスナー自体は個別分岐が必要で、この値には集約できない
 - 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる

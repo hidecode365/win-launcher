@@ -742,7 +742,7 @@ export default function App() {
         !favoriteEditOpen &&
         search.pendingCommand
       ) {
-        // docs/external-design/01-screen-transitions.md「モーダル・ダイアログの
+        // external-design/01-screen-transitions.md「モーダル・ダイアログの
         // キー操作原則」：キャンセル（Escape）のみフォーカス位置に依存させず
         // window レベルで常に処理する。確定（Enter）は独自分岐を設けず、
         // ブラウザ標準のフォーカス経路（Tabで移動した「実行」ボタン上のEnterで
@@ -1236,7 +1236,7 @@ export default function App() {
       {/* システムコマンド確認モーダル・アップデート確認/インストールダイアログ：
           いずれもマウント時に自己focus()を持たず、開いた時点でフォーカスを
           持つ要素（SearchBoxのinput）からの前方Tabで到達させる設計（系統1）。
-          そのためSearchBoxより後ろに描画する必要がある（docs/external-design/
+          そのためSearchBoxより後ろに描画する必要がある（external-design/
           01-screen-transitions.md「表2」参照。以前はSearchBoxより前に描画されており
           前方Tabで到達できない不具合があった）。absolute inset-0 z-10で自己位置決め
           するため、描画順序を変えても見た目の重なりには影響しない。 */}

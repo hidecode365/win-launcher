@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 //
 // 根本原因（window レベルリスナーの独自 Enter 分岐が、確定操作の唯一の経路である
 // ブラウザ標準のフォーカス経路をバイパスしていたこと）を除去する恒久対応
-// （docs/external-design/01-screen-transitions.md「systemCommandの是正方針」を参照）の
+// （external-design/01-screen-transitions.md「systemCommandの是正方針」を参照）の
 // 実装後もこの計測自体は意図的に残している。恒久的な構造化ログ機能（別途
 // 100〜200工程で着手予定）の実装イメージ・参考実装として活用できる可能性がある
 // ため。システムコマンド確認という低頻度の経路にのみ仕込んでおり性能への影響は

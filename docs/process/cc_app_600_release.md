@@ -1,6 +1,6 @@
 # 600_リリース — CC実施要領
 
-工程定義表全体は [WORKFLOW.md](../../WORKFLOW.md) を参照。本ファイルは 600_リリース 工程における CC（Claude Code）自身の実施要領のみを扱う。旧 `.claude/skills/release-flow/SKILL.md`（自己起動 Skill）から移植した内容であり、内容は変更していない。
+工程定義表全体は `WORKFLOW.md` を参照。本ファイルは 600_リリース 工程における CC（Claude Code）自身の実施要領のみを扱う。旧 `.claude/skills/release-flow/SKILL.md`（自己起動 Skill）から移植した内容であり、内容は変更していない。
 
 この工程は「PO → MG → CC」の経路で開始される運用に統一されている。POが CC に対して「リリースして」と自然文で直接指示し CC が自己起動する運用は行わない。そのため本ファイルには自己起動トリガー（Skill のフロントマター等）を持たせない。MG からの実行指示を受けて着手する。
 

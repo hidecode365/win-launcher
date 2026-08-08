@@ -50,7 +50,7 @@
 
 ### リサイズとサイズの永続化
 
-**「位置は永続化せずサイズのみ永続化する」という方針とその理由**（意図的な非対称であり矛盾ではない）は、外部設計書 [04-platform-policies.md#window-position-vs-size](../external-design/04-platform-policies.md#window-position-vs-size) へ移設した。本節には実装上の対応のみを記す。
+**「位置は永続化せずサイズのみ永続化する」という方針とその理由**（意図的な非対称であり矛盾ではない）は、外部設計書 `external-design/04-platform-policies.md#window-position-vs-size` へ移設した。本節には実装上の対応のみを記す。
 
 `resizable: true` でウィンドウ枠からのリサイズを許可する。`tauri.conf.json` の `width` / `height`（デフォルトサイズ）と `minWidth` / `minHeight`（最小サイズ）はいずれも 640 / 420 とする。
 

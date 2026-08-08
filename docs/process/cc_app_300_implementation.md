@@ -1,6 +1,6 @@
 # 300_実装 — CC実施要領
 
-工程定義表全体は [WORKFLOW.md](../../WORKFLOW.md) を参照。本ファイルは 300_実装 工程における CC（Claude Code）自身の実施要領のみを扱う。
+工程定義表全体は `WORKFLOW.md` を参照。本ファイルは 300_実装 工程における CC（Claude Code）自身の実施要領のみを扱う。
 
 ## INPUT
 

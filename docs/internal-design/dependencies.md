@@ -17,7 +17,7 @@
 
 ### `tauri-plugin-dialog` の実装方法
 
-**「ダイアログ系プラグインは Rust 側のコマンドとして実装し親ウィンドウを指定する」という方針とその理由**は、外部設計書 [04-platform-policies.md#dialog-plugin-parent-window](../external-design/04-platform-policies.md#dialog-plugin-parent-window) へ移設した。
+**「ダイアログ系プラグインは Rust 側のコマンドとして実装し親ウィンドウを指定する」という方針とその理由**は、外部設計書 `external-design/04-platform-policies.md#dialog-plugin-parent-window` へ移設した。
 
 実装上の対応：フォルダ選択ダイアログは Rust 側の Tauri コマンド `pick_folder` として実装し、`FileDialogBuilder::set_parent` で WinLauncher のウィンドウを親に指定している。`@tauri-apps/plugin-dialog` は npm 依存にも加えておらず、フロントエンドから直接ダイアログ系 JS API を呼ぶ経路は存在しない。実際に発生した不具合の詳細は「経緯」節を参照。
 
@@ -42,7 +42,7 @@
 
 ### Windows 標準 API 直接呼び出しの実装箇所
 
-**方針そのもの**（Windows 固有機能はまず標準 API で実装できないかを検討し、サードパーティクレートは代替手段として扱う）は、外部設計書 [04-platform-policies.md#windows-api-first-policy](../external-design/04-platform-policies.md#windows-api-first-policy) へ移設した。
+**方針そのもの**（Windows 固有機能はまず標準 API で実装できないかを検討し、サードパーティクレートは代替手段として扱う）は、外部設計書 `external-design/04-platform-policies.md#windows-api-first-policy` へ移設した。
 
 本プロジェクトで実際に標準 API を直接呼んでいる箇所：`ShellExecuteW`（ファイル起動）・`SHGetFileInfoW`（シェルアイコン取得）・クリップボードの Win32 API 直接操作・OCR の WinRT 直呼び出し（`Windows.Media.Ocr`）・`.lnk` 作成の `IShellLinkW`/`IPersistFile` 直接呼び出し。`mslnk` クレートから `IShellLinkW` への切り替え経緯は [path-paste.md](path-paste.md#mslnk-to-shell-link-history) を参照。
 

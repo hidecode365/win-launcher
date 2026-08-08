@@ -12,7 +12,7 @@
 
 ### データ構造（`FavoriteNode`）の実装
 
-**データ構造の定義そのもの**（隣接リスト方式の採用理由・永続化方式・全量置き換え方式）は、外部設計書 [03-data-model.md#favorite-node-structure](../external-design/03-data-model.md#favorite-node-structure) へ移設した。本節には実装上の対応のみを記す。
+**データ構造の定義そのもの**（隣接リスト方式の採用理由・永続化方式・全量置き換え方式）は、外部設計書 `external-design/03-data-model.md#favorite-node-structure` へ移設した。本節には実装上の対応のみを記す。
 
 - 型定義の実体：Rust は `main.rs` の `struct FavoriteNode`、フロントエンドは `src/types.ts` の `FavoriteNode` interface
 - 永続化キーは `FAVORITES_STORE_KEY`（`"favorites"`）。保存コマンドは `set_favorites(favorites: Vec<FavoriteNode>)`
@@ -22,7 +22,7 @@
 
 ### 予約フォルダ（固定ID）の実装
 
-**固定IDを採用する方針とその理由、Rust 側での二重バリデーション方針**は、外部設計書 [03-data-model.md#reserved-folders](../external-design/03-data-model.md#reserved-folders) へ移設した。本節には実装上の対応と注意点のみを記す。
+**固定IDを採用する方針とその理由、Rust 側での二重バリデーション方針**は、外部設計書 `external-design/03-data-model.md#reserved-folders` へ移設した。本節には実装上の対応と注意点のみを記す。
 
 - 定数の実体：`main.rs` の `PINNED_FOLDER_ID`（`"__pinned__"`）／`FAVORITES_FOLDER_ID`（`"__favorites__"`）／`MEMO_FOLDER_ID`（`"__memo__"`）
 - **Rust 側の定数値を変更する場合、フロントエンド側（`src/types.ts` の `PINNED_FOLDER_ID`）の定数も必ず同時に更新すること。** 両者は文字列リテラルの一致だけで結び付いており、型システムによる自動追従はない
@@ -78,7 +78,7 @@
 
 ### お気に入り機能：ピン止めとの違い（実装）
 
-**構造上の違いそのもの**（ピン止めは実質1階層、お気に入りは実際に木を組む）と、そこから導かれる**メモ機能実装時の判断基準**は、外部設計書 [03-data-model.md#favorites-tree](../external-design/03-data-model.md#favorites-tree) へ移設した。本節には、外部設計書が挙げる3概念の実装上の実体のみを記す。
+**構造上の違いそのもの**（ピン止めは実質1階層、お気に入りは実際に木を組む）と、そこから導かれる**メモ機能実装時の判断基準**は、外部設計書 `external-design/03-data-model.md#favorites-tree` へ移設した。本節には、外部設計書が挙げる3概念の実装上の実体のみを記す。
 
 - **祖先チェーンをたどる子孫判定**：`is_descendant_of(favorites, parent_id, ancestor_id)`（Rust, `main.rs`）とそのフロントエンド鏡 `isDescendantOfFolder`（`useSearch.ts`）。フォルダ削除時の子孫巻き込み判定・重複登録判定（`/favorite` からの★追加時、既に同じ実体が `FAVORITES_FOLDER_ID` の子孫に存在するか）の両方で使う。任意の深さを想定するため、無限ループ防止の深さ上限ガード（64）を持たせている（ピン止めは常に深さ1のため元々この種のガードが不要だった）
 - **ツリーの平坦化**：`src/lib/nodeTree.ts` の `groupNodesByParent`/`walkGroupedTree`。`parentId` でグルーピングしてから深さ優先で辿る
@@ -88,7 +88,7 @@
 
 ### 同一階層内の同名フォルダ作成を禁止するバリデーション（実装）
 
-**バリデーションの仕様と設ける理由**は、外部設計書 [03-data-model.md#duplicate-folder-name-validation](../external-design/03-data-model.md#duplicate-folder-name-validation) へ移設した。
+**バリデーションの仕様と設ける理由**は、外部設計書 `external-design/03-data-model.md#duplicate-folder-name-validation` へ移設した。
 
 実装は `add_favorite_folder`（Rust）。判定の作法は `validate_unique_keyword`（システムコマンド機能のキーワード重複チェック。詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md) を参照）と同じ「トリム＋小文字化して比較」の慣習にそのまま合わせている。導入の経緯は「経緯」節を参照。
 
@@ -96,7 +96,7 @@
 
 ### `/favorite` モードの並び順（実装）
 
-**並び順を再整列しないという方針とその理由**は、外部設計書 [03-data-model.md#favorite-mode-ordering](../external-design/03-data-model.md#favorite-mode-ordering) へ移設した。
+**並び順を再整列しないという方針とその理由**は、外部設計書 `external-design/03-data-model.md#favorite-mode-ordering` へ移設した。
 
 実装上は `order` フィールドの昇順でそのまま並べるだけで、ソート・グルーピングの処理を一切持たない。視覚的な区別（フォルダ見出し行とアイテム行）の意匠は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
 
@@ -114,7 +114,7 @@
 
 ### お気に入り編集ビューの仮想固定行（実装。内部識別子は `top`）
 
-**仮想固定行の定義・目的・制約**（実体を持たない／リネーム・削除・★解除の対象外／絞り込み中も表示を維持／既存センチネル値 `FAVORITES_FOLDER_ID` を流用する方針／共有データを汚染しない方針）は、外部設計書 [03-data-model.md#favorite-edit-virtual-root-row](../external-design/03-data-model.md#favorite-edit-virtual-root-row) へ移設した。本節には実装上の対応と注意点のみを記す。
+**仮想固定行の定義・目的・制約**（実体を持たない／リネーム・削除・★解除の対象外／絞り込み中も表示を維持／既存センチネル値 `FAVORITES_FOLDER_ID` を流用する方針／共有データを汚染しない方針）は、外部設計書 `external-design/03-data-model.md#favorite-edit-virtual-root-row` へ移設した。本節には実装上の対応と注意点のみを記す。
 
 実装箇所は `FavoriteEditTree.tsx`／`useFavoriteEditSelection.ts`。
 
@@ -172,7 +172,7 @@
 
 ## 今後の指針
 
-> 外部設計相当の指針（予約フォルダの固定ID・Rust 側での二重バリデーション・同名フォルダ禁止の理由・メモ機能実装時の再利用判断）は、外部設計書 [03-data-model.md](../external-design/03-data-model.md) へ移設した。以下には実装上の指針のみを残す。
+> 外部設計相当の指針（予約フォルダの固定ID・Rust 側での二重バリデーション・同名フォルダ禁止の理由・メモ機能実装時の再利用判断）は、外部設計書 `external-design/03-data-model.md` へ移設した。以下には実装上の指針のみを残す。
 
 - 予約フォルダの固定IDをRust側で変更する場合は、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）
 - 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない

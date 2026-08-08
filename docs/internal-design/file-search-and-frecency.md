@@ -34,7 +34,7 @@
   - キー名は `"frecency"`、値は `{ [path: string]: { count: number, lastUsed: number } }`（`lastUsed` は UNIX タイムスタンプ ms）
 - アプリ起動時（マウント時）に `frecency` を読み込み、`useState` と同期する `useRef` の両方で保持する（`useRef` は `useCallback` の古いクロージャ参照を避けるため、`useState` は再レンダリングのトリガー用）
 - ファイル起動時（Enter／クリックいずれも `launchFile` 経由）に対象パスの `count` をインクリメントし `lastUsed` を現在時刻で更新、`store.set` → `store.save` で即時永続化する
-- **スコア計算式・減衰係数・二次キー・常時有効である旨の正本は [REQUIREMENTS.md](../../REQUIREMENTS.md)「ファイル検索結果のランキング（frecency）」節**。ここには重複して書かない（外部設計書にも置かない）。**理由**：スコア計算式は「検索結果がどういう順で並ぶか」というユーザー体験の定義そのものであり、実装の都合ではなく要件そのものであるため。係数を変更する場合は REQUIREMENTS.md を更新し、実装をそれに合わせる
+- **スコア計算式・減衰係数・二次キー・常時有効である旨の正本は `requirements/REQUIREMENTS.md`「ファイル検索結果のランキング（frecency）」節**。ここには重複して書かない（外部設計書にも置かない）。**理由**：スコア計算式は「検索結果がどういう順で並ぶか」というユーザー体験の定義そのものであり、実装の都合ではなく要件そのものであるため。係数を変更する場合は REQUIREMENTS.md を更新し、実装をそれに合わせる
 - `recordFrecency(path)` はファイル起動時の後処理として `launchFile` の `closeWindow({ cleanup })` の `cleanup` 内で呼ぶ（詳細は [window-lifecycle.md](window-lifecycle.md#close-window-common-design) を参照）。ウィンドウが実際に隠れた後にのみ実行されるため、この呼び出しが引き起こす再レンダーのタイミングを個別に気にする必要はない
 
 同じ frecency の仕組みは [calc-and-prefix-commands.md](calc-and-prefix-commands.md) の「プレフィックスコマンド候補表示」でも `path` を `keyword` に変えて再利用されている。
@@ -45,7 +45,7 @@
 
 設定画面「ファイル検索」タブの検索フォルダ一覧の各行に歯車アイコンボタンを配置し、押下すると `FolderDetailSettingsModal.tsx` が中央オーバーレイのモーダルとして開く。
 
-**データ構造の定義そのもの**（5項目の内容とデフォルト値・ブラックリスト用/ホワイトリスト用を独立フィールドとする方針・後方互換の方針・拡張子フィルタの境界条件）は、外部設計書 [03-data-model.md#folder-detail-settings](../external-design/03-data-model.md#folder-detail-settings) へ移設した。本節には実装上の対応のみを記す。
+**データ構造の定義そのもの**（5項目の内容とデフォルト値・ブラックリスト用/ホワイトリスト用を独立フィールドとする方針・後方互換の方針・拡張子フィルタの境界条件）は、外部設計書 `external-design/03-data-model.md#folder-detail-settings` へ移設した。本節には実装上の対応のみを記す。
 
 Rust の `FolderEntry`（`folders: FolderEntry[]`）のフィールド実体：
 

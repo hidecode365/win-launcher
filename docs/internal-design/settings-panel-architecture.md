@@ -27,7 +27,7 @@
 
 ### 永続化スキーマ（`settings.json`）
 
-**「永続化は単一のストア（`settings.json`）に集約する」という方針と、Rust コマンド経由／JS の store API 直接という2経路の使い分け**は、外部設計書 [04-platform-policies.md#settings-persistence-policy](../external-design/04-platform-policies.md#settings-persistence-policy) へ移設した。
+**「永続化は単一のストア（`settings.json`）に集約する」という方針と、Rust コマンド経由／JS の store API 直接という2経路の使い分け**は、外部設計書 `external-design/04-platform-policies.md#settings-persistence-policy` へ移設した。
 
 **本節のフィールド一覧は意図的に内部設計書側へ残している**（コードから読み取れる派生情報のため、外部設計書へ置くと設定追加のたびに PO レビューと同期漏れが発生する。詳細は移設先の注記を参照）。以下が現在の一覧：
 

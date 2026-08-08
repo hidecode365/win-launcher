@@ -2007,7 +2007,7 @@ export function useSearch(
           cleanup,
         });
       } else if (favoriteMode) {
-        // docs/external-design/01-screen-transitions.md「モード共存・排他一覧」の
+        // external-design/01-screen-transitions.md「モード共存・排他一覧」の
         // /favorite の「確定時の処理」：
         // recentMode・clipboardMode と同様、クエリはプレフィックス部分
         // （"/favorite"）のみを残す（続く横断検索フィルタ文字列だけをクリアする）。
@@ -2103,7 +2103,7 @@ export function useSearch(
     setPendingCommand(null);
   }, []);
 
-  // docs/external-design/01-screen-transitions.md「モーダル・ダイアログのキー操作原則」：
+  // external-design/01-screen-transitions.md「モーダル・ダイアログのキー操作原則」：
   // 確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動したボタン上のEnterで
   // click発火）に委ね、window レベルリスナーに独自の Enter 分岐を設けない。
   // このコールバックは SystemCommandModal の「実行」ボタンの onClick からのみ呼ばれる

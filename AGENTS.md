@@ -2,7 +2,17 @@
 
 ## 開発フロー
 
-詳細は [WORKFLOW.md](WORKFLOW.md) を参照。
+詳細は `WORKFLOW.md` を参照。
+
+## 論理参照の解決先(2026-08-08導入)
+
+`docs/internal-design/*.md`・`docs/process/cc_app_*.md`内で以下の形式の参照が出てきた場合、実体はこのリポジトリの外、MG側Vault(`../mng/`)にある(MGが正本管理)。パスを持たない論理参照にすることで、将来置き場所が変わっても書き換えが1箇所で済む設計。
+
+- `external-design/ファイル名#アンカー` → `../mng/docs/app/external-design/ファイル名`
+- `requirements/REQUIREMENTS.md#アンカー` → `../mng/docs/app/requirements/REQUIREMENTS.md`
+- `WORKFLOW.md#アンカー` → `../mng/WORKFLOW.md`
+
+逆に、CC実施要領(`docs/process/cc_app_*.md`)の実体はこのリポジトリの`docs/process/`にある(app側が正本)。
 
 ## MG（管理CC）からの指示の確認方法
 
@@ -17,16 +27,16 @@ MGからの指示・報告のやり取りは、このリポジトリ内ではな
 
 | 層 | 場所 | 内容 | PO のレビュー | 更新する工程 |
 | --- | --- | --- | --- | --- |
-| 要件定義書 | [REQUIREMENTS.md](REQUIREMENTS.md) | 「何ができるか」（機能要件・仕様） | **濃厚にレビューする** | 100_要件定義 |
-| 外部設計書 | [docs/external-design/](docs/external-design/) | PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義） | **濃厚にレビューする** | 200_設計（PO 承認を得る） |
+| 要件定義書 | `requirements/REQUIREMENTS.md` | 「何ができるか」（機能要件・仕様） | **濃厚にレビューする** | 100_要件定義 |
+| 外部設計書 | `external-design/` | PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義） | **濃厚にレビューする** | 200_設計（PO 承認を得る） |
 | 内部設計書 | [docs/internal-design/](docs/internal-design/) | 「どう作られているか」（実装パターン・コード上の規約・不具合の経緯） | **基本見ない**（MG と CC が責任を持つ） | 500_リリース前作業（実装を踏まえて最新化） |
 
 外部設計書は4章構成で、章立ての理屈は「動き → 見た目 → 持ち方 → 土台」：
 
-- [01-screen-transitions.md](docs/external-design/01-screen-transitions.md) — 画面遷移設計（モーダルのキー操作原則・モード共存/排他一覧・view/modal 状態遷移一覧）
-- [02-list-and-selection.md](docs/external-design/02-list-and-selection.md) — 一覧・選択設計（一覧データ構造の3層定義・選択モデルの原則）
-- [03-data-model.md](docs/external-design/03-data-model.md) — データモデル設計（**現時点では器のみ。内部設計書からの節の移設は次回作業**）
-- [04-platform-policies.md](docs/external-design/04-platform-policies.md) — 技術方針（**現時点では器のみ。同上**）
+- `external-design/01-screen-transitions.md` — 画面遷移設計（モーダルのキー操作原則・モード共存/排他一覧・view/modal 状態遷移一覧）
+- `external-design/02-list-and-selection.md` — 一覧・選択設計（一覧データ構造の3層定義・選択モデルの原則）
+- `external-design/03-data-model.md` — データモデル設計（**現時点では器のみ。内部設計書からの節の移設は次回作業**）
+- `external-design/04-platform-policies.md` — 技術方針（**現時点では器のみ。同上**）
 
 **同じ内容を複数の層に重複して書かない。** 上位層に書いた内容は、下位層からは参照リンクのみを置く。
 
@@ -46,7 +56,7 @@ MGからの指示・報告のやり取りは、このリポジトリ内ではな
   - コード：該当する `XxxSettings.tsx`、`AppSettings`（`types.ts`）のフィールド、Rust側の `set_*` コマンド
   - `REQUIREMENTS.md`「設定画面」節の該当タブの記述
   - `CLAUDE.md`／`docs/internal-design/*.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/internal-design/*.md` にその部分だけを追記する）
-- **CLAUDE.md・docs/internal-design/*.md には「どう作られているか」を書き、「何ができるか」は `REQUIREMENTS.md` に書く。** PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義）は `docs/external-design/*.md` に書く。3層のどこに書くべきかは「ドキュメント構成（3層）」節の表に従い、複数の層に同じ内容を書かない
+- **CLAUDE.md・docs/internal-design/*.md には「どう作られているか」を書き、「何ができるか」は `requirements/REQUIREMENTS.md` に書く。** PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義）は `external-design/*.md` に書く。3層のどこに書くべきかは「ドキュメント構成（3層）」節の表に従い、複数の層に同じ内容を書かない
 - **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`CLAUDE.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/internal-design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/internal-design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
   - アンカーIDは見出し文言の自動スラッグ化に頼らず、見出し直前に `<a id="...">` を明示的に振る（英語kebab-case）。見出しの日本語文言をリネームしてもアンカーIDは変えない（アンカーIDと見出し文言は独立して管理する）
   - `docs/internal-design/*.md` 側でアンカーIDを変更・削除した場合、`CLAUDE.md` 側の対応するポインタを同時に更新する（放置すると壊れたリンクが残る）
@@ -178,8 +188,6 @@ win-launcher/
 ├── docs/
 │   ├── design/               # 設計判断の詳細（現状仕様・経緯・却下案・不具合の記録）。詳細は「設計原則ダイジェスト」節を参照
 │   └── process/              # 開発工程ごとのCC実施要領。詳細は WORKFLOW.md を参照
-├── REQUIREMENTS.md          # 要件定義
-├── WORKFLOW.md               # 開発工程定義（役割分担・実施要領インデックス）
 ├── DESIGN_LOG.md             # 設計協議の一時記録（トピック単位、反映後にクリア）
 └── CLAUDE.md                # 本ファイル（設計方針）
 ```
@@ -217,7 +225,7 @@ win-launcher/
 
 以下は `docs/internal-design/*.md` から抽出した「今後の指針・再利用可能な原則」のみを収めたダイジェストである。**各原則の背景（現状仕様の詳細・経緯・却下案・不具合の記録）は必ずポインタ先で確認すること。** 原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある。
 
-見出しは横断アーキテクチャ系4ファイル・機能単位系10ファイルの計14ファイルに対応する。**ポインタ先が `docs/external-design/`（太字で示す）になっている原則は PO 承認済みの設計事項であり、CC の判断だけで変更しないこと**（変更が必要と判断した場合は 200_設計 工程として提起する）。
+見出しは横断アーキテクチャ系4ファイル・機能単位系10ファイルの計14ファイルに対応する。**ポインタ先が `external-design/`（太字で示す）になっている原則は PO 承認済みの設計事項であり、CC の判断だけで変更しないこと**（変更が必要と判断した場合は 200_設計 工程として提起する）。
 
 ### ウィンドウ・ホットキー
 
@@ -235,7 +243,7 @@ win-launcher/
 
 - フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
-- モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **[外部設計書 01-screen-transitions.md](docs/external-design/01-screen-transitions.md#modal-key-policy)**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
+- モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **`external-design/01-screen-transitions.md#modal-key-policy`**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
 - 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#search-overlay-active-consolidation)
 - 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得は `focusRegainTableRef.current` にエントリを1つ追加するだけにし、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture)
 - 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#suppress-next-search-ref-removed)
@@ -244,7 +252,7 @@ win-launcher/
 
 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md)
 
-- 選択（`selected`）は識別子（`ResultRow.key`）を持つ「意図（intent）」と現在の候補一覧から導出する値であり、書き込み可能な state ではない。「意図」と「現在の候補一覧」から導出する設計を優先し、新設する類似の値を直接 state 化しない。 → 詳細: **[外部設計書 02-list-and-selection.md](docs/external-design/02-list-and-selection.md#selection-model)**（実装は [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#selection-is-derived)）
+- 選択（`selected`）は識別子（`ResultRow.key`）を持つ「意図（intent）」と現在の候補一覧から導出する値であり、書き込み可能な state ではない。「意図」と「現在の候補一覧」から導出する設計を優先し、新設する類似の値を直接 state 化しない。 → 詳細: **`external-design/02-list-and-selection.md#selection-model`**（実装は [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#selection-is-derived)）
 - intent を `{type:'top'}` へリセットするのは「query/settings/closeRefreshTick の変化」という汎用トリガー1本のみに一本化する。モード固有の強制リセットeffectや、「次の1回だけ抑止する」一度きりのフラグは新設しない。reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"操作の副作用として変化する値"を含めない。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#reset-triggers)
 - 移動先が操作時点で確定的に分かる場合（末尾追加・D&D確定等）は intent を同期的に設定してよい。移動先が非同期でしか確定しない場合のみ、識別子照合＋タイムアウトの復元機構に乗せる。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#sync-vs-async-restore)
 - 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#adding-a-row-kind)
@@ -454,7 +462,7 @@ npm run tauri build
 
 ## リリース手順
 
-詳細な手順（バージョン bump → 署名付きビルド → `latest.json` 生成 → リリースノート更新 → git commit/tag/push → `gh release create` → アセットアップロード、およびリリース後の動作確認チェックリスト）は [docs/process/cc_app_600_release.md](docs/process/cc_app_600_release.md) を参照。600_リリース工程（詳細は [WORKFLOW.md](WORKFLOW.md) を参照）として、MG からの実行指示を受けて着手する。
+詳細な手順（バージョン bump → 署名付きビルド → `latest.json` 生成 → リリースノート更新 → git commit/tag/push → `gh release create` → アセットアップロード、およびリリース後の動作確認チェックリスト）は [docs/process/cc_app_600_release.md](docs/process/cc_app_600_release.md) を参照。600_リリース工程（詳細は `WORKFLOW.md` を参照）として、MG からの実行指示を受けて着手する。
 
 ## WinGetパッケージの新バージョン申請手順
 
