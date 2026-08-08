@@ -69,7 +69,9 @@ export function StatusFooter({
         : favoriteSelectedKind === "folder"
           ? "開閉"
           : selectedRowKind === "pathPasteShortcut" ||
-              selectedRowKind === "pathPasteAddFolder"
+              selectedRowKind === "pathPasteAddFolder" ||
+              selectedRowKind === "pathPastePin" ||
+              selectedRowKind === "pathPasteFavorite"
             ? "選択"
             : selectedRowKind === "calc" || selectedRowKind === "urlConvert"
               ? "コピー"

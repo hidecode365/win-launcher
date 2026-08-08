@@ -262,6 +262,8 @@ export type ResultRow =
   | { kind: "pinned"; key: string; file: FileEntry; exists: boolean; favorited: boolean }
   | { kind: "pathPasteShortcut"; key: string; candidate: PastedPathInfo }
   | { kind: "pathPasteAddFolder"; key: string; candidate: PastedPathInfo }
+  | { kind: "pathPastePin"; key: string; candidate: PastedPathInfo; pinned: boolean }
+  | { kind: "pathPasteFavorite"; key: string; candidate: PastedPathInfo; favorited: boolean }
   | { kind: "calc"; key: string; result: string }
   | { kind: "urlConvert"; key: string; result: UrlConvertResult }
   | { kind: "file"; key: string; file: FileEntry; pinned: boolean; favorited: boolean };

@@ -998,6 +998,12 @@ export default function App() {
               case "pathPasteAddFolder":
                 search.addSearchFolderFromPaste();
                 break;
+              case "pathPastePin":
+                search.togglePinFromPaste();
+                break;
+              case "pathPasteFavorite":
+                search.toggleFavoriteFromPaste();
+                break;
               case "calc":
                 search.copyResult(selectedRow.result);
                 break;
@@ -1331,6 +1337,8 @@ export default function App() {
             onSelectRowByKey={search.selectRowFromHover}
             onAddSearchFolder={search.addSearchFolderFromPaste}
             onStartShortcutWizard={search.startShortcutWizard}
+            onTogglePinFromPaste={search.togglePinFromPaste}
+            onToggleFavoriteFromPaste={search.toggleFavoriteFromPaste}
             onCopyResult={search.copyResult}
             onSelectPrefixCommand={search.selectPrefixCommand}
             onLaunchFile={search.launchFile}

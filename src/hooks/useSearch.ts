@@ -495,14 +495,17 @@ export function useSearch(
     setWizardName("");
   }, []);
 
-  // 機能1: 検索フォルダとして追加。invoke は closeWindow() の hideWindow() を待たず
-  // fire-and-forget で発火する（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
+  // 機能1: 検索フォルダとして追加。非表示を確定してから invoke を fire-and-forget
+  // で起動する（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
   const addSearchFolderFromPaste = useCallback(async () => {
     if (!pathPasteCandidate) return;
-    invoke("add_search_folder_from_paste", {
-      path: pathPasteCandidate.path,
-    }).catch(console.error);
-    await closeWindow({ cleanup: clearPathPaste });
+    const path = pathPasteCandidate.path;
+    await closeWindow({
+      cleanup: () => {
+        invoke("add_search_folder_from_paste", { path }).catch(console.error);
+        clearPathPaste();
+      },
+    });
   }, [pathPasteCandidate, closeWindow, clearPathPaste]);
 
   // 機能2 ステップ1→2: 登録済みの検索フォルダ一覧を取得してフォルダ選択ステップへ進む
@@ -527,15 +530,19 @@ export function useSearch(
     [pathPasteCandidate]
   );
 
-  // 機能2 ステップ3: 保存を実行する。`.lnk` の作成自体（連番付与含む）は Rust 側が行う。
+  // 機能2 ステップ3: 非表示を確定してから保存を実行する。`.lnk` の作成自体（連番付与
+  // 含む）は Rust 側が行う。
   const confirmShortcut = useCallback(async () => {
     if (!pathPasteCandidate || !wizardSelectedFolder) return;
-    invoke("create_shortcut", {
-      targetPath: pathPasteCandidate.path,
-      folderPath: wizardSelectedFolder.path,
-      name: wizardName,
-    }).catch(console.error);
-    await closeWindow({ cleanup: clearPathPaste });
+    const targetPath = pathPasteCandidate.path;
+    const folderPath = wizardSelectedFolder.path;
+    const name = wizardName;
+    await closeWindow({
+      cleanup: () => {
+        invoke("create_shortcut", { targetPath, folderPath, name }).catch(console.error);
+        clearPathPaste();
+      },
+    });
   }, [
     pathPasteCandidate,
     wizardSelectedFolder,
@@ -1527,7 +1534,7 @@ export function useSearch(
   // 保存済み配列を新しい真実の状態として反映したうえで、アイコン付き表示用一覧
   // （pinnedFiles）を取り直す。
   const togglePin = useCallback(
-    (file: FileEntry) => {
+    (file: FileEntry, onSaved?: () => void) => {
       const current = favoritesRef.current;
       const alreadyPinned = current.some(
         (f) =>
@@ -1604,11 +1611,34 @@ export function useSearch(
           favoritesRef.current = saved;
           setFavoritesState(saved);
           fetchPinnedFiles("toggle-pin");
+          onSaved?.();
         })
         .catch(console.error);
     },
     [fetchPinnedFiles, updateIntent, pinnedVisible]
   );
+
+  // パス貼り付け候補は「一操作を選び切って完了する」入口のため、通常行のアイコン操作
+  // と異なり、非表示を確定してから既存のトグル処理を開始する。
+  const togglePinFromPaste = useCallback(async () => {
+    if (!pathPasteCandidate) return;
+    const file: FileEntry = {
+      path: pathPasteCandidate.path,
+      name: pathPasteCandidate.name,
+      icon: null,
+    };
+    const wasPinned = isPinned(file.path);
+    await closeWindow({
+      cleanup: () => {
+        togglePin(file, () => {
+          invoke("show_path_paste_toast", {
+            message: `${wasPinned ? "ピン止めを解除しました" : "ピン止めしました"}: ${file.name}`,
+          }).catch(console.error);
+        });
+        clearPathPaste();
+      },
+    });
+  }, [pathPasteCandidate, isPinned, closeWindow, togglePin, clearPathPaste]);
 
   // お気に入りの登録・解除。ピン止め（togglePin）とは異なり、favorites 配列全量を
   // フロントエンドで組み立てて set_favorites に渡す方式ではなく、専用の Rust コマンド
@@ -1626,6 +1656,8 @@ export function useSearch(
   // お気に入りの登録・解除は、ピン止めと異なり行の移動（ブロックへの出入り）を
   // 伴わないため、選択位置は変化しない。intent の更新は不要。
   const [favoriteDialogTarget, setFavoriteDialogTarget] = useState<FileEntry | null>(null);
+  // パス貼り付け候補から開いた登録ダイアログだけは、保存後にウィンドウを閉じる。
+  const [favoriteDialogFromPathPaste, setFavoriteDialogFromPathPaste] = useState(false);
   // 「前回この操作で使用したフォルダ」の記憶。settings.json への永続化は不要
   // （REQUIREMENTS.md「登録ダイアログ」節の指示通り、アプリ内の一時状態でよい）ため
   // useRef で保持するのみ。再レンダリングのトリガーが不要な値のため useState にしない。
@@ -1648,7 +1680,7 @@ export function useSearch(
   // requestDeleteFavoriteFolder の onRemoved と同じ設計（詳細はそちらのコメントを
   // 参照）。お気に入り編集ビュー（App.tsx）は自身の選択ドメイン
   // （useFavoriteEditSelection）を復元するコールバックを明示的に渡す。
-  const toggleFavorite = useCallback((file: FileEntry, onRemoved?: () => void) => {
+  const toggleFavorite = useCallback((file: FileEntry, onRemoved?: () => void, onSaved?: () => void) => {
     const current = favoritesRef.current;
     const existing = current.find(
       (f) =>
@@ -1702,6 +1734,7 @@ export function useSearch(
           // （fetchFavoriteNodes）を経由せず、返ってきた saved から同期的に
           // 導出する（deriveFavoriteNodesFromFavorites のコメントを参照）。
           setRawFavoriteNodes(deriveFavoriteNodesFromFavorites(saved));
+          onSaved?.();
         })
         .catch(console.error);
       return;
@@ -1711,22 +1744,21 @@ export function useSearch(
 
   const closeFavoriteDialog = useCallback(() => {
     setFavoriteDialogTarget(null);
+    setFavoriteDialogFromPathPaste(false);
   }, []);
 
   const confirmFavoriteDialog = useCallback(
-    (name: string, folderId: string) => {
+    async (name: string, folderId: string) => {
       const target = favoriteDialogTarget;
       if (!target) return;
-      invoke<FavoriteNode[]>("add_favorite", {
-        path: target.path,
-        name,
-        folderId,
-      })
-        .then((saved) => {
+      const save = () => {
+        invoke<FavoriteNode[]>("add_favorite", { path: target.path, name, folderId })
+          .then((saved) => {
           favoritesRef.current = saved;
           setFavoritesState(saved);
           lastFavoriteFolderIdRef.current = folderId;
           setFavoriteDialogTarget(null);
+          setFavoriteDialogFromPathPaste(false);
           // ここで登録するのは新規のファイルパスであり、実体の有無
           // （favoriteExistence）を check_paths_exist で確認する必要がある
           // （フォルダ作成・リネーム・削除・移動・★解除のようにファイルパスの
@@ -1736,11 +1768,57 @@ export function useSearch(
           // 非同期往復）をそのまま使う（deriveFavoriteNodesFromFavorites の
           // コメントを参照）。
           fetchFavoriteNodes("register-dialog");
+          if (favoriteDialogFromPathPaste) {
+            invoke("show_path_paste_toast", {
+              message: `お気に入りに追加しました: ${target.name}`,
+            }).catch(console.error);
+          }
         })
         .catch(console.error);
+      };
+      if (favoriteDialogFromPathPaste) {
+        await closeWindow({
+          cleanup: () => {
+            clearPathPaste();
+            save();
+          },
+        });
+      } else {
+        save();
+      }
     },
-    [favoriteDialogTarget, fetchFavoriteNodes]
+    [
+      favoriteDialogTarget,
+      favoriteDialogFromPathPaste,
+      closeWindow,
+      clearPathPaste,
+      fetchFavoriteNodes,
+    ]
   );
+
+  const toggleFavoriteFromPaste = useCallback(async () => {
+    if (!pathPasteCandidate) return;
+    const file: FileEntry = {
+      path: pathPasteCandidate.path,
+      name: pathPasteCandidate.name,
+      icon: null,
+    };
+    if (!isFavorited(file.path)) {
+      setFavoriteDialogFromPathPaste(true);
+      setFavoriteDialogTarget(file);
+      return;
+    }
+    await closeWindow({
+      cleanup: () => {
+        toggleFavorite(file, undefined, () => {
+          invoke("show_path_paste_toast", {
+            message: `お気に入りから削除しました: ${file.name}`,
+          }).catch(console.error);
+        });
+        clearPathPaste();
+      },
+    });
+  }, [pathPasteCandidate, isFavorited, closeWindow, toggleFavorite, clearPathPaste]);
 
   // 登録ダイアログの「新規フォルダ作成」から呼ばれる。作成後、呼び出し元（ダイアログ）
   // が戻り値の id を即座に選択状態にできるよう、新規追加されたノードそのものを返す
@@ -2170,6 +2248,18 @@ export function useSearch(
           candidate: pathPasteCandidate,
         });
       }
+      list.push({
+        kind: "pathPastePin",
+        key: "pathPastePin",
+        candidate: pathPasteCandidate,
+        pinned: isPinned(pathPasteCandidate.path),
+      });
+      list.push({
+        kind: "pathPasteFavorite",
+        key: "pathPasteFavorite",
+        candidate: pathPasteCandidate,
+        favorited: isFavorited(pathPasteCandidate.path),
+      });
     }
 
     if (calcResult !== null) {
@@ -2315,7 +2405,7 @@ export function useSearch(
   useEffect(() => {
     const expectedLength =
       (pinnedVisible ? pinnedFiles.length : 0) +
-      (pathPasteCandidate ? (pathPasteCandidate.isDir ? 2 : 1) : 0) +
+      (pathPasteCandidate ? (pathPasteCandidate.isDir ? 4 : 3) : 0) +
       (calcResult !== null ? 1 : 0) +
       (urlConvertResult !== null ? 1 : 0) +
       results.length;
@@ -2400,9 +2490,11 @@ export function useSearch(
     pinnedExistence,
     isPinned,
     togglePin,
+    togglePinFromPaste,
     reorderPinned,
     isFavorited,
     toggleFavorite,
+    toggleFavoriteFromPaste,
     favoriteDialogTarget,
     closeFavoriteDialog,
     confirmFavoriteDialog,

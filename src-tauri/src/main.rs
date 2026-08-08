@@ -615,6 +615,13 @@ fn show_toast(app: &AppHandle, message: &str) {
         .show();
 }
 
+/// パス貼り付け候補の既存データ操作（ピン止め・お気に入り）完了後に、フロントエンド
+/// から成功通知を表示するための薄いコマンド。保存成功の後にだけ呼び出す。
+#[tauri::command]
+fn show_path_paste_toast(app: AppHandle, message: String) {
+    show_toast(&app, &message);
+}
+
 /// パス貼り付けによる検索フォルダ管理：検索ボックスへの貼り付けイベント発生時に呼ぶ。
 /// クリップボードに `CF_HDROP` が存在し、かつパスが単一の場合のみそのパス文字列を
 /// 返す（呼び出し側はこれをそのまま検索ボックスへ流し込む）。`appSettings.pathPasteEnabled`
@@ -2710,6 +2717,7 @@ fn main() {
             judge_pasted_path,
             add_search_folder_from_paste,
             create_shortcut,
+            show_path_paste_toast,
             set_pin_enabled,
             get_favorites,
             set_favorites,

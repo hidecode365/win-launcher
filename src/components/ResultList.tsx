@@ -6,6 +6,8 @@ import { Tooltip } from "./Tooltip";
 import { SelectableRow } from "./SelectableRow";
 import {
   WarningIcon,
+  PinIcon,
+  FavoriteIcon,
   PinToggleButton,
   FavoriteToggleButton,
 } from "./ToggleIcons";
@@ -55,6 +57,8 @@ export function ResultList({
   onSelectRowByKey,
   onAddSearchFolder,
   onStartShortcutWizard,
+  onTogglePinFromPaste,
+  onToggleFavoriteFromPaste,
   onCopyResult,
   onSelectPrefixCommand,
   onLaunchFile,
@@ -89,6 +93,8 @@ export function ResultList({
   onSelectRowByKey: (key: string, clientX: number, clientY: number) => void;
   onAddSearchFolder: () => void;
   onStartShortcutWizard: () => void;
+  onTogglePinFromPaste: () => void;
+  onToggleFavoriteFromPaste: () => void;
   onCopyResult: (text: string) => void;
   onSelectPrefixCommand: (cmd: PrefixCommand) => void;
   onLaunchFile: (path: string) => void;
@@ -385,6 +391,50 @@ export function ResultList({
                       </div>
                     </div>
                   </div>
+                );
+              }
+              case "pathPastePin": {
+                const { candidate, pinned } = row;
+                return (
+                  <SelectableRow
+                    key={row.key}
+                    index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={onTogglePinFromPaste}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+                  >
+                    <span className={`w-4 h-4 mr-3 flex-shrink-0 ${isSelected ? "text-white" : "text-blue-500"}`}>
+                      <PinIcon filled={pinned} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{pinned ? "ピン止めから削除" : "ピン止めする"}: {candidate.name}</div>
+                      <div className={`text-xs truncate ${isSelected ? "text-blue-100" : "text-gray-400"}`}>Enter で{pinned ? "解除" : "ピン止め"}</div>
+                    </div>
+                  </SelectableRow>
+                );
+              }
+              case "pathPasteFavorite": {
+                const { candidate, favorited } = row;
+                return (
+                  <SelectableRow
+                    key={row.key}
+                    index={index}
+                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                      isSelected ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={onToggleFavoriteFromPaste}
+                    onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
+                  >
+                    <span className={`w-4 h-4 mr-3 flex-shrink-0 ${isSelected ? "text-white" : "text-blue-500"}`}>
+                      <FavoriteIcon filled={favorited} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{favorited ? "お気に入りから削除" : "お気に入りに追加"}: {candidate.name}</div>
+                      <div className={`text-xs truncate ${isSelected ? "text-blue-100" : "text-gray-400"}`}>Enter で{favorited ? "解除" : "登録"}</div>
+                    </div>
+                  </SelectableRow>
                 );
               }
               case "calc": {

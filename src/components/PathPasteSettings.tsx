@@ -10,7 +10,7 @@ export function PathPasteSettings({
   return (
     <FeatureToggle
       label="パス貼り付けによる検索フォルダ管理"
-      description="ファイル/フォルダをコピーした状態で検索ボックスに貼り付けると、検索フォルダへの追加やショートカットの配置ができます。"
+      description="ファイル/フォルダをコピーした状態で検索ボックスに貼り付けると、検索フォルダへの追加・ショートカットの配置・ピン止め・お気に入り登録ができます。"
       checked={enabled}
       onChange={onToggle}
     />
