@@ -15,17 +15,19 @@
   - `TAURI_SIGNING_PRIVATE_KEY`（鍵ファイルの中身、またはファイルパスそのものでも可。tauri-cli が両対応）
   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（鍵生成時に設定したパスワード）
   - **これらの値は AD が代わりに入力・保持・出力してはならない。** 未設定の場合はユーザーに設定を依頼し、AD 自身は値を尋ねない・推測しない
+  - 鍵ファイルのパスを指定する場合は、リポジトリ直下から解決した実在パスであることを、値を表示せずに `Test-Path` で確認する。作業ツリーの階層をまたぐ絶対パスを手入力・再利用しない。設定例: `$env:TAURI_SIGNING_PRIVATE_KEY = (Resolve-Path .\src-tauri\keys\win-launcher-updater.key).Path`
 - `tauri.conf.json` の `bundle.createUpdaterArtifacts: true` が設定済みであること（NSIS インストーラー本体 `.exe` に対して updater 用の署名 `.exe.sig` を直接生成するため。現行の `@tauri-apps/cli` v2 は Windows 向けに zip ラッピングを行わない）
 
 ## リリース手順（7ステップ）
 
 1. **バージョン bump**：`package.json` と `src-tauri/tauri.conf.json` の `version` を新バージョンへ手動更新する
-2. **署名付きビルド**：上記の環境変数がセットされた状態で `npm run tauri build` を実行する。失敗したら中断し、原因（署名鍵未設定、ビルドエラー等）を報告する
+2. **リリースノート更新**：`last-release-notes.md` を今回のリリース内容に更新する。後続の `latest.json` はこの内容を読むため、ビルド完了後まで遅らせない
+3. **署名付きビルド**：上記の環境変数がセットされた状態で `npm run tauri build` を実行する。初回のRustリリースビルドは数分かかり得るため、実行時間を少なくとも10分確保する。失敗したら中断し、原因（署名鍵未設定、ビルドエラー等）を報告する
    - 成功すると NSIS インストーラー本体（`*_x64-setup.exe`）と署名ファイル（`*_x64-setup.exe.sig`）が `src-tauri/target/release/bundle/nsis/` に生成される（MSI 側にも `*_x64_en-US.msi` / `*_x64_en-US.msi.sig` が生成される）
-3. **latest.json 生成**：`npm run generate:latest-json`（`./scripts/generate-latest-json.ps1` の npm エイリアス）を実行し、`src-tauri/target/release/bundle/latest.json` を生成する
+   - Codex の通常サンドボックスで WiX の ICE 検査が Windows Installer サービスへアクセスできず失敗した場合は、コード・鍵の問題と断定しない。サービス状態を確認したうえで、Windows Installer API にアクセスできる承認済み環境で同一ビルドを1回だけ再試行する
+4. **latest.json 生成**：`npm run generate:latest-json`（`./scripts/generate-latest-json.ps1` の npm エイリアス）を実行し、`src-tauri/target/release/bundle/latest.json` を生成する
    - `tauri.conf.json` の `version` と `last-release-notes.md` の内容を読み取り、`nsis`（無ければ `msi`）ディレクトリ配下の `*.exe.sig`（無ければ `*.msi.sig`）から署名とダウンロード URL（`https://github.com/hidecode365/win-launcher/releases/download/v{version}/{アーティファクト名}`）を組み立てる
    - 該当する `.sig` が見つからない場合はエラーで停止する（署名鍵の未設定・`createUpdaterArtifacts` の設定漏れの早期検知）
-4. **リリースノート更新**：`last-release-notes.md` を今回のリリース内容に更新する
 5. **git commit / tag / push**：`git commit` → `git push` → `git tag vX.Y.Z` → `git push --tags`
 6. **GitHub Release 作成**：`gh release create vX.Y.Z --title "..." --notes-file last-release-notes.md`
 7. **アセットアップロード**：`gh release upload vX.Y.Z` で以下の **5つ** をすべて添付する（署名文字列自体は `latest.json` に埋め込み済みのため、updater は `*.sig` ファイルを別途ダウンロードしない。`.sig` の添付は他アセットとの一貫性・参照用）
