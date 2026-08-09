@@ -2,7 +2,7 @@
 
 対象コード: `src-tauri/src/path_paste.rs`（`read_pasted_hdrop_path`／`judge_pasted_path`／`write_shortcut_file`）、`src/hooks/useSearch.ts`（`detectPastedPath`／`wizardStep`）、`src/components/PathPasteWizard.tsx`。
 
-Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2・フォルダ/ファイル両方）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・`external-design/01-screen-transitions.md#mode-coexistence-table`を参照。
+Explorer でファイル/フォルダをコピー（Ctrl+C）した状態で検索ボックスに貼り付ける（Ctrl+V）と、数式計算・URLエンコード/デコードと同じ「暗黙判定」方式で、検索フォルダへの追加（機能1・フォルダ限定）／検索フォルダへのショートカット配置（機能2）／ピン止め（機能3）／お気に入り登録・解除（機能4）を行える。詳細な表示順序・共存/排他関係は REQUIREMENTS.md の同名節・`external-design/01-screen-transitions.md#mode-coexistence-table`を参照。
 
 ## 現在の設計
 
@@ -55,19 +55,39 @@ Escape は `wizardBack()` でステップを1つ戻す（名前編集→フォ�
 - 同名の `.lnk` が既に存在する場合は Explorer 標準の挙動に倣い「名前 (2)」のように連番を付与する（`path_paste::unique_lnk_name`。上書きしない）
 - 保存成功時、トースト通知「ショートカットを配置しました: `<名前>`」を表示する
 
+<a id="paste-action-rows"></a>
+
+### 機能3・4: ピン止め・お気に入り候補行（`ResultRow`）
+
+機能3・4の候補行は、機能1・2と同じ通常モードの `rows` に `pathPastePin`／`pathPasteFavorite` として追加する。`pathPasteWizardMode` の選択一覧へ混在させず、通常モードと同じintentベースの選択導出に乗せる。
+
+- 対象はフォルダ・ファイルの両方。ピン止め済み／お気に入り登録済みの判定は既存の `isPinned`／`isFavorited` をパス文字列に対して使い、候補文言と `filled` 状態を導出する
+- `ResultList.tsx` は候補行にも `SelectableRow` を使う。個別の選択stateや候補件数オフセットを追加しない
+- 先頭アイコンは独自の文字やSVGを作らず、通常の結果行と同じ `PinIcon`／`FavoriteIcon` を再利用する。未登録時は輪郭、登録済み時は塗りつぶしとし、状態を色だけで表現しない
+
+<a id="paste-action-close-order"></a>
+
+### 貼り付け候補確定時の非表示後書き込み
+
+貼り付け候補は1回の貼り付けにつき1操作を選び切る入口であるため、機能1〜4の確定はすべて `closeWindow()` を経由する。書き込みの `invoke(...)` は `closeWindow()` の `cleanup` 内で開始し、`hideWindow()` の解決より先に発火させない。
+
+- 機能1の検索フォルダ追加、機能2の `.lnk` 作成、機能3のピン止めトグル、機能4の登録済み項目の解除はいずれもこの順序に統一する。成功時のトーストも保存成功後に表示する
+- 機能4の未登録項目は既存の登録ダイアログを開く。Escapeではダイアログだけを閉じて候補表示へ戻り、保存を確定した場合のみ非表示後に `add_favorite` を開始する
+- 機能2のフォルダ選択・名前編集だけは短時間の閉じたウィザードであり、表示中に非同期の一覧差し替えを行わない。そのため `pathPasteWizardMode` は生インデックス選択を維持する
+
 <a id="toast-notification"></a>
 
 ### トースト通知（Rust、`show_toast` 関数）
 
 Windows のトースト通知には `tauri-plugin-notification`（Tauri 公式プラグイン）を使う。サーバーレス・無料方針に合致し、`AppHandle` の `NotificationExt` トレイト経由でアプリ内から直接呼び出せるため、外部サービス連携や追加のランタイム依存なしに導入できる標準的な選択肢として採用した。
 
-`show_toast(app, message)` が `app.notification().builder().title("WinLauncher").body(message).show()` を呼ぶだけの薄いヘルパー。失敗（通知権限なし等）は無視する（トーストはあくまで補助的なフィードバックであり、失敗してもフォルダ追加・ショートカット作成自体は成功しているため）。`capabilities/default.json` に `notification:default` permission が必要。
+`show_toast(app, message)` が `app.notification().builder().title("WinLauncher").body(message).show()` を呼ぶだけの薄いヘルパー。検索フォルダ追加・ショートカット作成は各Rustコマンドから、ピン止め・お気に入りは保存成功後にフロントエンドが `show_path_paste_toast` コマンドを呼んで通知する。失敗（通知権限なし等）は無視する（トーストはあくまで補助的なフィードバックであり、失敗しても操作自体は成功しているため）。`capabilities/default.json` に `notification:default` permission が必要。
 
 <a id="path-paste-candidate-and-recent-mode"></a>
 
 ### `pathPasteCandidate` と `recentMode` の関係（検証済み・追加対応不要）
 
-`useSearch.ts` のメイン検索effect内の `recentMode` 分岐は `clipboardMode`／`prefixCommandMode` の各分岐と同様に `setPathPasteCandidate(null)` を呼んでおり、`/recent` へ切り替わる際に `pathPasteCandidate` が残り続けることはない。`pathPasteWizardMode` の分岐のみ、ウィザード中に機能1/機能2のアクションが `pathPasteCandidate` を引き続き参照する必要があるため、意図的にクリアしていない（この1点のみが例外である旨は当該分岐のコメントに明記済み）。
+`useSearch.ts` のメイン検索effect内の `recentMode` 分岐は `clipboardMode`／`prefixCommandMode` の各分岐と同様に `setPathPasteCandidate(null)` を呼んでおり、`/recent` へ切り替わる際に `pathPasteCandidate` が残り続けることはない。`pathPasteWizardMode` の分岐のみ、ウィザード中の機能2（ショートカット作成）が `pathPasteCandidate` を引き続き参照する必要があるため、意図的にクリアしていない（この1点のみが例外である旨は当該分岐のコメントに明記済み）。
 
 ## 経緯
 

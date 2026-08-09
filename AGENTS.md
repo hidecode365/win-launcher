@@ -57,7 +57,7 @@ MGからの指示・報告のやり取りは、このリポジトリ内ではな
   - `REQUIREMENTS.md`「設定画面」節の該当タブの記述
   - `CLAUDE.md`／`docs/internal-design/*.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/internal-design/*.md` にその部分だけを追記する）
 - **CLAUDE.md・docs/internal-design/*.md には「どう作られているか」を書き、「何ができるか」は `requirements/REQUIREMENTS.md` に書く。** PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義）は `external-design/*.md` に書く。3層のどこに書くべきかは「ドキュメント構成（3層）」節の表に従い、複数の層に同じ内容を書かない
-- **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`CLAUDE.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/internal-design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/internal-design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
+- **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`AGENTS.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/internal-design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/internal-design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
   - アンカーIDは見出し文言の自動スラッグ化に頼らず、見出し直前に `<a id="...">` を明示的に振る（英語kebab-case）。見出しの日本語文言をリネームしてもアンカーIDは変えない（アンカーIDと見出し文言は独立して管理する）
   - `docs/internal-design/*.md` 側でアンカーIDを変更・削除した場合、`CLAUDE.md` 側の対応するポインタを同時に更新する（放置すると壊れたリンクが残る）
   - ダイジェスト側の箇条書きの順序は、対応する detail doc 内のアンカー出現順と一致させる（両ファイルの構造的な対応関係を保ち、片方だけ並び替えて食い違う事故を防ぐため）
@@ -217,7 +217,7 @@ win-launcher/
 | `tauri-plugin-clipboard-manager` | 計算結果のクリップボードコピー（Rust コマンド経由）。クリップボード履歴機能ではフロントエンドが JS パッケージ `@tauri-apps/plugin-clipboard-manager` で直接 `readText`/`readImage`/`writeImage` を呼ぶ |
 | `tauri-plugin-process` | アプリケーションの再起動（`relaunch`） |
 | `tauri-plugin-updater` | 自動アップデート（GitHub Releases + `latest.json` の確認・ダウンロード・インストール） |
-| `tauri-plugin-notification` | パス貼り付けによる検索フォルダ管理（検索フォルダ追加・ショートカット配置）完了時の Windows トースト通知 |
+| `tauri-plugin-notification` | パス貼り付け候補の操作（検索フォルダ追加・ショートカット配置・ピン止め・お気に入り）完了時の Windows トースト通知 |
 | `tauri` (tray-icon feature) | システムトレイ常駐 |
 
 プラグインの選定理由の詳細は [dependencies.md](docs/internal-design/dependencies.md#plugin-list-rationale) を参照。
@@ -336,6 +336,8 @@ win-launcher/
 → 詳細: [path-paste.md](docs/internal-design/path-paste.md)
 
 - OSのクリップボードから実ファイルパス（CF_HDROP）を読む必要が生じた場合、WebView2の `clipboardData` 経由では取得できないことを前提に、Rust側で直接クリップボードを読み直す設計にする。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-detection)
+- パス貼り付け候補に新しい操作を追加する場合は、通常モードの `ResultRow` に行種別として統合し、独立した選択state・オフセット計算・別のアイコンアセットを新設しない。候補の状態アイコンは既存の `PinIcon`／`FavoriteIcon` 等を再利用し、輪郭／塗りつぶしで状態を表す。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-action-rows)
+- パス貼り付け候補で1操作を確定する経路は、`closeWindow()` の `cleanup` 内で非同期書き込みを開始する。候補表示とは別ドメインの `pathPasteWizardMode` は、表示中に非同期一覧差し替えを行わない限り生インデックス選択を維持する。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-action-close-order)
 - 複数ステップのウィザード形式インタラクションを追加する場合、キー操作は window レベルのリスナーに一本化し、個別ステップのローカル `onKeyDown` を併存させない（二重ハンドラによるリグレッションの再発を防ぐため）。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#wizard-keydown-unification-history)
 - Windowsのファイルシステム／シェル関連の機能でサードパーティクレートに不具合が疑われた場合、まず本プロジェクトが一貫して採る「Windows標準API直接呼び出し」への切り替えを検討する。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#mslnk-to-shell-link-history)
 
@@ -419,7 +421,7 @@ win-launcher/
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
-  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード・最近使ったファイル一覧モードの判定もここで行う。パス貼り付けによる検索フォルダ管理（機能1・機能2のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクションを持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している
+  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード・最近使ったファイル一覧モードの判定もここで行う。パス貼り付けによる検索フォルダ管理（機能1〜4のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクションを持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している
     - 選択インデックスの操作を「キーボード操作」と「マウスホバー」で分離しているロジック（ホバー抑制）は [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
     - 非同期呼び出しの世代 ID 管理とフォーカス回復時の再取得は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture) を、ウィンドウを閉じる処理は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design) を参照。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれのポインタ先の規約に従うこと
     - ファイル起動やコピー等でウィンドウを閉じる直前の空クエリへの変化でも `search_files("")` を抑止しない設計の経緯は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#suppress-next-search-ref-removed) を参照
