@@ -697,7 +697,7 @@ fn create_shortcut(
 // 定義する。`children` を持つ入れ子構造ではなく `parentId` を持つフラットな配列
 // （隣接リスト方式）とすることで、既存の `FolderEntry`（folders: FolderEntry[]）と
 // 同じく `Vec<T>` として素直に扱え、Rust側に再帰的な型定義を導入する必要がない
-// （詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
+// （詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照）。
 // 今回実装するのは「ピン止め」のみで、「お気に入り」「メモ」は予約フォルダ（器）のみを
 // 生成し、機能は実装しない。
 
@@ -890,7 +890,7 @@ fn check_paths_exist(paths: Vec<String>) -> Vec<bool> {
 // 入れ子）で整理できる点がピン止め（フラット構造）と異なる。そのため、ある
 // FavoriteNode が「お気に入り」ツリーに属するかどうかは、parentId を1つ辿るだけの
 // ピン止め（`parent_id == PINNED_FOLDER_ID`）とは違い、祖先を再帰的に辿って判定する
-// 必要がある（詳細は REQUIREMENTS.md「お気に入り機能」節を参照）。
+// 必要がある（詳細は 00-requirements.md「お気に入り機能」節を参照）。
 
 static FAVORITE_NODE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -919,7 +919,7 @@ fn is_descendant_of(favorites: &[FavoriteNode], parent_id: &str, ancestor_id: &s
 }
 
 /// 指定したパス文字列が、「お気に入り」ツリー配下に既に登録済みかどうかを判定する。
-/// 実体の同一性ではなく、パス文字列の完全一致で判定する（REQUIREMENTS.md
+/// 実体の同一性ではなく、パス文字列の完全一致で判定する（00-requirements.md
 /// 「お気に入り機能」節「★アイコン」の重複判定基準を参照。ピン止め機能の
 /// 「/recent からのピン止め」節と同様、取得元によってパス文字列が異なれば
 /// 別エントリとして扱うため、実体単位ではなくパス文字列単位で判定する）。
@@ -1104,7 +1104,7 @@ fn rename_favorite_node(
 
 /// フォルダの開閉状態（軸3）の永続化。/favorite ブラウジング・お気に入り編集ビューの
 /// 両方が同じ collapsed フィールドを共有する（別々の開閉状態を持たせない。
-/// REQUIREMENTS.md「フォルダの開閉状態（collapsed）の永続化と絞り込みとの関係」節を
+/// 00-requirements.md「フォルダの開閉状態（collapsed）の永続化と絞り込みとの関係」節を
 /// 参照）。フロント側は現在値をトグルした結果をそのまま渡す（この関数自体は
 /// トグルせず、指定された値をそのまま設定する単純な setter）。folder 型以外の
 /// ノードに対して呼ばれることは無い想定だが、値を設定するだけの安全な操作のため
@@ -2104,7 +2104,7 @@ fn paste_clipboard_image(id: String, cache: tauri::State<ClipboardImageCache>) -
 /// 済みパスを渡し、それ以外（クエリに文字が入力されている場合）は空配列を渡す。
 /// この使い分けにより、クエリが空のときだけピン止めブロックとの重複表示を避け、
 /// クエリ入力中はピン止め済みファイルも通常の関連度順のまま表示される
-/// （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照）。
+/// （00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照）。
 #[tauri::command]
 fn search_files(app: AppHandle, query: String, exclude_paths: Vec<String>) -> Vec<FileEntry> {
     let enabled_dirs: Vec<FolderEntry> = load_folders(&app)

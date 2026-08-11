@@ -23,7 +23,7 @@ export interface FrecencyEntry {
 export type FrecencyMap = Record<string, FrecencyEntry>;
 
 // 拡張子フィルタリングのモード。ホワイトリスト/ブラックリストは排他選択で、
-// 「*」等の全許可を意味する特殊タグは用意しない（詳細は REQUIREMENTS.md
+// 「*」等の全許可を意味する特殊タグは用意しない（詳細は 00-requirements.md
 // 「検索フォルダの詳細設定ダイアログ」節を参照）。
 export type ExtensionFilterMode = "blacklist" | "whitelist";
 
@@ -49,7 +49,7 @@ export interface FolderEntry extends FolderDetailSettings {
 
 // ピン止め・お気に入り・メモの3機能を単一のツリー構造で管理する共通ノード。
 // `children` を持つ入れ子構造ではなく `parentId` を持つフラットな配列（隣接リスト方式）
-// として扱う（詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節、
+// として扱う（詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節、
 // CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。`clipboard`・`command` は
 // 型定義のみで今回は生成・使用しない。
 export type FavoriteNodeType = "folder" | "file" | "clipboard" | "command";
@@ -269,7 +269,7 @@ export type ResultRow =
   | { kind: "file"; key: string; file: FileEntry; pinned: boolean; favorited: boolean };
 
 // `/favorite` モードの一覧の1行分。フォルダ見出し行（folder）とアイテム行（item）の
-// 判別可能 Union（詳細は REQUIREMENTS.md「お気に入り機能」節「/favorite モード」・
+// 判別可能 Union（詳細は 00-requirements.md「お気に入り機能」節「/favorite モード」・
 // useSearch.ts の `favoriteTree` を参照）。
 //
 // `key` は他の行種別と同様、React key・選択の識別子（intent の key）の両方に使う
@@ -279,7 +279,7 @@ export type ResultRow =
 // ↑↓キーによる選択移動・`data-index` によるスクロール追従は、フォルダ見出し行・
 // アイテム行の両方を対象に、この配列（`useSearch.ts` の `favoriteTree`）上の
 // 位置そのものをインデックスとして使う（軸1でアイテム行専用の `itemIndex` 方式から
-// フォルダ見出し行も含む方式へ拡張。詳細は REQUIREMENTS.md「/favorite モード」節を参照）。
+// フォルダ見出し行も含む方式へ拡張。詳細は 00-requirements.md「/favorite モード」節を参照）。
 // `isFirstSibling`/`isLastSibling` は、段階3のドラッグ&ドロップ実装までの暫定的な
 // 「上へ移動」「下へ移動」操作のための判定。同じ parentId を共有する兄弟ノード
 // （order 昇順。横断検索によるフィルタ表示の影響を受けない、実際の全兄弟基準）の

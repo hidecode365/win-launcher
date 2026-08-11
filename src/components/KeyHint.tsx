@@ -1,5 +1,5 @@
 // キー操作ヒントの共通表示部品。「キー表記」を軽いチップとして表示し、直後に
-// 効果の説明文を詰めて並べる（REQUIREMENTS.md「フッター表示規約（全画面共通）」
+// 効果の説明文を詰めて並べる（00-requirements.md「フッター表示規約（全画面共通）」
 // 節を参照）。全画面のフッター（StatusFooter.tsx・FavoriteEditFooter.tsx・
 // SettingsPanel.tsx）で共有する。
 //

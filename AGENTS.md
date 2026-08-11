@@ -9,7 +9,7 @@
 `docs/internal-design/*.md`・`docs/process/ad_app_*.md`内で以下の形式の参照が出てきた場合、実体はこのリポジトリの外、MG側Vault(`../mng/`)にある(MGが正本管理)。パスを持たない論理参照にすることで、将来置き場所が変わっても書き換えが1箇所で済む設計。
 
 - `external-design/ファイル名#アンカー` → `../mng/docs/app/external-design/ファイル名`
-- `requirements/REQUIREMENTS.md#アンカー` → `../mng/docs/app/requirements/REQUIREMENTS.md`
+- `requirements/ファイル名#アンカー` → `../mng/docs/app/requirements/ファイル名`
 - `WORKFLOW.md#アンカー` → `../mng/WORKFLOW.md`
 
 逆に、AD実施要領(`docs/process/ad_app_*.md`)の実体はこのリポジトリの`docs/process/`にある(app側が正本)。
@@ -41,7 +41,7 @@ ADは、担当issueについて次を直接更新してよい。
 
 | 層 | 場所 | 内容 | PO のレビュー | 更新する工程 |
 | --- | --- | --- | --- | --- |
-| 要件定義書 | `requirements/REQUIREMENTS.md` | 「何ができるか」（機能要件・仕様） | **濃厚にレビューする** | 100_要件定義 |
+| 要件定義書 | `requirements/` | 「何ができるか」（機能要件・仕様） | **濃厚にレビューする** | 100_要件定義 |
 | 外部設計書 | `external-design/` | PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義） | **濃厚にレビューする** | 200_設計（PO 承認を得る） |
 | 内部設計書 | [docs/internal-design/](docs/internal-design/) | 「どう作られているか」（実装パターン・コード上の規約・不具合の経緯） | **基本見ない**（MG と AD が責任を持つ） | 500_リリース前作業（実装を踏まえて最新化） |
 
@@ -56,21 +56,21 @@ ADは、担当issueについて次を直接更新してよい。
 
 ## 変更時の同期チェックリスト
 
-コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`REQUIREMENTS.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は `docs/internal-design/settings-panel-architecture.md` の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
+コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`00-requirements.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は `docs/internal-design/settings-panel-architecture.md` の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
 
-- **原則**：コードから読み取れる情報は、原則として `CLAUDE.md`・`REQUIREMENTS.md` に重複して書かない。書く場合は正本を1箇所だけ定め、他の箇所は参照に留める（同じ一覧を2箇所以上に独立して書かない）
-- **表記の正本はコード**（タブラベル等の実際の文字列）であり、`REQUIREMENTS.md` と `CLAUDE.md`／`docs/internal-design/*.md` はそれに従う。表記を変更する場合は、コード・`REQUIREMENTS.md`・該当する `docs/internal-design/*.md` の3つを同時に更新する
+- **原則**：コードから読み取れる情報は、原則として `CLAUDE.md`・`00-requirements.md` に重複して書かない。書く場合は正本を1箇所だけ定め、他の箇所は参照に留める（同じ一覧を2箇所以上に独立して書かない）
+- **表記の正本はコード**（タブラベル等の実際の文字列）であり、`00-requirements.md` と `CLAUDE.md`／`docs/internal-design/*.md` はそれに従う。表記を変更する場合は、コード・`00-requirements.md`・該当する `docs/internal-design/*.md` の3つを同時に更新する
 - **設定画面のタブを追加・削除・改名した場合に更新が必要な箇所**（すべて同時に更新すること）：
   - コード：`SettingsPanel.tsx` の `SettingsTab` 型・`SETTINGS_TABS` 配列・分岐、対応する `XxxSettings.tsx`
-  - `REQUIREMENTS.md`「設定画面」節のカテゴリ一覧
+  - `00-requirements.md`「設定画面」節のカテゴリ一覧
   - `docs/internal-design/settings-panel-architecture.md` のカテゴリナビ一覧（正本1箇所。`#settings-tabs-list` を参照）
   - `CLAUDE.md` のディレクトリ構成図（タブの実体ファイルのみ。共通コンポーネントは対象外。次項を参照）
 - **ディレクトリ構成図は「全体像の把握」用の簡略版であり、網羅性の責任を持たない。** コンポーネントファイルを追加した場合、それがタブの実体でなければ構成図への追記は不要（本文の該当節・`docs/internal-design/*.md` で説明すればよい）。既存の共通コンポーネント（`SettingsIndent.tsx`／`SettingsGroup.tsx`／`SettingsSaveBar.tsx`／`FeatureBlock.tsx`／`FolderDetailSettingsModal.tsx`／`ExtensionFilterEditor.tsx`／`Tooltip.tsx` 等）も同様の理由で構成図には列挙していない
 - **設定項目を追加・変更した場合（タブ自体は増減しない場合）に更新が必要な箇所**：
   - コード：該当する `XxxSettings.tsx`、`AppSettings`（`types.ts`）のフィールド、Rust側の `set_*` コマンド
-  - `REQUIREMENTS.md`「設定画面」節の該当タブの記述
-  - `CLAUDE.md`／`docs/internal-design/*.md` は原則として更新不要（仕様は `REQUIREMENTS.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/internal-design/*.md` にその部分だけを追記する）
-- **CLAUDE.md・docs/internal-design/*.md には「どう作られているか」を書き、「何ができるか」は `requirements/REQUIREMENTS.md` に書く。** PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義）は `external-design/*.md` に書く。3層のどこに書くべきかは「ドキュメント構成（3層）」節の表に従い、複数の層に同じ内容を書かない
+  - `00-requirements.md`「設定画面」節の該当タブの記述
+  - `CLAUDE.md`／`docs/internal-design/*.md` は原則として更新不要（仕様は `00-requirements.md` を参照する構成にしたため。実装上の技術的な注意点・判断根拠が新たに生じた場合のみ、該当する `docs/internal-design/*.md` にその部分だけを追記する）
+- **CLAUDE.md・docs/internal-design/*.md には「どう作られているか」を書き、「何ができるか」は `requirements/00-requirements.md` に書く。** PO 承認を要する設計事項（アーキテクチャ判断・状態遷移・データ構造の定義）は `external-design/*.md` に書く。3層のどこに書くべきかは「ドキュメント構成（3層）」節の表に従い、複数の層に同じ内容を書かない
 - **ダイジェストとdetail docのアンカー同期ルール**（原則ダイジェスト方式を採用したことに伴う新設ルール）：`AGENTS.md`「設計原則ダイジェスト」節の各箇条書きは、対応する `docs/internal-design/*.md` 内の見出しに振った `<a id="kebab-case-english-id"></a>` アンカーへのポインタ（`→ 詳細: [表示名](docs/internal-design/xxx.md#anchor-id)`）を必ず持つ。以下を同時に守ること：
   - アンカーIDは見出し文言の自動スラッグ化に頼らず、見出し直前に `<a id="...">` を明示的に振る（英語kebab-case）。見出しの日本語文言をリネームしてもアンカーIDは変えない（アンカーIDと見出し文言は独立して管理する）
   - `docs/internal-design/*.md` 側でアンカーIDを変更・削除した場合、`CLAUDE.md` 側の対応するポインタを同時に更新する（放置すると壊れたリンクが残る）
@@ -92,7 +92,7 @@ ADは、担当issueについて次を直接更新してよい。
 | GitHub Releases 本文 | 英語 | `gh release create` の本文 |
 | アプリ内更新ダイアログ（latest.json） | 日本語 | last-release-notes.md の内容を反映 |
 | last-release-notes.md | 日本語 | latest.json 用の一時保存ファイル |
-| REQUIREMENTS.md | 日本語 | 仕様書 |
+| 00-requirements.md | 日本語 | 仕様書 |
 | CLAUDE.md／docs/internal-design/*.md | 日本語 | AD向けコンテキストファイル自体 |
 | X（@hidecode365）告知文 | 日本語 | 140字以内 |
 | GitHub Issueテンプレート | 英日併記 | 項目名は英語+日本語併記 |
@@ -278,13 +278,13 @@ win-launcher/
 
 → 詳細: [status-footer.md](docs/internal-design/status-footer.md)
 
-- フッターは「キーボードだけで何ができるかを示す領域」とする規約（正本は REQUIREMENTS.md「フッター表示規約（全画面共通）」節）に従う。新しい画面・モードのフッターを追加・変更する場合、既存画面の現状表示内容は複製せず `docs/internal-design/status-footer.md` の実装マップを参照し、同じ表に追記する。 → 詳細: [status-footer.md](docs/internal-design/status-footer.md#footer-implementation-map)
+- フッターは「キーボードだけで何ができるかを示す領域」とする規約（正本は 00-requirements.md「フッター表示規約（全画面共通）」節）に従う。新しい画面・モードのフッターを追加・変更する場合、既存画面の現状表示内容は複製せず `docs/internal-design/status-footer.md` の実装マップを参照し、同じ表に追記する。 → 詳細: [status-footer.md](docs/internal-design/status-footer.md#footer-implementation-map)
 
 ### 設定画面の共通アーキテクチャ
 
 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md)
 
-- 設定パネルのタブを追加・削除・改名する場合、タブ一覧の正本（`#settings-tabs-list`）を含む全箇所（コード・REQUIREMENTS.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list)
+- 設定パネルのタブを追加・削除・改名する場合、タブ一覧の正本（`#settings-tabs-list`）を含む全箇所（コード・00-requirements.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list)
 - 設定画面のどの箇所にも縦ラインによる区切り（`border-l`）を使わない。階層構造は `SettingsIndent`、グループ見出しは `SettingsGroup` を使う。区切りは `gap` の広さ、または見出し＋横罫線で表現する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#indent-and-group)
 - 新しい設定項目を追加する場合、テキスト・数値・タグ入力は `useSettingsDraft` ＋ `SettingsSaveBar` の一括保存パターンに乗せ、トグル・チェックボックス・ラジオボタンは即時保存のパターンに乗せる。どちらにも当てはまらない独自の保存 UI を新設しない。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#save-model)
 - バリデーションエラーは常にそれを表示するコンポーネント自身のローカル state として持つ。タブより上位のフック（`useSettings`/`useHotkey` 等）にエラー state を持たせない。`set_*` 系フックコールバックは「成功時 `null`、失敗時エラーメッセージ文字列」という `Promise<string | null>` の契約に統一する。 → 詳細: [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#error-state-location)

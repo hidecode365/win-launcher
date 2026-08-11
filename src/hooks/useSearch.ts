@@ -410,7 +410,7 @@ export function useSearch(
 
   // パス貼り付けによる検索フォルダ管理。判定結果（候補行表示）はファイル検索結果と
   // 共存するが、機能2のミニウィザード（フォルダ選択→名前編集）進行中は他の暗黙判定・
-  // ファイル検索と排他になる（詳細は REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節）。
+  // ファイル検索と排他になる（詳細は 00-requirements.md「パス貼り付けによる検索フォルダ管理」節）。
   const [pathPasteCandidate, setPathPasteCandidate] =
     useState<PastedPathInfo | null>(null);
   const [wizardStep, setWizardStep] = useState<PathPasteWizardStep>("idle");
@@ -475,7 +475,7 @@ export function useSearch(
   // ペースト処理にそのまま委ねる）。流し込んだ文字列に対する実在パス判定（クォート
   // 有無を問わない）は、通常のテキスト貼り付け・手入力と全く同じ経路（下記メインの
   // 検索 useEffect が query の変化として検知し、judge_pasted_path を呼ぶ）で行う。
-  // 詳細は REQUIREMENTS.md「パス貼り付けによる検索フォルダ管理」節の
+  // 詳細は 00-requirements.md「パス貼り付けによる検索フォルダ管理」節の
   // 「貼り付け内容の判定方法」を参照。
   const detectPastedPath = useCallback(() => {
     invoke<string | null>("read_pasted_hdrop_path")
@@ -722,7 +722,7 @@ export function useSearch(
     !favoriteMode;
 
   // ピン止め・お気に入り・メモの生ノード配列（隣接リスト方式。詳細は
-  // REQUIREMENTS.md/CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
+  // 00-requirements.md/CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
   // frecency と同様、useCallback の古いクロージャに残った state を参照してしまうのを
   // 避けるため useRef の鏡（favoritesRef）を併用する。アプリ起動時に一度だけ取得する
   // （frecency のように App.tsx 経由の Store ではなく、Rust コマンド経由で直接取得する。
@@ -761,7 +761,7 @@ export function useSearch(
   // IPC 呼び出しを行わない）だが、お気に入りは「お気に入り」予約フォルダ配下に
   // ツリー構造で整理できるため、直接の parentId 比較ではなく isDescendantOfFolder で
   // 祖先を辿って判定する。重複の判定基準はパス文字列の完全一致（実体の同一性では
-  // ない。REQUIREMENTS.md「お気に入り機能」節「★アイコン」を参照）。
+  // ない。00-requirements.md「お気に入り機能」節「★アイコン」を参照）。
   const favoritePathSet = useMemo(() => {
     const set = new Set<string>();
     for (const f of favorites) {
@@ -819,7 +819,7 @@ export function useSearch(
 
   // ピン止めブロックのデータ（アイコン付きファイル一覧）と実体有無を取得する。
   // get_pinned_files → check_paths_exist の順に呼び、両方の結果を同一の世代 ID
-  // （"pinned" キー）で保護する。存在確認のタイミングは REQUIREMENTS.md
+  // （"pinned" キー）で保護する。存在確認のタイミングは 00-requirements.md
   // 「ピン止め・お気に入り・メモ機能」節の通り、ブロック表示時とフォーカス復帰時の
   // 2箇所（このコールバックがその両方から呼ばれる。呼び出し箇所は下記2つの useEffect
   // を参照）。
@@ -864,7 +864,7 @@ export function useSearch(
   // お気に入り編集ビュー専用の絞り込み文字列（軸4g）。/favorite ブラウジング側の
   // favoriteFilterText はメイン検索ボックスの query から導出される値だが、編集
   // ビューは常時表示の専用検索ボックスを持つため、それとは独立した state として
-  // 持つ（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  // 持つ（00-requirements.md「お気に入り編集ビュー」節を参照）。
   const [favoriteEditFilterText, setFavoriteEditFilterText] = useState("");
 
   const fetchFavoriteNodes = useCallback(
@@ -903,7 +903,7 @@ export function useSearch(
   // フォルダの開閉状態（軸3）は FavoriteNode.collapsed としてRust側へ永続化し、
   // /favorite ブラウジング・お気に入り編集ビューの両方でそのまま共有する
   // （クライアント専用の Set 状態は廃止した。別々の開閉状態は持たせない。
-  // REQUIREMENTS.md「フォルダの開閉状態（collapsed）の永続化と絞り込みとの関係」節を
+  // 00-requirements.md「フォルダの開閉状態（collapsed）の永続化と絞り込みとの関係」節を
   // 参照）。
   const setFavoriteFolderCollapsed = useCallback(
     (folderId: string, collapsed: boolean) => {
@@ -939,7 +939,7 @@ export function useSearch(
   // 1文字以上入力されている間は無効化する（no-op）。絞り込みでヒットしたフォルダは
   // favoriteTree 側で表示上強制展開されるだけで永続化された collapsed は書き換わら
   // ないため、絞り込み中に操作を許すと「見えている状態」と「実際に保存される状態」が
-  // 食い違ってしまうため（REQUIREMENTS.md同節を参照）。
+  // 食い違ってしまうため（00-requirements.md同節を参照）。
   const toggleFavoriteFolderCollapsed = useCallback(
     (folderId: string) => {
       if ((favoriteFilterText ?? "").length > 0) return;
@@ -1038,7 +1038,7 @@ export function useSearch(
   }, [recentMode, recentFilterText, rawRecentFiles]);
 
   // /favorite モードの表示用ツリー（フォルダ見出し行＋アイテム行のフラット配列）。
-  // REQUIREMENTS.md「お気に入り機能」節「/favorite モード」の仕様：
+  // 00-requirements.md「お気に入り機能」節「/favorite モード」の仕様：
   // - 表示構造はフラットな一覧にフォルダ見出し行を挟む形。フォルダ配下のアイテム行は
   //   見出し行より1段インデントする（`depth` で表現）
   // - 横断検索（`favoriteFilterText` が非空）の間は、表示名にヒットする file 型
@@ -1047,7 +1047,7 @@ export function useSearch(
   // - 横断検索中は、手動での折りたたみ状態を無視して常に展開する。折りたたみは
   //   「ブラウズ中に隠す」ための操作であり、検索は逆に「畳んだフォルダの中身も
   //   含めて見つける」ことが目的のため、両者が競合する場合は検索を優先する
-  //   （REQUIREMENTS.mdに明記はないが、横断検索の目的に照らした判断。詳細は
+  //   （00-requirements.mdに明記はないが、横断検索の目的に照らした判断。詳細は
   //   実装時の報告を参照）
   // - 検索していない場合（`favoriteFilterText` が空文字）は、空のフォルダ（配下に
   //   アイテムが1件もない）も見出し行として表示する
@@ -1336,7 +1336,7 @@ export function useSearch(
   // たび無条件に intent を top へ戻す」effect は撤去した。これは D-2 の対象
   // 範囲（通常モード＋clipboardMode）に含まれず、旧設計の残骸として見落と
   // されていたもの（詳細は CLAUDE.md「選択状態の維持」節の D-3 を参照）。
-  // REQUIREMENTS.md に「フォーカス復帰のたびに選択をリセットする」という
+  // 00-requirements.md に「フォーカス復帰のたびに選択をリセットする」という
   // 仕様は存在せず、通常のファイル検索・clipboardMode・ピン止めブロックは
   // いずれもフォーカス復帰時に intent を変えず、resolveSelected が同じキーを
   // rows/clipboardSelectionItems 上で探し直すだけで選択を維持している。
@@ -1572,7 +1572,7 @@ export function useSearch(
         // pinnedVisible が false の場合（検索ボックスに文字が入力されている通常の
         // ファイル検索結果、または /recent モードなど）は、ピン止めブロック自体が
         // 表示されないため行は移動せず、これまで通り "file:<path>" kind の行の
-        // ままその場に留まる（REQUIREMENTS.md「検索ボックスに文字が入力されている
+        // ままその場に留まる（00-requirements.md「検索ボックスに文字が入力されている
         // ときの表示」「/recent からのピン止め」を参照）。/recent 専用の分岐を
         // 個別に設けず、既存の pinnedVisible をそのまま再利用することで、通常検索・
         // /recent のどちらで「ピン止めブロックが見えない状態でのピン止め」が
@@ -1642,7 +1642,7 @@ export function useSearch(
 
   // お気に入りの登録・解除。ピン止め（togglePin）とは異なり、favorites 配列全量を
   // フロントエンドで組み立てて set_favorites に渡す方式ではなく、専用の Rust コマンド
-  // （add_favorite/remove_favorite/add_favorite_folder）を呼ぶ（REQUIREMENTS.md
+  // （add_favorite/remove_favorite/add_favorite_folder）を呼ぶ（00-requirements.md
   // 「お気に入り機能」節の指示通り、追加・削除をそれぞれ独立したコマンドとして実装
   // したため）。いずれも更新後の favorites 全量を返すので、戻り値をそのまま
   // favoritesRef/favorites の新しい真実として反映する（togglePin と同じ反映方法。
@@ -1659,7 +1659,7 @@ export function useSearch(
   // パス貼り付け候補から開いた登録ダイアログだけは、保存後にウィンドウを閉じる。
   const [favoriteDialogFromPathPaste, setFavoriteDialogFromPathPaste] = useState(false);
   // 「前回この操作で使用したフォルダ」の記憶。settings.json への永続化は不要
-  // （REQUIREMENTS.md「登録ダイアログ」節の指示通り、アプリ内の一時状態でよい）ため
+  // （00-requirements.md「登録ダイアログ」節の指示通り、アプリ内の一時状態でよい）ため
   // useRef で保持するのみ。再レンダリングのトリガーが不要な値のため useState にしない。
   const lastFavoriteFolderIdRef = useRef<string>(FAVORITES_FOLDER_ID);
 
@@ -1984,7 +1984,7 @@ export function useSearch(
   // 登録ダイアログの「保存先フォルダ」プルダウンの選択肢。予約フォルダ「お気に入り」
   // 自身（ルート）＋その配下の folder 型ノードをすべてフラット化し、階層はインデント
   // （全角スペース）と「└ 」の接頭辞で表現する（ツリー階層表示ではなくフラットな
-  // 一覧で構わない、という REQUIREMENTS.md「登録ダイアログ」節の指示に従う）。
+  // 一覧で構わない、という 00-requirements.md「登録ダイアログ」節の指示に従う）。
   // 循環参照は現状発生し得ないが、isDescendantOfFolder と同様に探索深さの上限を
   // 設けて防御的に打ち切る。
   const favoriteFolderOptions = useMemo(() => {

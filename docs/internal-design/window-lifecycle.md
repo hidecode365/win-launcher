@@ -26,7 +26,7 @@
 
 - WebView2 はウィンドウ内操作（設定パネルへの切替による DOM 入れ替え、ドラッグ開始など）でも一時的にフォーカス喪失を通知することがあるため、即時 `hide()` はしない
 - フォーカス喪失通知後 150ms 待ち、`isFocused()` で再確認してなお非フォーカスの場合のみ `hide()` する（誤って隠れるのを防ぐデバウンス処理）
-- **設定画面表示中はこの自動非表示を適用しない**（詳細は REQUIREMENTS.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカス喪失の検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結しているため、Rust 側に状態を持たせたり IPC でフラグを同期したりする必要はなく、フロントエンドの `showSettings` state を判定に使うだけで完結する
+- **設定画面表示中はこの自動非表示を適用しない**（詳細は 00-requirements.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカス喪失の検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結しているため、Rust 側に状態を持たせたり IPC でフラグを同期したりする必要はなく、フロントエンドの `showSettings` state を判定に使うだけで完結する
   - `App.tsx` のフォーカス監視 `useEffect` は依存配列が空（マウント時に一度だけ登録）のため、`showSettings` state を直接クロージャで参照すると初回値（`false`）に固定されてしまう。これを避けるため、毎レンダーで最新の `showSettings` を書き込む `showSettingsRef`（`useRef`）を用意し、150ms のデバウンス後に `hide()` を呼ぶかどうかの判定（`if (stillFocused || showSettingsRef.current) return;`）はこの ref を参照する
   - 設定画面の開閉は `openSettings`/`closeSettings`（いずれも単一の `showSettings` state を更新するだけ）に一本化されており、呼び出し元（歯車アイコンクリック・`Ctrl+S`・`Esc`・設定パネル自身の閉じるボタン）が複数あってもすべてこの2関数を経由する。そのため `showSettingsRef` を見るだけで全ての開閉経路に自動的に追従し、経路ごとに個別のフラグリセット処理を書く必要がない
   - 設定画面を閉じた直後の最初のフォーカスアウトから、通常のフェードアウト・非表示挙動に戻る（`closeSettings` 実行時点で `showSettings` が `false` に更新され、次のレンダーで `showSettingsRef.current` も追従するため、追加のリセット処理は不要）

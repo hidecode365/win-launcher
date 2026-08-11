@@ -35,7 +35,7 @@ const PREFIX_COMMAND_ICON_PATH: Record<PrefixCommand["kind"], string> = {
 
 // ピン止めブロックのドラッグハンドル用に確保する左端の幅。通常のファイル検索結果行にも
 // 同じ幅の空要素を確保し、ピン止めブロックと通常一覧でアイコン・ファイル名の横位置を
-// 揃える（ハンドル自体はピン止めブロックの行にのみ描画する。詳細は REQUIREMENTS.md
+// 揃える（ハンドル自体はピン止めブロックの行にのみ描画する。詳細は 00-requirements.md
 // 「ピン止め・お気に入り・メモ機能」節の「並び替え操作」を参照）。
 const DRAG_HANDLE_GUTTER_CLASS = "w-4 mr-2 flex-shrink-0 text-center";
 

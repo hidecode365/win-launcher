@@ -17,7 +17,7 @@
 **この箇条書きがカテゴリナビ一覧の正本である。** タブを追加・削除・改名した場合、以下すべてを同時に更新すること（詳細は CLAUDE.md「変更時の同期チェックリスト」節を参照）：
 
 - コード：`SettingsPanel.tsx` の `SettingsTab` 型・`SETTINGS_TABS` 配列・分岐、対応する `XxxSettings.tsx`
-- `REQUIREMENTS.md`「設定画面」節のカテゴリ一覧
+- `00-requirements.md`「設定画面」節のカテゴリ一覧
 - この節（正本）
 - CLAUDE.md のディレクトリ構成図（タブの実体ファイルのみ。共通コンポーネントは対象外）
 
@@ -40,7 +40,7 @@
 - `clipboardPaneWidth: number`（詳細は [clipboard-and-ocr.md](clipboard-and-ocr.md) を参照）
 - `favorites: Vec<FavoriteNode>`（詳細は [favorites-data-model.md](favorites-data-model.md) を参照）
 
-各タブに含まれる設定項目・その仕様は REQUIREMENTS.md「設定画面」節の各カテゴリの記述を参照（正本は REQUIREMENTS.md）。ファイル検索タブの検索フォルダパステキストのクリック可能化は、既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶ実装で実現しており、追加の Rust コマンドや権限は不要である。
+各タブに含まれる設定項目・その仕様は 00-requirements.md「設定画面」節の各カテゴリの記述を参照（正本は 00-requirements.md）。ファイル検索タブの検索フォルダパステキストのクリック可能化は、既存の `launch_file` コマンド（`ShellExecuteW` でディレクトリパスを開くと Explorer が起動する）を `invoke` で呼ぶ実装で実現しており、追加の Rust コマンドや権限は不要である。
 
 各 ON/OFF トグル・設定値は Rust コマンド（`set_file_search_enabled` 等）で即時保存し、フロントエンドはレスポンスの `AppSettings` で state を更新する。フロントエンドは `appSettings` をアプリ起動時（マウント時）に `get_app_settings` で取得し、検索 UI 側のモード判定に反映する。OFF の機能は対応する Tauri コマンド自体を呼び出さない・表示しない。
 
@@ -117,7 +117,7 @@
 
 ## 今後の指針
 
-- 設定パネルのタブを追加・削除・改名する場合は、[settings-tabs-list](#settings-tabs-list) を含む全箇所（コード・REQUIREMENTS.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。コードから読み取れる派生情報を、正本以外の箇所に重複して書かない
+- 設定パネルのタブを追加・削除・改名する場合は、[settings-tabs-list](#settings-tabs-list) を含む全箇所（コード・00-requirements.md・CLAUDE.mdディレクトリ構成図）を同時に更新する。コードから読み取れる派生情報を、正本以外の箇所に重複して書かない
 - 新しい設定項目を追加する場合、テキスト・数値・タグ入力は `useSettingsDraft` ＋ `SettingsSaveBar` の一括保存パターンに乗せ、トグル・チェックボックス・ラジオボタンは即時保存のパターンに乗せる。どちらのパターンにも当てはまらない独自の保存 UI を新設しない
 - バリデーションエラーは常にそれを表示するコンポーネント自身のローカル state として持つ。タブより上位のフック（`useSettings`/`useHotkey` 等）にエラー state を持たせない。`set_*` 系フックコールバックは「成功時 `null`、失敗時エラーメッセージ文字列」という `Promise<string | null>` の契約に統一する
 - 設定画面のどの箇所にも縦ラインによる区切り（`border-l`）を使わない。グループ・項目間の区切りは `gap` の広さ、または `SettingsGroup` の見出し＋横罫線で表現する

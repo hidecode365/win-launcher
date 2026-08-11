@@ -16,14 +16,14 @@ import {
   type FavoriteTreeRow,
 } from "../types";
 
-// 仮想行「Top」（REQUIREMENTS.md「お気に入り編集ビュー」節）。実体を持たないため
+// 仮想行「Top」（00-requirements.md「お気に入り編集ビュー」節）。実体を持たないため
 // `node` フィールドを持たない専用の kind として types.ts の FavoriteEditTreeRow で
 // 定義している。他の行と同様 `key` を持つことで、選択状態（intent）・↑↓移動・
 // resolveSelected の対象に一切の特別扱いなしで組み込める。
 const TOP_ROW: FavoriteEditTreeRow = { kind: "top", key: FAVORITE_TOP_ROW_KEY };
 
 // お気に入り編集ビュー専用の選択状態。/favorite ブラウジング側（useSearch.ts）の
-// 選択状態とは独立したドメインとして持つ（REQUIREMENTS.md「お気に入り編集ビュー」
+// 選択状態とは独立したドメインとして持つ（00-requirements.md「お気に入り編集ビュー」
 // 節）。実装方式は useSearch.ts の SelectIntent と同じ「識別子ベースの intent から
 // resolveSelected で毎回導出する」方式に最初から従う（R-1の原則。CLAUDE.md
 // 「選択(selected)は...導出する値であり、書き込み可能なstateではない」を参照）。
@@ -84,7 +84,7 @@ export function useFavoriteEditSelection(
   }, [filterText, resetToTop]);
 
   // ↑↓キーによる選択移動。フォルダ見出し行・アイテム行の両方を対象にする
-  // （軸1で /favorite ブラウジングに実装した内容と同じ設計。REQUIREMENTS.md
+  // （軸1で /favorite ブラウジングに実装した内容と同じ設計。00-requirements.md
   // 「お気に入り編集ビュー」節を参照）。App.tsx の moveSelection と同じく、
   // 現在の resolved 値（selected）をそのまま起点にする。
   const moveSelection = useCallback(

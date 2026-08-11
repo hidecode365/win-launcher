@@ -5,7 +5,7 @@ import { CreateFolderResult, RegisterFolderOption } from "../types";
 // 登録ダイアログ。「表示名」「保存先フォルダ（プルダウン）」「新規フォルダ作成」の
 // 3要素のみを扱う汎用コンポーネントとし、「お気に入り」「メモ」固有の文言・
 // ロジックは一切持たない（呼び出し側が title・folderOptions・保存/フォルダ作成の
-// コールバックを props で与える）。REQUIREMENTS.md「お気に入り機能」節
+// コールバックを props で与える）。00-requirements.md「お気に入り機能」節
 // 「登録ダイアログ」を参照。
 //
 // オーバーレイのスタイルは既存の FolderDetailSettingsModal / SystemCommandModal と

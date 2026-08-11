@@ -2,7 +2,7 @@
 
 対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`enforce_reserved_folders`／`is_descendant_of`／`add_favorite_folder`／`move_favorite_node`／`remove_favorite_folder`）、`src/types.ts`（`FavoriteNode`／`PINNED_FOLDER_ID`）、`src/hooks/useSearch.ts`（ピン止め・お気に入りの state・アクション）、`src/lib/nodeTree.ts`、`src/hooks/useFavoriteEditSelection.ts`（お気に入り編集ビュー専用の選択ドメイン・仮想固定行）。
 
-要件・仕様の詳細は REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節を参照。本ファイルは実装上の設計判断・注意点のみを記す。段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装。
+要件・仕様の詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照。本ファイルは実装上の設計判断・注意点のみを記す。段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装。
 
 アイコンの意匠・視認性・ツールチップは [favorites-ui-iconography.md](favorites-ui-iconography.md) を、選択状態の維持・結果行のDOM構造は [result-list-and-selection.md](result-list-and-selection.md) を参照。
 
@@ -70,7 +70,7 @@
 
 `rows` 構築ロジック自体は元から由来を区別していなかった：`useSearch.ts` の `rows` は `results`（`recentMode` 中は `recentResults` がコピーされたもの）を単純にループして `kind: "file"` の行を組み立てるだけで、ファイルの由来（通常のファイル検索結果か `/recent` か）を一切見ていない。`row.pinned: isPinned(file.path)` も同様に由来を問わず算出される。そのため段階1.5の変更は **`App.tsx` の `pinIconVisible` から `&& !search.recentMode` を削除しただけ**で、`ResultList.tsx`・`useSearch.ts` の `rows` 構築・`togglePin` 本体の分岐追加は不要だった。
 
-**保存するパスの名寄せをしない方針**：`/recent` の行は取得時点で解決済みのローカル実パス（`RecentFile.path`）を持ち、通常のファイル検索結果は検索フォルダ配下の実ファイルパス（ショートカット自体が検索対象になっている場合は `.lnk` のパス）を持つ。`togglePin` は呼び出し元による違いを一切意識せず、常に `file.path` をそのまま `FavoriteNode.value` に保存する。結果として同一の実体ファイルを指していても `/recent` 由来と通常検索由来とでパス文字列が異なれば別エントリとして登録される。これは意図した仕様であり（REQUIREMENTS.md「/recent からのピン止め」節を参照）、名寄せ・正規化のロジックは実装しない。
+**保存するパスの名寄せをしない方針**：`/recent` の行は取得時点で解決済みのローカル実パス（`RecentFile.path`）を持ち、通常のファイル検索結果は検索フォルダ配下の実ファイルパス（ショートカット自体が検索対象になっている場合は `.lnk` のパス）を持つ。`togglePin` は呼び出し元による違いを一切意識せず、常に `file.path` をそのまま `FavoriteNode.value` に保存する。結果として同一の実体ファイルを指していても `/recent` 由来と通常検索由来とでパス文字列が異なれば別エントリとして登録される。これは意図した仕様であり（00-requirements.md「/recent からのピン止め」節を参照）、名寄せ・正規化のロジックは実装しない。
 
 **今後の指針**：`/recent` に対して★（お気に入り）・ノート（メモ）等の同種の行アクションを追加する場合も、`rows` 構築ロジック・行アクションのハンドラ側では `recentMode` を理由にした除外分岐を新設しないこと。表示可否を切り替える必要がある場合は、既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を機械的に再利用し、`recentMode` 単体を条件式に個別に書き足さない。
 

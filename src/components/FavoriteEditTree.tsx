@@ -222,7 +222,7 @@ function CreateFolderInlineRow({
 }
 
 // ドラッグハンドル（⋮⋮）。ResultList.tsx のピン止めブロックと同じ見た目・
-// Tooltip文言を踏襲する（REQUIREMENTS.md「お気に入り編集ビュー」節「ドラッグハンドル
+// Tooltip文言を踏襲する（00-requirements.md「お気に入り編集ビュー」節「ドラッグハンドル
 // は、編集ビュー内の全行に常時表示する（ピン止めブロックのドラッグハンドルと同じ
 // 扱い）」を参照）。実際の `draggable` 属性は行全体に付与しており、このハンドルは
 // 視覚的な目印（掴める場所を示す）の役割のみを持つ（ピン止めブロックと同じ設計）。
@@ -379,7 +379,7 @@ function computeMoveTarget(
 // ファイルアイコン・削除アイコン）は FavoriteTreeVisuals.tsx を共有する。
 //
 // FavoriteListPanel.tsx との違い：「上へ/下へ移動」ボタンは表示しない（4eでD&Dに
-// 置き換わったため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。削除アイコン・
+// 置き換わったため。00-requirements.md「お気に入り編集ビュー」節を参照）。削除アイコン・
 // フォルダ作成アイコンは選択中の行にのみ表示する。★解除アイコンはアイテム行のみに
 // 表示する（フォルダ見出し行・Top行には持たせない）。
 // アイテム行はクリック／Enterのいずれでもファイルを起動しない（このビューは
@@ -435,14 +435,14 @@ export function FavoriteEditTree({
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
   // 軸4g：絞り込み中（filterText 非空）は並び替え・再親化のD&Dを無効化する
-  // （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。キー操作側の無効化は
+  // （00-requirements.md「お気に入り編集ビュー」節を参照）。キー操作側の無効化は
   // App.tsx（moveFavoriteNodeWithinParent/indentFavoriteNode/outdentFavoriteNode）
   // で行っているため、ここではD&Dの起点（draggable）だけを無効化すればよい。
   filtering: boolean;
   onRequestDeleteFolder: (folderId: string, name: string) => void;
   // ★解除（アイテム行のみ）。この一覧内の項目はすべて登録済みのため常に
   // 塗りつぶし表示・即座に解除する（確認なし。/favorite モードでの★アイコンと
-  // 同じ挙動。REQUIREMENTS.md「/favorite モードでの★アイコン」節を参照）。
+  // 同じ挙動。00-requirements.md「/favorite モードでの★アイコン」節を参照）。
   onToggleFavorite: (file: FileEntry) => void;
   // ドラッグ&ドロップによる並び替え・再親化（4e）。エラー時（重複名・循環参照等）は
   // メッセージ文字列を受け取り、ツリー上部に数秒間だけ表示するインライン警告

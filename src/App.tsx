@@ -50,7 +50,7 @@ const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 // 「検索」「設定」「お気に入り編集」の3枚の全画面ビュー（軸4a）。二択の boolean
 // swap（旧 showSettings）では3枚目のビューを表現できないため enum 化した。
 // いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは
-// 作らない（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+// 作らない（00-requirements.md「お気に入り編集ビュー」節を参照）。
 type MainView = "search" | "settings" | "favoriteEdit";
 
 export default function App() {
@@ -93,7 +93,7 @@ export default function App() {
   const hotkey = useHotkey(settings.setAppSettings);
   const search = useSearch(settings.appSettings, settingsVersion, storeRef);
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
-  // ドメイン。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。データソースは
+  // ドメイン。00-requirements.md「お気に入り編集ビュー」節を参照）。データソースは
   // search.favoriteTree をそのまま共有する。
   const favoriteEdit = useFavoriteEditSelection(
     search.favoriteEditRawTree,
@@ -201,7 +201,7 @@ export default function App() {
   //
   // 検索/設定ビューは従来通り "windowSize" キーを共有するが、お気に入り編集
   // ビューは軸4a（骨格）の時点から独立した "favoriteEditWindowSize" キーへ保存する
-  // （REQUIREMENTS.md「お気に入り編集ビュー」節：「設定パネルとは独立した永続化
+  // （00-requirements.md「お気に入り編集ビュー」節：「設定パネルとは独立した永続化
   // キーを持たせる」。段階5でメモ本文編集を同じビューに追加する際、検索/設定側の
   // サイズと巻き添えで混ざらないようにするための布石）。ビューを開いた時点で
   // このキーの値を読み出してウィンドウへ適用する処理は、編集ビューの中身を実装する
@@ -269,7 +269,7 @@ export default function App() {
   // （FavoriteEditTree.tsx。クリックした行が対象）のいずれからも開始できる。
   // リネームはノードの識別子を変更しないため、選択状態（favoriteEdit）は
   // このstateとは独立して特別な復元処理なしでそのまま維持される
-  // （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。closeFavoriteEdit より
+  // （00-requirements.md「お気に入り編集ビュー」節を参照）。closeFavoriteEdit より
   // 前で宣言する（closeFavoriteEdit がこの state のリセットも兼ねるため）。
   const [renamingFavoriteNodeId, setRenamingFavoriteNodeId] = useState<
     string | null
@@ -323,7 +323,7 @@ export default function App() {
     setRenamingFavoriteNodeId(null);
     setCreatingFolderAnchorKey(null);
     // 軸4h：絞り込み文字列（favoriteEditFilterText）も同じ理由でリセットする。
-    // /favorite ブラウジング側の favoriteFilterText はREQUIREMENTS.mdの明記通り
+    // /favorite ブラウジング側の favoriteFilterText は00-requirements.mdの明記通り
     // 閉じても保持する仕様だが、編集ビュー専用のこの絞り込みは保持する仕様として
     // 明記されていなかった（実装時の独自判断だった）。残したままにすると、
     // 絞り込み文字列が入力された状態で編集ビューを閉じ、後で（別の目的で）再度
@@ -337,7 +337,7 @@ export default function App() {
 
   // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移し、作成中の
   // 入力欄を閉じる（識別子ベースの intent。useFavoriteEditSelection の既存の
-  // 仕組みに乗せる。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  // 仕組みに乗せる。00-requirements.md「お気に入り編集ビュー」節を参照）。
   const handleFavoriteEditFolderCreated = useCallback(
     (folderId: string) => {
       favoriteEdit.selectByKey(favoriteFolderRowKey(folderId));
@@ -367,7 +367,7 @@ export default function App() {
   // requestDeleteFavoriteEditFolder と同じ「呼び出し元が復元コールバックを渡す」
   // 設計に従う。単一アイテムの解除のため、favoriteTree 上で隣接する行（無ければ
   // 前の行）へ選択を引き継ぎ、対象が見つからない場合のみ resetToTop へ
-  // フォールバックする（REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  // フォールバックする（00-requirements.md「お気に入り編集ビュー」節を参照）。
   const toggleFavoriteFromEditView = useCallback(
     (file: FileEntry) => {
       const tree = search.favoriteTree;
@@ -403,7 +403,7 @@ export default function App() {
   // 挿入）。Topは並び替えの対象にならない。
   const moveFavoriteNodeWithinParent = useCallback(
     (direction: 1 | -1) => {
-      // 軸4g：絞り込み中は並び替えを無効化する（REQUIREMENTS.md「お気に入り編集
+      // 軸4g：絞り込み中は並び替えを無効化する（00-requirements.md「お気に入り編集
       // ビュー」節を参照）。
       if (search.favoriteEditFilterText.length > 0) return;
       const row = favoriteEdit.tree[favoriteEdit.selected];
@@ -538,7 +538,7 @@ export default function App() {
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
         // 軸4k：Ctrl+Sは「検索画面表示中に押されたときのみ設定画面を開く」
         // 非対称な動作に変更した（以前はトグルで開閉していた）。設定画面を
-        // 閉じる手段はEscのみに一本化する（REQUIREMENTS.md「キー操作」節を
+        // 閉じる手段はEscのみに一本化する（00-requirements.md「キー操作」節を
         // 参照）。設定画面表示中にCtrl+Sを押しても何も起きないが、preventDefault
         // 自体は常に行う（WebView2既定の「ページを保存」ダイアログを、設定画面
         // 表示中も含めて常に抑止するため）。
@@ -634,7 +634,7 @@ export default function App() {
             // フォルダ見出し行では開閉をトグルする（onToggleCollapse を直接
             // 呼び出し、▼クリックのイベント発火を疑似的に模倣しない）。アイテム行・
             // Top行では何もしない（このビューはファイルを起動する画面ではなく、構造を
-            // 閲覧・整理する画面のため。REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+            // 閲覧・整理する画面のため。00-requirements.md「お気に入り編集ビュー」節を参照）。
             const row = favoriteEdit.tree[favoriteEdit.selected];
             if (row?.kind === "folder") {
               search.toggleFavoriteFolderCollapsedInEdit(row.node.id);
@@ -645,7 +645,7 @@ export default function App() {
             // 選択中の行をインライン編集モードにする（4d：リネーム）。この
             // window リスナー自体が favoriteEditOpen の間だけ生きているため、
             // 「編集ビューにフォーカスがある間のみ有効」という制約は自動的に
-            // 満たされる（グローバルショートカットにはしない。REQUIREMENTS.md
+            // 満たされる（グローバルショートカットにはしない。00-requirements.md
             // 「お気に入り編集ビュー」節を参照）。Top行は実体を持たないため
             // リネーム対象外（row.kind === "top" のときは node を持たないため
             // 何もしない）。
@@ -807,7 +807,7 @@ export default function App() {
   // 行の両方に表示する。/recent は同じ results state・同じ ResultList の "file" kind
   // 行レンダリングを共有しており（recentResults が results へコピーされる）、
   // useSearch.ts の rows 構築ロジックも由来を区別せず row.pinned を埋め込むため、
-  // recentMode による特例分岐はここでは不要（REQUIREMENTS.md「ピン止め・お気に入り・
+  // recentMode による特例分岐はここでは不要（00-requirements.md「ピン止め・お気に入り・
   // メモ機能」節「ピンアイコン」「/recent からのピン止め」を参照）。
   const pinIconVisible = settings.appSettings.pinEnabled;
   // ★アイコンの表示条件。pinIconVisible と同じ考え方（favoriteEnabled が false の
@@ -882,7 +882,7 @@ export default function App() {
       }
       if (search.favoriteMode) {
         // 軸1：フォルダ見出し行・アイテム行の両方を対象に移動する
-        // （REQUIREMENTS.md「/favorite モード」節を参照）。
+        // （00-requirements.md「/favorite モード」節を参照）。
         const row = search.favoriteTree[nextIndex];
         if (row) {
           search.selectRowByKeyboard(row.key);
@@ -948,9 +948,9 @@ export default function App() {
             // アイテム行以外（パス貼り付け候補・計算結果・URLエンコード/デコード
             // 結果・システムコマンド候補・クリップボード履歴・プレフィックスコマンド
             // 候補・Web検索行）はファイルパスを持たないため、該当する場合のみ実行する
-            // （REQUIREMENTS.md「ピン止め・お気に入り・メモ機能」節・
+            // （00-requirements.md「ピン止め・お気に入り・メモ機能」節・
             // 「格納フォルダを開く（Shift+Enter）」節を参照）。フォルダ見出し行では
-            // 無効（何もしない。REQUIREMENTS.md「/favorite モード」節を参照）。
+            // 無効（何もしない。00-requirements.md「/favorite モード」節を参照）。
             if (search.favoriteMode) {
               if (selectedFavoriteRow?.kind === "item") {
                 search.openContainingFolder(selectedFavoriteRow.file.path);
@@ -979,7 +979,7 @@ export default function App() {
             }
           } else if (search.favoriteMode) {
             // フォルダ見出し行では開閉をトグルする（▼クリックのイベント発火を
-            // 疑似的に模倣せず、onToggleCollapse を直接呼ぶ。REQUIREMENTS.md
+            // 疑似的に模倣せず、onToggleCollapse を直接呼ぶ。00-requirements.md
             // 「/favorite モード」節を参照）。アイテム行では従来通り起動する。
             if (selectedFavoriteRow?.kind === "item") {
               search.launchFile(selectedFavoriteRow.file.path);
@@ -1054,7 +1054,7 @@ export default function App() {
   // ドラッグ開始操作など）でも一時的にフォーカスを失う通知を送ることがあるため、
   // 即時に hide() せず、一定時間後も本当にフォーカスが戻っていない場合のみ非表示にする。
   //
-  // 設定画面表示中はこの自動非表示自体を適用しない（REQUIREMENTS.md「キー操作」＞
+  // 設定画面表示中はこの自動非表示自体を適用しない（00-requirements.md「キー操作」＞
   // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。3枚目の
   // お気に入り編集ビュー表示中も同じ理由（検索UI自体が表示されていない）で適用
   // しない。判定は viewRef（毎レンダーで最新の view を書き込む ref）で行う。

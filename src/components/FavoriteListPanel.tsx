@@ -14,7 +14,7 @@ import { FavoriteTreeRow, FileEntry } from "../types";
 // フォルダの折りたたみ・展開を示す▼/▶アイコン、フォルダアイコン、インデント幅は
 // FavoriteTreeVisuals.tsx（お気に入り編集ビューと共有）を参照。
 
-// /favorite モードの一覧（フォルダ見出し行＋アイテム行のツリー表示）。REQUIREMENTS.md
+// /favorite モードの一覧（フォルダ見出し行＋アイテム行のツリー表示）。00-requirements.md
 // 「お気に入り機能」節「/favorite モード」「/favorite モードでの★アイコン」を参照。
 //
 // 構造の作成・削除・リネーム・並び替えはお気に入り編集ビュー（FavoriteEditView.tsx/
@@ -57,7 +57,7 @@ export function FavoriteListPanel({
       )}
       {tree.map((row, index) => {
         // インデント幅はフォルダ見出し行・アイテム行で共通の1段あたりの量とする
-        // （REQUIREMENTS.md「フォルダ配下のアイテム行はインデントを1段下げる」。
+        // （00-requirements.md「フォルダ配下のアイテム行はインデントを1段下げる」。
         // 階層は depth のみで表現し、種別ごとに基準位置をずらさない。同じ depth の
         // フォルダ見出し行とアイテム行は兄弟として同じ横位置から始まる）。
         const indentStyle = {
@@ -196,7 +196,7 @@ export function FavoriteListPanel({
                   （登録済みかどうかの判定が不要なだけで、選択されていない行では
                   アイコン自体を表示しない、という表示条件のパターンは他の一覧と
                   共通にする）。押下で即座に解除する
-                  （REQUIREMENTS.md「/favorite モードでの★アイコン」節を参照）。 */}
+                  （00-requirements.md「/favorite モードでの★アイコン」節を参照）。 */}
               {isSelected && (
                 <FavoriteToggleButton
                   active

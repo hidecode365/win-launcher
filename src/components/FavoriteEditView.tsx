@@ -10,7 +10,7 @@ import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 // 再親化、軸4fで仮想行「Top」（表示名は軸4gで「お気に入り」へ改称）・
 // Delete/Ctrl+Shift+N/Alt+矢印キーによる操作・行内アイコン化（フォルダ作成
 // ボタンの撤去）を実装した。軸4gではヘッダーを固定見出しから常時表示の検索
-// ボックスに置き換え、絞り込み機能を追加した（REQUIREMENTS.md「お気に入り
+// ボックスに置き換え、絞り込み機能を追加した（00-requirements.md「お気に入り
 // 編集ビュー」節を参照）。
 //
 // ヘッダーの構成（戻るボタン＋検索ボックス＋ドラッグ領域）は SearchBox.tsx と
@@ -33,7 +33,7 @@ import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 //
 // 画面下部の固定「+ ここにフォルダを作成」ボタンは撤去済み。フォルダ作成の起点は
 // 選択中の行（Topを含む）に表示する行内アイコン、または Ctrl+Shift+N キー
-// （App.tsx の window レベルリスナー）に一本化した（REQUIREMENTS.md
+// （App.tsx の window レベルリスナー）に一本化した（00-requirements.md
 // 「お気に入り編集ビュー」節を参照）。
 export function FavoriteEditView({
   tree,
@@ -65,7 +65,7 @@ export function FavoriteEditView({
   onSelectRowByKey: (key: string) => void;
   onToggleCollapse: (folderId: string) => void;
   // 軸4g：編集ビュー専用の絞り込み文字列。ヘッダーの検索ボックスに束縛する
-  // （REQUIREMENTS.md「お気に入り編集ビュー」節を参照）。
+  // （00-requirements.md「お気に入り編集ビュー」節を参照）。
   filterText: string;
   onFilterTextChange: (text: string) => void;
   onCreateFolder: (
@@ -174,7 +174,7 @@ export function FavoriteEditView({
             // ↑↓・F2・Ctrl+Shift+N・Alt+矢印）は、絞り込み中でもリネーム・
             // 削除・★解除・フォルダ作成・選択移動を通常通り行えるよう、あえて
             // stopPropagation せず window レベルリスナーへ伝播させる
-            // （REQUIREMENTS.md「お気に入り編集ビュー」節「絞り込み文字列が
+            // （00-requirements.md「お気に入り編集ビュー」節「絞り込み文字列が
             // 1文字以上入力されている間は...リネーム・削除・★解除・フォルダ
             // 作成は...通常通り操作可能とする」を参照）。
             if (e.key === "Delete") {
