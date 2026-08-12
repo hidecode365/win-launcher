@@ -86,7 +86,7 @@ const closeWindow = useCallback(
 
 - **例外1**：`RegisterEntryDialog` の Enter は、表示名・保存先フォルダ等のダイアログ内部 state を必要とするため、ダイアログ自身の `onKeyDown` で処理する（window レベルではなく、かつ `stopPropagation` する）
 - **例外2**：`PathPasteWizard` の Enter は、ステップ遷移という「ボタンの click では表現されない操作」のため window レベルで処理する
-- **是正済み**：`SystemCommandModal` はかつて window レベルに独自の Enter 分岐と 300ms の猶予期間（`SYSTEM_COMMAND_CONFIRM_GRACE_MS`）を持っていたが、外部設計書の`external-design/01-screen-transitions.md#system-command-enter-removal`に従いいずれも削除済み。現在は `deleteFolder` と同じくブラウザ標準のフォーカス経路のみに統一されている
+- **是正済み**：`SystemCommandModal` はかつて window レベルに独自の Enter 分岐と 300ms の猶予期間（`SYSTEM_COMMAND_CONFIRM_GRACE_MS`）を持っていたが、モーダルのキー操作原則へ統一するためいずれも削除済み。現在は `deleteFolder` と同じくブラウザ標準のフォーカス経路のみに統一されている
 
 <a id="search-overlay-active-consolidation"></a>
 
@@ -159,7 +159,7 @@ const closeWindow = useCallback(
 - **横並び調査の結果**：検索ビュー上に開くオーバーレイ4種（登録ダイアログ・システムコマンド確認・フォルダ削除確認・パス貼り付けウィザード）のうち、フォルダ削除確認モーダル・パス貼り付けウィザードは既に window レベルリスナーで確定/キャンセルを処理する設計になっており対象外だった。登録ダイアログとシステムコマンド確認の2件が、ローカル `onKeyDown`・`SearchBox` の `onKeyDown` というフォーカス依存の実装のまま残っていたことが判明した
 - **原因の性質判定**：「モーダルを開くトリガーがクリック後もフォーカスを持ち続けうる」「モーダル表示中に元のフォーカス先が disabled/blur されうる」というのは特定のダイアログ固有の実装ミスではなく、フォーカス依存でキー操作を処理するモーダル実装パターン全般が共有する構造的な弱さと判定した。個別対応ではなく、既に一部（フォルダ削除確認・パス貼り付けウィザード）で採用していた「windowレベルリスナーへの一本化」を全4種に統一する設計見直しを行った（[modal-keydown-window-level](#modal-keydown-window-level)節）
 - **対応**：登録ダイアログはEscapeのみwindowレベルリスナーへ保険として追加（Enterは表示名・保存先フォルダ等ダイアログ内部stateが必要なため引き続きダイアログ自身が処理）。システムコマンド確認はEnter/Escapeともwindowレベルリスナーへ完全移管し、`SearchBox`側の実処理は削除した
-- **その後の訂正**：上記「Enterもwindowレベルへ完全移管」した設計が、キーのチャタリング／WebView2の入力二重発火により確認を経ず即実行される事故を招いたため、Enterは window レベルの分岐を撤去しブラウザ標準のフォーカス経路へ戻した（[modal-keydown-window-level](#modal-keydown-window-level)節「Enter（確定）の実装」・外部設計書 `external-design/01-screen-transitions.md#modal-key-policy-history` を参照）。Escapeの一本化は維持している
+- **その後の訂正**：上記「Enterもwindowレベルへ完全移管」した設計が、キーのチャタリング／WebView2の入力二重発火により確認を経ず即実行される事故を招いたため、Enterは window レベルの分岐を撤去しブラウザ標準のフォーカス経路へ戻した（[modal-keydown-window-level](#modal-keydown-window-level)節「Enter（確定）の実装」）。Escapeの一本化は維持している
 
 <a id="suppress-next-search-ref-removed"></a>
 
