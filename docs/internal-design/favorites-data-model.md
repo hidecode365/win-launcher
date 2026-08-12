@@ -12,11 +12,24 @@
 
 ### データ構造（`FavoriteNode`）の実装
 
-**データ構造の定義そのもの**（隣接リスト方式の採用理由・永続化方式・全量置き換え方式）は、外部設計書 `external-design/03-data-model.md#favorite-node-structure` へ移設した。本節には実装上の対応のみを記す。
+**データ構造の定義そのもの**（隣接リスト方式の採用理由・永続化方式）は、外部設計書 `external-design/03-data-model.md#favorite-node-structure` へ移設した。本節には実装上の対応のみを記す。
 
 - 型定義の実体：Rust は `main.rs` の `struct FavoriteNode`、フロントエンドは `src/types.ts` の `FavoriteNode` interface
 - 永続化キーは `FAVORITES_STORE_KEY`（`"favorites"`）。保存コマンドは `set_favorites(favorites: Vec<FavoriteNode>)`
 - 後方互換のため、Rust 側の全フィールドに `#[serde(default)]` を付与済み
+
+<a id="favorite-persistence-command-selection"></a>
+
+### お気に入りデータの保存コマンド選定
+
+更新内容をフロントエンドで配列全体に反映してから保存する方式と、操作ごとに Rust 側の専用コマンドへ委ねる方式を、対象操作の性質によって使い分けている。
+
+| 方式 | 利点 | 注意点 | 採用箇所 |
+| --- | --- | --- | --- |
+| 全量置き換え（`set_favorites`） | フロントエンドで確定した並び順・追加/解除後の配列を、そのまま1回で保存できる | クライアント側で更新後の配列を正しく組み立てる必要がある | ピン止めの追加・解除・並び替え |
+| 個別コマンド | フォルダ階層・重複・予約フォルダ等の検証と更新を Rust 側へ集約できる | 操作ごとにコマンド契約を保守する必要がある | お気に入りの追加/削除、フォルダ作成・削除、リネーム、移動、折りたたみ状態変更 |
+
+個別コマンドは `add_favorite`／`remove_favorite`／`add_favorite_folder`／`remove_favorite_folder`／`rename_favorite_node`／`move_favorite_node_to`／`set_favorite_folder_collapsed` を使用する。いずれの方式も保存後の配列全体を返し、フロントエンドはその戻り値を次の真実として置き換える。新しい更新操作を追加する際は、更新対象が「フロントエンドで順序まで確定するピン止め配列」か、「Rust 側で構造制約を検証すべきお気に入りツリー」かを基準に、既存の方式を選ぶこと。
 
 <a id="reserved-folders"></a>
 
