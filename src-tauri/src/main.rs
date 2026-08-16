@@ -1387,6 +1387,7 @@ fn add_memo(
     let mut documents = load_memo_documents(&app);
     documents.insert(id, MemoDocument { revision: 1, content, saved_at: now_ms(), draft: None });
     save_memo_documents(&app, &documents)?;
+    show_toast(&app, "メモに登録しました");
     Ok(favorites)
 }
 
@@ -1467,7 +1468,8 @@ fn move_memo_node_to(
     if [PINNED_FOLDER_ID, FAVORITES_FOLDER_ID, MEMO_FOLDER_ID, MEMO_TRASH_ID].contains(&id.as_str()) { return Err("予約フォルダは移動できません".to_string()); }
     let mut favorites = load_favorites(&app);
     let target_pos = favorites.iter().position(|node| node.id == id).ok_or_else(|| "指定したノードが見つかりません".to_string())?;
-    let source_in_memo = is_descendant_of(&favorites, &favorites[target_pos].parent_id, MEMO_FOLDER_ID);
+    let source_in_memo = is_descendant_of(&favorites, &favorites[target_pos].parent_id, MEMO_FOLDER_ID)
+        || is_descendant_of(&favorites, &favorites[target_pos].parent_id, MEMO_TRASH_ID);
     let destination_valid = new_parent_id == MEMO_FOLDER_ID || new_parent_id == MEMO_TRASH_ID || (favorites.iter().any(|node| node.id == new_parent_id && node.node_type == FavoriteNodeType::Folder)
         && (is_descendant_of(&favorites, &new_parent_id, MEMO_FOLDER_ID) || is_descendant_of(&favorites, &new_parent_id, MEMO_TRASH_ID)));
     if !source_in_memo || !destination_valid { return Err("移動先が不正です".to_string()); }

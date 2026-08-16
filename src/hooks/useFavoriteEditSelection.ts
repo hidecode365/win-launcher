@@ -1,15 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  resolveSelected,
-  SelectIntent,
-} from "../lib/selectIntent";
+import { useMemo } from "react";
+import { useTreeEditSelection } from "./useTreeEditSelection";
 import {
   FAVORITE_TOP_ROW_KEY,
   type FavoriteEditTreeRow,
@@ -50,56 +40,6 @@ export function useFavoriteEditSelection(
   // intent.type === "top" は常にインデックス0（＝仮想行「Top」自身）を指す。
   // 初期選択・削除後のフォールバック（resetToTop）が「Topを選択する」という
   // 意味に一致するため、既存の resolveSelected の実装を変更せず自然に組み込める。
-  const [intent, setIntent] = useState<SelectIntent>({ type: "top" });
-  const [selected, setSelected] = useState(0);
-  const fallbackRef = useRef(0);
-
-  useLayoutEffect(() => {
-    const resolved = resolveSelected(intent, tree, fallbackRef.current);
-    fallbackRef.current = resolved;
-    setSelected(resolved);
-  }, [intent, tree]);
-
-  const selectByKey = useCallback((key: string) => {
-    setIntent({ type: "key", key });
-  }, []);
-
-  // フォルダ削除（4c）後の選択復元用。複数階層・複数件をまたぐ削除のため
-  // 「次に選ぶべき1件」を一意に定義できず、先頭へのフォールバックでよい
-  // （R-1の既存の正当な例外パターン。useSearch.ts の performRemoveFavoriteFolder
-  // 「onRemoved」デフォルト実装と同じ考え方）。
-  const resetToTop = useCallback(() => {
-    setIntent({ type: "top" });
-  }, []);
-
-  // 軸4g：絞り込み文字列が変わるたびに選択を先頭（お気に入り行）へリセットする。
-  // 「ユーザーが新しい文脈に入ったことを示す値」の変化にのみリセットを一本化する
-  // R-1の原則（CLAUDE.md「検索結果一覧の選択状態・行構造」節を参照）に従い、
-  // 依存配列には filterText のみを含める（rawTree/tree の変化にはリセットしない。
-  // rawTree はフォルダ作成・リネーム等の操作の副作用としても変化するため、それを
-  // トリガーにすると各操作が個別に行っている選択移動（selectByKey 等）を
-  // 上書きしてしまう）。
-  useEffect(() => {
-    resetToTop();
-  }, [filterText, resetToTop]);
-
-  // ↑↓キーによる選択移動。フォルダ見出し行・アイテム行の両方を対象にする
-  // （軸1で /favorite ブラウジングに実装した内容と同じ設計。00-requirements.md
-  // 「お気に入り編集ビュー」節を参照）。App.tsx の moveSelection と同じく、
-  // 現在の resolved 値（selected）をそのまま起点にする。
-  const moveSelection = useCallback(
-    (direction: 1 | -1) => {
-      const nextIndex =
-        direction === 1
-          ? Math.min(selected + 1, tree.length - 1)
-          : Math.max(selected - 1, 0);
-      const row = tree[nextIndex];
-      if (row) {
-        setIntent({ type: "key", key: row.key });
-      }
-    },
-    [selected, tree]
-  );
-
-  return { tree, selected, selectByKey, moveSelection, resetToTop };
+  const selection = useTreeEditSelection(tree, FAVORITE_TOP_ROW_KEY, filterText);
+  return { tree, ...selection };
 }

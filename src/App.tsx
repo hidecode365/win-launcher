@@ -106,6 +106,7 @@ export default function App() {
   const memoFlushRef = useRef(memo.flushDraft);
   memoFlushRef.current = memo.flushDraft;
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
+  const [memoEditorFocusRequested, setMemoEditorFocusRequested] = useState(false);
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
   // ドメイン。00-requirements.md「お気に入り編集ビュー」節を参照）。データソースは
   // search.favoriteTree をそのまま共有する。
@@ -1249,7 +1250,7 @@ export default function App() {
   }
 
   if (memoEditOpen) {
-    return <MemoManageView onClose={() => setView("search")} onEdit={(id) => { memo.setSelectedId(id); setView("search"); }} />;
+    return <MemoManageView onClose={() => setView("search")} onEdit={(id) => { setMemoEditorFocusRequested(true); memo.setSelectedId(id); setView("search"); }} version={appVersion} />;
   }
 
   return (
@@ -1291,6 +1292,8 @@ export default function App() {
         onOpenSettings={openSettings}
         favoriteEditVisible={search.favoriteMode}
         onOpenFavoriteEdit={openFavoriteEdit}
+        memoEditVisible={memoMode}
+        onOpenMemoEdit={() => setView("memoEdit")}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
         }
@@ -1380,12 +1383,14 @@ export default function App() {
             filterText={memoFilterText}
             selectedId={memo.selectedId}
             document={memo.document}
-            onSelect={(id) => { memo.flushDraft().catch(console.error); memo.setSelectedId(id); }}
+            onSelect={(id) => { memo.flushDraft().catch(console.error); setMemoEditorFocusRequested(true); memo.setSelectedId(id); }}
             onContentChange={memo.updateContent}
             onSave={() => memo.saveFinal().catch(console.error)}
             initialLeftWidth={memoPaneWidth}
             onResizeEnd={handleMemoPaneWidthChange}
             onOpenManagement={() => setView("memoEdit")}
+            focusEditor={memoEditorFocusRequested}
+            onEditorFocused={() => setMemoEditorFocusRequested(false)}
           />
         ) : search.favoriteMode ? (
           <FavoriteListPanel
