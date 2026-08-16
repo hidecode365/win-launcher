@@ -82,7 +82,7 @@ export function SearchBox({
       {/* /favorite モード表示中のみ表示する編集アイコン。設定アイコンの左隣に置く
           （00-requirements.md「お気に入り編集ビュー」節を参照）。 */}
       {favoriteEditVisible && (
-        <Tooltip label="お気に入りを編集" className="ml-2 flex-shrink-0">
+        <Tooltip label="お気に入りを管理" className="ml-2 flex-shrink-0">
           <button
             type="button"
             onClick={onOpenFavoriteEdit}
