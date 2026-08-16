@@ -333,6 +333,12 @@ function buildPrefixCommandCandidates(
       });
     }
   }
+  if (appSettings.memoEnabled) {
+    const full = PREFIX_CHAR + appSettings.memoKeyword;
+    if (full.toLowerCase().startsWith(q)) {
+      candidates.push({ keyword: full, description: "メモ", kind: "memo", action: null });
+    }
+  }
 
   return candidates;
 }
@@ -2167,7 +2173,8 @@ export function useSearch(
       } else if (
         candidate.kind === "clipboard" ||
         candidate.kind === "recent" ||
-        candidate.kind === "favorite"
+        candidate.kind === "favorite" ||
+        candidate.kind === "memo"
       ) {
         setQuery(candidate.keyword);
       }

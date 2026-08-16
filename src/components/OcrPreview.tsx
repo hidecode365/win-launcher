@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { ResizableSplitPane } from "./ResizableSplitPane";
 
 export function OcrPreview({
   imageUrl,
@@ -17,54 +17,11 @@ export function OcrPreview({
   onClose: () => void;
   onCopyAndClose: () => void;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  // 分割幅は永続化しない。null の間は CSS の 50% を使い、
-  // ドラッグ操作が発生した時点で初めて px 固定幅に切り替える。
-  const [leftWidth, setLeftWidth] = useState<number | null>(null);
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
-      const panelEl = panelRef.current;
-      if (!panelEl) return;
-      const rect = panelEl.getBoundingClientRect();
-      const maxWidth = rect.width * 0.6;
-      const newWidth = Math.max(150, Math.min(maxWidth, e.clientX - rect.left));
-      setLeftWidth(newWidth);
-    };
-
-    const onMouseUp = () => {
-      if (!isDragging.current) return;
-      isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-  }, []);
-
-  const handleDividerMouseDown = () => {
-    isDragging.current = true;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  };
-
   return (
-    <div
-      ref={panelRef}
-      className="flex-1 flex overflow-hidden border-t border-gray-200/60"
-    >
-      {/* 左ペイン: 貼り付けられた画像のプレビュー */}
-      <div
-        className="flex-shrink-0 flex items-center justify-center overflow-hidden p-3"
-        style={{ width: leftWidth ?? "50%" }}
-      >
+    <ResizableSplitPane
+      className="flex-1 border-t border-gray-200/60"
+      initialLeftWidth={320}
+      left={<div className="h-full flex items-center justify-center overflow-hidden p-3">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -74,16 +31,8 @@ export function OcrPreview({
         ) : (
           <div className="text-gray-400 text-sm">画像がありません</div>
         )}
-      </div>
-
-      {/* Draggable divider */}
-      <div
-        className="w-1 flex-shrink-0 bg-gray-200/60 hover:bg-blue-400/60 cursor-col-resize transition-colors"
-        onMouseDown={handleDividerMouseDown}
-      />
-
-      {/* 右ペイン: OCR結果テキスト */}
-      <div className="flex-1 min-w-0 flex flex-col p-3 gap-2 overflow-hidden">
+      </div>}
+      right={<div className="h-full flex flex-col p-3 gap-2 overflow-hidden">
         {loading && (
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <svg
@@ -139,7 +88,7 @@ export function OcrPreview({
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </div>}
+    />
   );
 }

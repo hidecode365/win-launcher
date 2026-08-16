@@ -52,7 +52,14 @@ export interface FolderEntry extends FolderDetailSettings {
 // として扱う（詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節、
 // CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。`clipboard`・`command` は
 // 型定義のみで今回は生成・使用しない。
-export type FavoriteNodeType = "folder" | "file" | "clipboard" | "command";
+export type FavoriteNodeType = "folder" | "file" | "clipboard" | "command" | "memo";
+
+export interface MemoDocument {
+  revision: number;
+  content: string;
+  savedAt: number;
+  draft: { content: string; updatedAt: number } | null;
+}
 
 export interface FavoriteNode {
   id: string;
@@ -71,6 +78,8 @@ export interface FavoriteNode {
 // 両方を同時に更新する）。
 export const PINNED_FOLDER_ID = "__pinned__";
 export const FAVORITES_FOLDER_ID = "__favorites__";
+export const MEMO_FOLDER_ID = "__memo__";
+export const MEMO_TRASH_ID = "__memo_trash__";
 
 // 登録ダイアログ（RegisterEntryDialog）の「保存先フォルダ」プルダウン1件分。
 // お気に入り・メモ（いずれも予約フォルダ配下に folder 型ノードで階層整理できる）で
@@ -135,6 +144,8 @@ export interface AppSettings {
   pinEnabled: boolean;
   favoriteEnabled: boolean;
   favoriteKeyword: string;
+  memoEnabled: boolean;
+  memoKeyword: string;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -166,6 +177,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   pinEnabled: true,
   favoriteEnabled: true,
   favoriteKeyword: "favorite",
+  memoEnabled: true,
+  memoKeyword: "memo",
 };
 
 // Rust の `check_for_update` コマンドの戻り値。
@@ -193,7 +206,7 @@ export interface SystemCommand {
 // フィールドごとに独立して表示するため、単一の文字列ではなくコマンドごとに保持する。
 export type SystemCommandKeywordErrors = Record<SystemCommandAction, string | null>;
 
-export type PrefixCommandKind = "system" | "clipboard" | "recent" | "favorite";
+export type PrefixCommandKind = "system" | "clipboard" | "recent" | "favorite" | "memo";
 
 // 「/」候補一覧（プレフィックスコマンド候補表示）の1件分。
 // keyword は「/」+ キーワード全体（例: "/shutdown"）。選択・実行時の分岐と

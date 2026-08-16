@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Store } from "@tauri-apps/plugin-store";
 import { logUiEvent } from "./lib/uiDebugLog";
 import { useSettings } from "./hooks/useSettings";
@@ -11,6 +12,7 @@ import { useFavoriteEditSelection } from "./hooks/useFavoriteEditSelection";
 import { useClipboard } from "./hooks/useClipboard";
 import { useOcr } from "./hooks/useOcr";
 import { useUpdater } from "./hooks/useUpdater";
+import { useMemoNotes } from "./hooks/useMemoNotes";
 import { SearchBox } from "./components/SearchBox";
 import { OcrPreview } from "./components/OcrPreview";
 import { ResultList } from "./components/ResultList";
@@ -24,6 +26,8 @@ import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { IconSlotMeasureOverlay } from "./components/IconSlotMeasureOverlay";
 import { StatusFooter } from "./components/StatusFooter";
+import { MemoPanel } from "./components/MemoPanel";
+import { MemoManageView } from "./components/MemoManageView";
 import { hideWindow } from "./lib/window";
 import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
 import type {
@@ -46,12 +50,13 @@ function hasFavoriteNode(
 }
 
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
+const DEFAULT_MEMO_PANE_WIDTH = 280;
 
 // 「検索」「設定」「お気に入り編集」の3枚の全画面ビュー（軸4a）。二択の boolean
 // swap（旧 showSettings）では3枚目のビューを表現できないため enum 化した。
 // いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは
 // 作らない（00-requirements.md「お気に入り編集ビュー」節を参照）。
-type MainView = "search" | "settings" | "favoriteEdit";
+type MainView = "search" | "settings" | "favoriteEdit" | "memoEdit";
 
 export default function App() {
   const [view, setView] = useState<MainView>("search");
@@ -59,6 +64,7 @@ export default function App() {
   // （useSettings への引数・多数の分岐で使われている）。
   const showSettings = view === "settings";
   const favoriteEditOpen = view === "favoriteEdit";
+  const memoEditOpen = view === "memoEdit";
   const [settingsVersion, setSettingsVersion] = useState(0);
   // 軸4k：全画面のフッター右端に統一表示するアプリのバージョン番号。以前は
   // SettingsPanel.tsx が自身のフッター専用に個別取得していたが、フッターが
@@ -92,6 +98,14 @@ export default function App() {
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
   const search = useSearch(settings.appSettings, settingsVersion, storeRef);
+  const memoMode = settings.appSettings.memoEnabled && search.query.toLowerCase().startsWith(`/${settings.appSettings.memoKeyword.toLowerCase()}`);
+  const memoModeRef = useRef(memoMode);
+  memoModeRef.current = memoMode;
+  const memoFilterText = memoMode ? search.query.slice(settings.appSettings.memoKeyword.length + 1) : "";
+  const memo = useMemoNotes(memoMode);
+  const memoFlushRef = useRef(memo.flushDraft);
+  memoFlushRef.current = memo.flushDraft;
+  const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
   // ドメイン。00-requirements.md「お気に入り編集ビュー」節を参照）。データソースは
   // search.favoriteTree をそのまま共有する。
@@ -101,6 +115,15 @@ export default function App() {
   );
   const ocr = useOcr();
   const updater = useUpdater();
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("request-hide", async () => {
+      await memoFlushRef.current().catch(console.error);
+      await hideWindow();
+    }).then((fn) => { unlisten = fn; });
+    return () => unlisten?.();
+  }, []);
   const clipboard = useClipboard(
     settings.appSettingsRef,
     search.clipboardMode,
@@ -182,15 +205,17 @@ export default function App() {
           store.get<FrecencyMap>("prefixCommandFrecency"),
           store.get<ClipboardTextEntry[]>("clipboardHistory"),
           store.get<number>("clipboardPaneWidth"),
+          store.get<number>("memoPaneWidth"),
         ]);
       })
-      .then(([frecencyData, prefixCommandFrecencyData, clipboardData, paneWidthData]) => {
+      .then(([frecencyData, prefixCommandFrecencyData, clipboardData, paneWidthData, memoPaneWidthData]) => {
         search.setInitialFrecency(frecencyData ?? {});
         search.setInitialPrefixCommandFrecency(prefixCommandFrecencyData ?? {});
         clipboard.setInitialHistory(clipboardData ?? []);
         const paneWidth = paneWidthData ?? DEFAULT_CLIPBOARD_PANE_WIDTH;
         clipboardPaneWidthRef.current = paneWidth;
         setClipboardPaneWidth(paneWidth);
+        setMemoPaneWidth(memoPaneWidthData ?? DEFAULT_MEMO_PANE_WIDTH);
       })
       .catch(console.error);
   }, []);
@@ -219,10 +244,7 @@ export default function App() {
           const win = getCurrentWindow();
           const scaleFactor = await win.scaleFactor().catch(() => 1);
           const logical = size.toLogical(scaleFactor);
-          const key =
-            viewRef.current === "favoriteEdit"
-              ? "favoriteEditWindowSize"
-              : "windowSize";
+          const key = viewRef.current === "favoriteEdit" ? "favoriteEditWindowSize" : memoModeRef.current ? "memoWindowSize" : "windowSize";
           await store.set(key, {
             width: Math.round(logical.width),
             height: Math.round(logical.height),
@@ -240,6 +262,13 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!memoMode || !storeRef.current) return;
+    storeRef.current.get<{ width: number; height: number }>("memoWindowSize").then((size) => {
+      if (size) getCurrentWindow().setSize(new LogicalSize(size.width, size.height)).catch(console.error);
+    }).catch(console.error);
+  }, [memoMode]);
+
   const handlePaneWidthChange = useCallback(async (width: number) => {
     clipboardPaneWidthRef.current = width;
     setClipboardPaneWidth(width);
@@ -248,6 +277,20 @@ export default function App() {
     await store.set("clipboardPaneWidth", width);
     await store.save();
   }, []);
+
+  const handleMemoPaneWidthChange = useCallback(async (width: number) => {
+    setMemoPaneWidth(width);
+    const store = storeRef.current;
+    if (!store) return;
+    await store.set("memoPaneWidth", width);
+    await store.save();
+  }, []);
+  const addMemoFromClipboard = useCallback((content: string) => {
+    const title = content.trim().slice(0, 40) || "無題のメモ";
+    invoke("add_memo", { name: title, content, parentId: "__memo__" })
+      .then(() => memo.refresh())
+      .catch(console.error);
+  }, [memo.refresh]);
 
   const openSettings = useCallback(() => {
     setView("settings");
@@ -542,6 +585,12 @@ export default function App() {
         // 参照）。設定画面表示中にCtrl+Sを押しても何も起きないが、preventDefault
         // 自体は常に行う（WebView2既定の「ページを保存」ダイアログを、設定画面
         // 表示中も含めて常に抑止するため）。
+        e.preventDefault();
+        e.stopPropagation();
+        if (memoMode) {
+          memo.saveFinal().catch(console.error);
+        }
+      } else if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
         e.stopPropagation();
         if (
@@ -932,6 +981,10 @@ export default function App() {
         // 「複数ステップのウィザード形式インタラクション」節を参照）。
         return;
       }
+      if (memoMode && e.key === "Enter") {
+        e.preventDefault();
+        return;
+      }
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -1015,7 +1068,7 @@ export default function App() {
           break;
         }
         case "Escape":
-          hideWindow();
+          memo.flushDraft().catch(console.error).finally(() => hideWindow());
           break;
       }
     },
@@ -1043,6 +1096,8 @@ export default function App() {
       search.favoriteMode,
       search.toggleFavoriteFolderCollapsed,
       selectedFavoriteRow,
+      memoMode,
+      memo.flushDraft,
     ]
   );
 
@@ -1093,6 +1148,7 @@ export default function App() {
               );
               await store.save();
             }
+            await memoFlushRef.current().catch(console.error);
             hideWindow();
           }, 150);
         }
@@ -1135,6 +1191,8 @@ export default function App() {
           onSetPinEnabled={settings.setPinEnabled}
           onSetFavoriteEnabled={settings.setFavoriteEnabled}
           onSetFavoriteKeyword={settings.setFavoriteKeyword}
+          onSetMemoEnabled={settings.setMemoEnabled}
+          onSetMemoKeyword={settings.setMemoKeyword}
           folders={settings.folders}
           onAddFolder={settings.addFolder}
           onToggleFolder={settings.toggleFolder}
@@ -1188,6 +1246,10 @@ export default function App() {
         )}
       </>
     );
+  }
+
+  if (memoEditOpen) {
+    return <MemoManageView onClose={() => setView("search")} onEdit={(id) => { memo.setSelectedId(id); setView("search"); }} />;
   }
 
   return (
@@ -1298,6 +1360,8 @@ export default function App() {
             onSelectEntry={clipboard.selectClipboardEntry}
             initialLeftWidth={clipboardPaneWidth}
             onWidthChange={handlePaneWidthChange}
+            memoEnabled={settings.appSettings.memoEnabled}
+            onAddMemo={addMemoFromClipboard}
           />
         ) : search.pathPasteWizardMode ? (
           <PathPasteWizard
@@ -1308,6 +1372,20 @@ export default function App() {
             onSelectFolder={search.selectWizardFolder}
             name={search.wizardName}
             onNameChange={search.setWizardName}
+          />
+        ) : memoMode ? (
+          <MemoPanel
+            nodes={memo.nodes}
+            documents={memo.documents}
+            filterText={memoFilterText}
+            selectedId={memo.selectedId}
+            document={memo.document}
+            onSelect={(id) => { memo.flushDraft().catch(console.error); memo.setSelectedId(id); }}
+            onContentChange={memo.updateContent}
+            onSave={() => memo.saveFinal().catch(console.error)}
+            initialLeftWidth={memoPaneWidth}
+            onResizeEnd={handleMemoPaneWidthChange}
+            onOpenManagement={() => setView("memoEdit")}
           />
         ) : search.favoriteMode ? (
           <FavoriteListPanel

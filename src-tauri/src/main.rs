@@ -33,6 +33,7 @@ const DEFAULT_CLIPBOARD_PREFIX: &str = "cb";
 const DEFAULT_CLIPBOARD_MAX_ITEMS: u32 = 50;
 const DEFAULT_RECENT_KEYWORD: &str = "recent";
 const DEFAULT_FAVORITE_KEYWORD: &str = "favorite";
+const DEFAULT_MEMO_KEYWORD: &str = "memo";
 // 最近使ったファイル一覧専用の保持期間（日数）・表示件数上限のデフォルト値。
 // いずれも設定画面から変更可能（`AppSettings.recent_max_age_days` /
 // `recent_max_results`）。
@@ -708,6 +709,7 @@ const FAVORITES_STORE_KEY: &str = "favorites";
 const PINNED_FOLDER_ID: &str = "__pinned__";
 const FAVORITES_FOLDER_ID: &str = "__favorites__";
 const MEMO_FOLDER_ID: &str = "__memo__";
+const MEMO_TRASH_ID: &str = "__memo_trash__";
 
 /// `FavoriteNode.type` の値。`clipboard`・`command` は型定義のみ用意し、今回は
 /// 生成・使用しない（将来のお気に入り・メモ機能実装時に使う）。
@@ -719,6 +721,47 @@ enum FavoriteNodeType {
     File,
     Clipboard,
     Command,
+    Memo,
+}
+
+const MEMO_DOCUMENTS_STORE_KEY: &str = "memoDocuments";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MemoDraft {
+    content: String,
+    updated_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MemoDocument {
+    #[serde(default = "default_memo_revision")]
+    revision: u64,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    saved_at: u64,
+    #[serde(default)]
+    draft: Option<MemoDraft>,
+}
+
+fn default_memo_revision() -> u64 { 1 }
+
+struct FavoriteNodesWriteLock(Mutex<()>);
+struct MemoDocumentsWriteLock(Mutex<()>);
+
+fn load_memo_documents(app: &AppHandle) -> HashMap<String, MemoDocument> {
+    let Ok(store) = app.store(SETTINGS_STORE) else { return HashMap::new(); };
+    store.get(MEMO_DOCUMENTS_STORE_KEY)
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
+}
+
+fn save_memo_documents(app: &AppHandle, documents: &HashMap<String, MemoDocument>) -> Result<(), String> {
+    let store = app.store(SETTINGS_STORE).map_err(|e| e.to_string())?;
+    store.set(MEMO_DOCUMENTS_STORE_KEY, serde_json::json!(documents));
+    store.save().map_err(|e| e.to_string())
 }
 
 /// ピン止め・お気に入り・メモの共通ノード。`children` を持たないフラットな配列
@@ -765,7 +808,7 @@ fn save_favorites(app: &AppHandle, favorites: &[FavoriteNode]) -> Result<(), Str
 }
 
 /// 予約フォルダ（固定ID・固定名・folder型・ルート直下）の正しい定義。
-fn reserved_folder_definitions() -> [FavoriteNode; 3] {
+fn reserved_folder_definitions() -> [FavoriteNode; 4] {
     [
         FavoriteNode {
             id: PINNED_FOLDER_ID.to_string(),
@@ -792,6 +835,15 @@ fn reserved_folder_definitions() -> [FavoriteNode; 3] {
             name: "メモ".to_string(),
             value: String::new(),
             order: 2,
+            collapsed: false,
+        },
+        FavoriteNode {
+            id: MEMO_TRASH_ID.to_string(),
+            parent_id: String::new(),
+            node_type: FavoriteNodeType::Folder,
+            name: "ゴミ箱".to_string(),
+            value: String::new(),
+            order: 3,
             collapsed: false,
         },
     ]
@@ -846,7 +898,8 @@ fn get_favorites(app: AppHandle) -> Vec<FavoriteNode> {
 /// 正しい状態へ是正してから保存する（`enforce_reserved_folders`。ユーザーによる
 /// 削除・リネーム・移動ができない制約を、UI側の制限だけでなくRust側でも防御する）。
 #[tauri::command]
-fn set_favorites(app: AppHandle, favorites: Vec<FavoriteNode>) -> Result<Vec<FavoriteNode>, String> {
+fn set_favorites(app: AppHandle, favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>, favorites: Vec<FavoriteNode>) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
     let mut favorites = favorites;
     enforce_reserved_folders(&mut favorites);
     save_favorites(&app, &favorites)?;
@@ -958,10 +1011,12 @@ fn get_favorite_nodes(app: AppHandle) -> Vec<FavoriteNode> {
 #[tauri::command]
 fn add_favorite(
     app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
     path: String,
     name: String,
     folder_id: String,
 ) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
     let mut favorites = load_favorites(&app);
     if !is_path_favorited(&favorites, &path) {
         let max_order = favorites
@@ -1013,9 +1068,11 @@ fn has_duplicate_favorite_name(
 #[tauri::command]
 fn add_favorite_folder(
     app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
     name: String,
     parent_id: String,
 ) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("フォルダ名を入力してください".to_string());
@@ -1070,10 +1127,12 @@ fn add_favorite_folder(
 #[tauri::command]
 fn rename_favorite_node(
     app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
     id: String,
     new_name: String,
 ) -> Result<Vec<FavoriteNode>, String> {
-    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+    let _guard = favorite_lock.0.lock().unwrap();
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID || id == MEMO_TRASH_ID {
         return Err("予約フォルダの名前は変更できません".to_string());
     }
     let trimmed = new_name.trim();
@@ -1112,9 +1171,11 @@ fn rename_favorite_node(
 #[tauri::command]
 fn set_favorite_folder_collapsed(
     app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
     id: String,
     collapsed: bool,
 ) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
     let mut favorites = load_favorites(&app);
     let target = favorites
         .iter_mut()
@@ -1129,7 +1190,8 @@ fn set_favorite_folder_collapsed(
 /// カスケード削除は未対応。folder 型ノードを削除するUI自体が現時点では存在せず
 /// （新規フォルダ作成のみ）、実際に発生し得ない状況のため今回は対応しない）。
 #[tauri::command]
-fn remove_favorite(app: AppHandle, id: String) -> Result<Vec<FavoriteNode>, String> {
+fn remove_favorite(app: AppHandle, favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>, id: String) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
     let mut favorites = load_favorites(&app);
     favorites.retain(|f| f.id != id);
     save_favorites(&app, &favorites)?;
@@ -1148,8 +1210,9 @@ fn remove_favorite(app: AppHandle, id: String) -> Result<Vec<FavoriteNode>, Stri
 /// 予約フォルダ（ピン止め／お気に入り／メモの3つのルート）は削除対象に含めない
 /// （`enforce_reserved_folders` と同様、UI側の制限だけでなくRust側でも防御する）。
 #[tauri::command]
-fn remove_favorite_folder(app: AppHandle, id: String) -> Result<Vec<FavoriteNode>, String> {
-    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+fn remove_favorite_folder(app: AppHandle, favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>, id: String) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID || id == MEMO_TRASH_ID {
         return Err("予約フォルダは削除できません".to_string());
     }
     let favorites = load_favorites(&app);
@@ -1194,11 +1257,13 @@ fn remove_favorite_folder(app: AppHandle, id: String) -> Result<Vec<FavoriteNode
 #[tauri::command]
 fn move_favorite_node_to(
     app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
     id: String,
     new_parent_id: String,
     target_index: usize,
 ) -> Result<Vec<FavoriteNode>, String> {
-    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID {
+    let _guard = favorite_lock.0.lock().unwrap();
+    if id == PINNED_FOLDER_ID || id == FAVORITES_FOLDER_ID || id == MEMO_FOLDER_ID || id == MEMO_TRASH_ID {
         return Err("予約フォルダは移動できません".to_string());
     }
     let mut favorites = load_favorites(&app);
@@ -1260,6 +1325,192 @@ fn move_favorite_node_to(
     Ok(favorites)
 }
 
+fn is_memo_node(favorites: &[FavoriteNode], node: &FavoriteNode) -> bool {
+    node.node_type == FavoriteNodeType::Memo
+        && is_descendant_of(favorites, &node.parent_id, MEMO_FOLDER_ID)
+        && !is_descendant_of(favorites, &node.parent_id, MEMO_TRASH_ID)
+}
+
+#[tauri::command]
+fn get_memo_nodes(app: AppHandle) -> Vec<FavoriteNode> {
+    let favorites = load_favorites(&app);
+    let mut nodes: Vec<_> = favorites.iter()
+        .filter(|node| is_descendant_of(&favorites, &node.parent_id, MEMO_FOLDER_ID)
+            && !is_descendant_of(&favorites, &node.parent_id, MEMO_TRASH_ID))
+        .cloned().collect();
+    nodes.sort_by_key(|node| node.order);
+    nodes
+}
+
+#[tauri::command]
+fn get_memo_manage_nodes(app: AppHandle) -> Vec<FavoriteNode> {
+    let favorites = load_favorites(&app);
+    let mut nodes: Vec<_> = favorites.iter()
+        .filter(|node| node.id == MEMO_TRASH_ID || is_descendant_of(&favorites, &node.parent_id, MEMO_FOLDER_ID) || is_descendant_of(&favorites, &node.parent_id, MEMO_TRASH_ID))
+        .cloned().collect();
+    nodes.sort_by_key(|node| node.order);
+    nodes
+}
+
+#[tauri::command]
+fn get_memo_document(app: AppHandle, id: String) -> Result<MemoDocument, String> {
+    let favorites = load_favorites(&app);
+    let node = favorites.iter().find(|node| node.id == id)
+        .ok_or_else(|| "指定したメモが見つかりません".to_string())?;
+    if !is_memo_node(&favorites, node) { return Err("指定したメモは編集できません".to_string()); }
+    let documents = load_memo_documents(&app);
+    Ok(documents.get(&id).cloned().unwrap_or(MemoDocument {
+        revision: 1, content: String::new(), saved_at: now_ms(), draft: None,
+    }))
+}
+
+#[tauri::command]
+fn add_memo(
+    app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
+    memo_lock: tauri::State<'_, MemoDocumentsWriteLock>,
+    name: String,
+    content: String,
+    parent_id: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    let _favorite_guard = favorite_lock.0.lock().unwrap();
+    let _memo_guard = memo_lock.0.lock().unwrap();
+    let mut favorites = load_favorites(&app);
+    let parent_valid = parent_id == MEMO_FOLDER_ID || (favorites.iter().any(|node| node.id == parent_id && node.node_type == FavoriteNodeType::Folder)
+        && is_descendant_of(&favorites, &parent_id, MEMO_FOLDER_ID)
+        && !is_descendant_of(&favorites, &parent_id, MEMO_TRASH_ID));
+    if !parent_valid { return Err("メモの保存先が不正です".to_string()); }
+    let id = generate_favorite_node_id();
+    let order = favorites.iter().filter(|node| node.parent_id == parent_id).map(|node| node.order).max().map(|v| v + 1).unwrap_or(0);
+    favorites.push(FavoriteNode { id: id.clone(), parent_id, node_type: FavoriteNodeType::Memo, name: name.trim().to_string(), value: String::new(), order, collapsed: false });
+    save_favorites(&app, &favorites)?;
+    let mut documents = load_memo_documents(&app);
+    documents.insert(id, MemoDocument { revision: 1, content, saved_at: now_ms(), draft: None });
+    save_memo_documents(&app, &documents)?;
+    Ok(favorites)
+}
+
+#[tauri::command]
+fn save_memo_draft(
+    app: AppHandle,
+    memo_lock: tauri::State<'_, MemoDocumentsWriteLock>,
+    id: String,
+    content: String,
+    expected_revision: u64,
+) -> Result<MemoDocument, String> {
+    let _memo_guard = memo_lock.0.lock().unwrap();
+    let favorites = load_favorites(&app);
+    let node = favorites.iter().find(|node| node.id == id).ok_or_else(|| "指定したメモが見つかりません".to_string())?;
+    if !is_memo_node(&favorites, node) { return Err("指定したメモは編集できません".to_string()); }
+    let mut documents = load_memo_documents(&app);
+    let document = documents.entry(id).or_insert(MemoDocument { revision: 1, content: String::new(), saved_at: now_ms(), draft: None });
+    if document.revision != expected_revision { return Err("メモの版が更新されています".to_string()); }
+    document.draft = Some(MemoDraft { content, updated_at: now_ms() });
+    let result = document.clone();
+    save_memo_documents(&app, &documents)?;
+    Ok(result)
+}
+
+#[tauri::command]
+fn save_memo_final(
+    app: AppHandle,
+    memo_lock: tauri::State<'_, MemoDocumentsWriteLock>,
+    id: String,
+    content: String,
+    expected_revision: u64,
+) -> Result<MemoDocument, String> {
+    let _memo_guard = memo_lock.0.lock().unwrap();
+    let favorites = load_favorites(&app);
+    let node = favorites.iter().find(|node| node.id == id).ok_or_else(|| "指定したメモが見つかりません".to_string())?;
+    if !is_memo_node(&favorites, node) { return Err("指定したメモは編集できません".to_string()); }
+    let mut documents = load_memo_documents(&app);
+    let document = documents.entry(id).or_insert(MemoDocument { revision: 1, content: String::new(), saved_at: now_ms(), draft: None });
+    if document.revision != expected_revision { return Err("メモの版が更新されています".to_string()); }
+    if document.content != content { document.revision += 1; document.content = content; document.saved_at = now_ms(); }
+    document.draft = None;
+    let result = document.clone();
+    save_memo_documents(&app, &documents)?;
+    Ok(result)
+}
+
+#[tauri::command]
+fn add_memo_folder(
+    app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
+    name: String,
+    parent_id: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
+    let trimmed = name.trim();
+    if trimmed.is_empty() { return Err("フォルダ名を入力してください".to_string()); }
+    let mut favorites = load_favorites(&app);
+    let parent_valid = parent_id == MEMO_FOLDER_ID || (favorites.iter().any(|node| node.id == parent_id && node.node_type == FavoriteNodeType::Folder)
+        && is_descendant_of(&favorites, &parent_id, MEMO_FOLDER_ID)
+        && !is_descendant_of(&favorites, &parent_id, MEMO_TRASH_ID));
+    if !parent_valid { return Err("メモの保存先が不正です".to_string()); }
+    if has_duplicate_favorite_name(&favorites, &parent_id, FavoriteNodeType::Folder, trimmed, None) { return Err("同じ名前のフォルダが既に存在します".to_string()); }
+    let order = favorites.iter().filter(|node| node.parent_id == parent_id).map(|node| node.order).max().map(|v| v + 1).unwrap_or(0);
+    favorites.push(FavoriteNode { id: generate_favorite_node_id(), parent_id, node_type: FavoriteNodeType::Folder, name: trimmed.to_string(), value: String::new(), order, collapsed: false });
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
+#[tauri::command]
+fn move_memo_node_to(
+    app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
+    id: String,
+    new_parent_id: String,
+    target_index: usize,
+) -> Result<Vec<FavoriteNode>, String> {
+    let _guard = favorite_lock.0.lock().unwrap();
+    if [PINNED_FOLDER_ID, FAVORITES_FOLDER_ID, MEMO_FOLDER_ID, MEMO_TRASH_ID].contains(&id.as_str()) { return Err("予約フォルダは移動できません".to_string()); }
+    let mut favorites = load_favorites(&app);
+    let target_pos = favorites.iter().position(|node| node.id == id).ok_or_else(|| "指定したノードが見つかりません".to_string())?;
+    let source_in_memo = is_descendant_of(&favorites, &favorites[target_pos].parent_id, MEMO_FOLDER_ID);
+    let destination_valid = new_parent_id == MEMO_FOLDER_ID || new_parent_id == MEMO_TRASH_ID || (favorites.iter().any(|node| node.id == new_parent_id && node.node_type == FavoriteNodeType::Folder)
+        && (is_descendant_of(&favorites, &new_parent_id, MEMO_FOLDER_ID) || is_descendant_of(&favorites, &new_parent_id, MEMO_TRASH_ID)));
+    if !source_in_memo || !destination_valid { return Err("移動先が不正です".to_string()); }
+    if favorites[target_pos].node_type == FavoriteNodeType::Folder && (id == new_parent_id || is_descendant_of(&favorites, &new_parent_id, &id)) { return Err("フォルダを自分自身の中に移動することはできません".to_string()); }
+    let mut siblings: Vec<String> = favorites.iter().filter(|node| node.parent_id == new_parent_id && node.id != id).map(|node| node.id.clone()).collect();
+    siblings.sort_by_key(|sid| favorites.iter().find(|node| node.id == *sid).map(|node| node.order).unwrap_or(0));
+    siblings.insert(target_index.min(siblings.len()), id.clone());
+    favorites[target_pos].parent_id = new_parent_id;
+    for (order, sibling_id) in siblings.iter().enumerate() { if let Some(node) = favorites.iter_mut().find(|node| node.id == *sibling_id) { node.order = order as u32; } }
+    save_favorites(&app, &favorites)?;
+    Ok(favorites)
+}
+
+#[tauri::command]
+fn delete_memo_node(
+    app: AppHandle,
+    favorite_lock: tauri::State<'_, FavoriteNodesWriteLock>,
+    memo_lock: tauri::State<'_, MemoDocumentsWriteLock>,
+    id: String,
+) -> Result<Vec<FavoriteNode>, String> {
+    let _favorite_guard = favorite_lock.0.lock().unwrap();
+    let _memo_guard = memo_lock.0.lock().unwrap();
+    if [PINNED_FOLDER_ID, FAVORITES_FOLDER_ID, MEMO_FOLDER_ID, MEMO_TRASH_ID].contains(&id.as_str()) { return Err("予約フォルダは削除できません".to_string()); }
+    let mut favorites = load_favorites(&app);
+    let node = favorites.iter().find(|node| node.id == id).cloned().ok_or_else(|| "指定したノードが見つかりません".to_string())?;
+    if !is_descendant_of(&favorites, &node.parent_id, MEMO_FOLDER_ID) { return Err("指定したノードはメモではありません".to_string()); }
+    if !is_descendant_of(&favorites, &node.parent_id, MEMO_TRASH_ID) {
+        let next_order = favorites.iter().filter(|item| item.parent_id == MEMO_TRASH_ID).map(|item| item.order).max().unwrap_or(0) + 1;
+        let target = favorites.iter_mut().find(|item| item.id == id).unwrap();
+        target.parent_id = MEMO_TRASH_ID.to_string();
+        target.order = next_order;
+        save_favorites(&app, &favorites)?;
+        return Ok(favorites);
+    }
+    let deleted: HashSet<String> = favorites.iter().filter(|item| item.id == id || is_descendant_of(&favorites, &item.parent_id, &id)).map(|item| item.id.clone()).collect();
+    favorites.retain(|item| !deleted.contains(&item.id));
+    save_favorites(&app, &favorites)?;
+    let mut documents = load_memo_documents(&app);
+    documents.retain(|memo_id, _| !deleted.contains(memo_id));
+    save_memo_documents(&app, &documents)?;
+    Ok(favorites)
+}
+
 // 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで
 // 保存された settings.json（このフィールドを持たない）の読み込み時に
 // deserialize が失敗し、AppSettings 全体が Default::default() にフォールバックして
@@ -1290,6 +1541,10 @@ fn default_recent_keyword() -> String {
 
 fn default_favorite_keyword() -> String {
     DEFAULT_FAVORITE_KEYWORD.to_string()
+}
+
+fn default_memo_keyword() -> String {
+    DEFAULT_MEMO_KEYWORD.to_string()
 }
 
 fn default_recent_max_age_days() -> u32 {
@@ -1351,6 +1606,10 @@ struct AppSettings {
     favorite_enabled: bool,
     #[serde(default = "default_favorite_keyword")]
     favorite_keyword: String,
+    #[serde(default = "default_true")]
+    memo_enabled: bool,
+    #[serde(default = "default_memo_keyword")]
+    memo_keyword: String,
 }
 
 impl Default for AppSettings {
@@ -1384,6 +1643,8 @@ impl Default for AppSettings {
             pin_enabled: true,
             favorite_enabled: true,
             favorite_keyword: DEFAULT_FAVORITE_KEYWORD.to_string(),
+            memo_enabled: true,
+            memo_keyword: DEFAULT_MEMO_KEYWORD.to_string(),
         }
     }
 }
@@ -1399,13 +1660,14 @@ fn validate_unique_keyword(
     changing: &str,
     new_value: &str,
 ) -> Result<(), String> {
-    let entries: [(&str, &str); 6] = [
+    let entries: [(&str, &str); 7] = [
         ("shutdown", settings.shutdown_keyword.as_str()),
         ("restart", settings.restart_keyword.as_str()),
         ("sleep", settings.sleep_keyword.as_str()),
         ("clipboard", settings.clipboard_prefix.as_str()),
         ("recent", settings.recent_keyword.as_str()),
         ("favorite", settings.favorite_keyword.as_str()),
+        ("memo", settings.memo_keyword.as_str()),
     ];
     let conflict = entries
         .iter()
@@ -1648,6 +1910,27 @@ fn set_favorite_keyword(app: AppHandle, keyword: String) -> Result<AppSettings, 
     let mut settings = load_app_settings(&app);
     validate_unique_keyword(&settings, "favorite", trimmed)?;
     settings.favorite_keyword = trimmed.to_string();
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_memo_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.memo_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_memo_keyword(app: AppHandle, keyword: String) -> Result<AppSettings, String> {
+    let trimmed = keyword.trim();
+    if trimmed.is_empty() {
+        return Err("キーワードを入力してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    validate_unique_keyword(&settings, "memo", trimmed)?;
+    settings.memo_keyword = trimmed.to_string();
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -2551,7 +2834,7 @@ fn main() {
                     if event.state() == ShortcutState::Pressed {
                         if let Some(window) = app.get_webview_window("main") {
                             if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
+                                let _ = app.emit("request-hide", ());
                             } else {
                                 let _ = window.center();
                                 let _ = window.show();
@@ -2588,6 +2871,8 @@ fn main() {
             // フロントエンドには ID とサムネイルのみを渡す（詳細はキャッシュ・関数のコメント参照）
             app.manage(ClipboardImageCache::new());
             app.manage(PendingUpdate(Mutex::new(None)));
+            app.manage(FavoriteNodesWriteLock(Mutex::new(())));
+            app.manage(MemoDocumentsWriteLock(Mutex::new(())));
             let _ = APP_HANDLE.set(app.handle().clone());
             if let Some(window) = app.get_webview_window("main") {
                 // 保存済みウィンドウサイズの復元（未保存ならデフォルトの 640x420 のまま）。
@@ -2660,7 +2945,7 @@ fn main() {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_webview_window("main") {
                             if w.is_visible().unwrap_or(false) {
-                                let _ = w.hide();
+                                let _ = app.emit("request-hide", ());
                             } else {
                                 let _ = w.center();
                                 let _ = w.show();
@@ -2733,7 +3018,18 @@ fn main() {
             move_favorite_node_to,
             set_favorite_folder_collapsed,
             set_favorite_enabled,
-            set_favorite_keyword
+            set_favorite_keyword,
+            set_memo_enabled,
+            set_memo_keyword,
+            get_memo_nodes,
+            get_memo_manage_nodes,
+            get_memo_document,
+            add_memo,
+            save_memo_draft,
+            save_memo_final
+            ,add_memo_folder
+            ,move_memo_node_to
+            ,delete_memo_node
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

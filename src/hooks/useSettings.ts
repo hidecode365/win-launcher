@@ -282,6 +282,24 @@ export function useSettings(showSettings: boolean) {
     []
   );
 
+  const setMemoEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_memo_enabled", { enabled }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
+  const setMemoKeyword = useCallback(
+    async (keyword: string): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_memo_keyword", { keyword });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
+
   const addFolder = useCallback(async () => {
     const path = await invoke<string | null>("pick_folder").catch(() => null);
     if (!path) return;
@@ -363,6 +381,8 @@ export function useSettings(showSettings: boolean) {
     setPinEnabled,
     setFavoriteEnabled,
     setFavoriteKeyword,
+    setMemoEnabled,
+    setMemoKeyword,
     addFolder,
     toggleFolder,
     removeFolder,

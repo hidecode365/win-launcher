@@ -20,7 +20,7 @@ export function SearchBox({
   disabled: boolean;
   onOpenSettings: () => void;
   // /favorite モード表示中のみ、設定アイコンの隣に編集アイコンを表示する
-  // （お気に入り編集ビューへの入口。00-requirements.md「お気に入り編集ビュー」節を参照）。
+  // （お気に入り管理画面への入口。02-saved-items.md「お気に入り管理画面」節を参照）。
   favoriteEditVisible: boolean;
   onOpenFavoriteEdit: () => void;
   onImagePaste?: (file: File) => void;
@@ -80,7 +80,7 @@ export function SearchBox({
         readOnly={disabled}
       />
       {/* /favorite モード表示中のみ表示する編集アイコン。設定アイコンの左隣に置く
-          （00-requirements.md「お気に入り編集ビュー」節を参照）。 */}
+          （02-saved-items.md「お気に入り管理画面」節を参照）。 */}
       {favoriteEditVisible && (
         <Tooltip label="お気に入りを管理" className="ml-2 flex-shrink-0">
           <button
