@@ -56,7 +56,7 @@ function shouldStopEditInputKeyPropagation(e: React.KeyboardEvent): boolean {
 // リネーム中の行のインライン入力欄（4d）。CreateFolderInlineRow と同じ
 // 「テキストボックス＋Enter確定・Esc取り消し」の見た目・操作感を踏襲する。
 // フォーカス時にテキストを全選択する点は RegisterEntryDialog.tsx の表示名欄と同じ。
-function RenameInput({
+export function RenameInput({
   initialName,
   className,
   onConfirm,
@@ -137,7 +137,7 @@ function RenameInput({
 // から呼び出し元（FavoriteEditTree）が算出して渡す。RenameInput と同じ
 // 「Rust側のエラーメッセージをそのまま表示する」「Escape取り消し・Enter確定」
 // パターンを踏襲する。
-function CreateFolderInlineRow({
+export function CreateFolderInlineRow({
   depth,
   targetParentId,
   onCreateFolder,
