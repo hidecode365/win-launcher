@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,6 +13,7 @@ import { useClipboard } from "./hooks/useClipboard";
 import { useOcr } from "./hooks/useOcr";
 import { useUpdater } from "./hooks/useUpdater";
 import { useMemoNotes } from "./hooks/useMemoNotes";
+import { useTreeEditSelection } from "./hooks/useTreeEditSelection";
 import { SearchBox } from "./components/SearchBox";
 import { OcrPreview } from "./components/OcrPreview";
 import { ResultList } from "./components/ResultList";
@@ -103,6 +104,29 @@ export default function App() {
   memoModeRef.current = memoMode;
   const memoFilterText = memoMode ? search.query.slice(settings.appSettings.memoKeyword.length + 1) : "";
   const memo = useMemoNotes(memoMode);
+  // /memo の選択対象はフォルダ見出しではなく本文を持つメモだけ。選択位置を
+  // state化せず、識別子へのintentから導出することで再取得後も対象を追従させる。
+  const memoSelectableRows = useMemo(() => {
+    const term = memoFilterText.toLowerCase();
+    return memo.nodes
+      .filter((node) => node.type === "memo")
+      .filter((node) => {
+        const document = memo.documents[node.id];
+        return !term || `${node.name}\n${document?.draft?.content ?? document?.content ?? ""}`.toLowerCase().includes(term);
+      })
+      .map((node) => ({ key: node.id }));
+  }, [memo.nodes, memo.documents, memoFilterText]);
+  const memoSelection = useTreeEditSelection(
+    memoSelectableRows,
+    memoSelectableRows[0]?.key ?? "__memo_empty__",
+    memoFilterText
+  );
+  const selectedMemoId = memoSelectableRows[memoSelection.selected]?.key ?? null;
+  useEffect(() => {
+    if (selectedMemoId !== memo.selectedId) {
+      memo.setSelectedId(selectedMemoId);
+    }
+  }, [selectedMemoId, memo.selectedId, memo.setSelectedId]);
   const memoFlushRef = useRef(memo.flushDraft);
   memoFlushRef.current = memo.flushDraft;
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
@@ -914,6 +938,11 @@ export default function App() {
   // （選択管理そのものは今回変更していない）。
   const moveSelection = useCallback(
     (direction: 1 | -1) => {
+      if (memoMode) {
+        // 本文切替前に下書きを確実に退避し、textareaへフォーカスを移さずに選択だけを動かす。
+        memo.flushDraft().then(() => memoSelection.moveSelection(direction)).catch(console.error);
+        return;
+      }
       const nextIndex =
         direction === 1
           ? Math.min(search.selected + 1, listLength - 1)
@@ -963,6 +992,9 @@ export default function App() {
       webSearchVisible,
       baseLength,
       search.rows,
+      memoMode,
+      memo.flushDraft,
+      memoSelection.moveSelection,
     ]
   );
 
@@ -1250,7 +1282,7 @@ export default function App() {
   }
 
   if (memoEditOpen) {
-    return <MemoManageView onClose={() => setView("search")} onEdit={(id) => { setMemoEditorFocusRequested(true); memo.setSelectedId(id); setView("search"); }} version={appVersion} />;
+    return <MemoManageView onClose={() => { memo.refresh().catch(console.error).finally(() => setView("search")); }} onEdit={(id) => { memo.refresh().catch(console.error).finally(() => { setMemoEditorFocusRequested(true); memoSelection.selectByKey(id, Date.now() + 1000); memo.setSelectedId(id); setView("search"); }); }} version={appVersion} />;
   }
 
   return (
@@ -1381,9 +1413,9 @@ export default function App() {
             nodes={memo.nodes}
             documents={memo.documents}
             filterText={memoFilterText}
-            selectedId={memo.selectedId}
+            selectedId={selectedMemoId}
             document={memo.document}
-            onSelect={(id) => { memo.flushDraft().catch(console.error); setMemoEditorFocusRequested(true); memo.setSelectedId(id); }}
+            onSelect={(id) => { memo.flushDraft().then(() => { setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
             onContentChange={memo.updateContent}
             onSave={() => memo.saveFinal().catch(console.error)}
             initialLeftWidth={memoPaneWidth}

@@ -50,7 +50,7 @@ export function MemoPanel({
       )}
     </div>}
     right={<div className="h-full min-w-0 flex flex-col p-3 gap-2">
-      <div className="flex items-center justify-between gap-2"><span className="text-sm text-gray-500">{document ? <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span> : "メモを選択してください"}</span><div className="flex gap-2"><button type="button" onClick={onOpenManagement} className="text-xs text-gray-500 hover:text-gray-700">メモを管理</button><button type="button" disabled={!document} onClick={onSave} className="px-3 py-1 text-xs rounded bg-blue-500 text-white disabled:opacity-50">保存</button></div></div>
+      <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm text-gray-500">{document ? <><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span><span className="text-xs">{new Date(document.savedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存</span></> : "メモを選択してください"}</span><div className="flex gap-2"><button type="button" onClick={onOpenManagement} className="text-xs text-gray-500 hover:text-gray-700">メモを管理</button><button type="button" disabled={!document} onClick={onSave} className="px-3 py-1 text-xs rounded bg-blue-500 text-white disabled:opacity-50">保存</button></div></div>
       <textarea ref={textareaRef} disabled={!document} value={content} onChange={(event) => onContentChange(event.target.value)} className="flex-1 min-h-0 w-full resize-none rounded border border-gray-200 p-2 text-sm outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-50" placeholder="メモを選択してください" />
     </div>}
   />;
