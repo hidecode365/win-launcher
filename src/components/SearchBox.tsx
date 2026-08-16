@@ -1,6 +1,14 @@
 import type { ClipboardEvent, RefObject } from "react";
 import { Tooltip } from "./Tooltip";
 
+export function ManageViewIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  );
+}
+
 export function SearchBox({
   inputRef,
   query,
@@ -92,26 +100,14 @@ export function SearchBox({
             onClick={onOpenFavoriteEdit}
             className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              strokeWidth={1.5}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-              />
-            </svg>
+            <ManageViewIcon />
           </button>
         </Tooltip>
       )}
       {memoEditVisible && onOpenMemoEdit && (
         <Tooltip label="メモを管理" className="ml-2 flex-shrink-0">
           <button type="button" onClick={onOpenMemoEdit} className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            <ManageViewIcon />
           </button>
         </Tooltip>
       )}

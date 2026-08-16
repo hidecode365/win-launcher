@@ -30,6 +30,7 @@ import { StatusFooter } from "./components/StatusFooter";
 import { MemoPanel } from "./components/MemoPanel";
 import { MemoManageView } from "./components/MemoManageView";
 import { hideWindow } from "./lib/window";
+import { groupNodesByParent, walkGroupedTree } from "./lib/nodeTree";
 import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
 import type {
   ClipboardTextEntry,
@@ -108,13 +109,16 @@ export default function App() {
   // state化せず、識別子へのintentから導出することで再取得後も対象を追従させる。
   const memoSelectableRows = useMemo(() => {
     const term = memoFilterText.toLowerCase();
-    return memo.nodes
-      .filter((node) => node.type === "memo")
-      .filter((node) => {
+    const result: Array<{ key: string }> = [];
+    const grouped = groupNodesByParent(memo.nodes);
+    walkGroupedTree(grouped, "__memo__", (node) => {
+      if (node.type === "folder") return term ? undefined : { skipChildren: node.collapsed };
+      if (node.type === "memo") {
         const document = memo.documents[node.id];
-        return !term || `${node.name}\n${document?.draft?.content ?? document?.content ?? ""}`.toLowerCase().includes(term);
-      })
-      .map((node) => ({ key: node.id }));
+        if (!term || `${node.name}\n${document?.draft?.content ?? document?.content ?? ""}`.toLowerCase().includes(term)) result.push({ key: node.id });
+      }
+    });
+    return result;
   }, [memo.nodes, memo.documents, memoFilterText]);
   const memoSelection = useTreeEditSelection(
     memoSelectableRows,
@@ -612,9 +616,8 @@ export default function App() {
         // 表示中も含めて常に抑止するため）。
         e.preventDefault();
         e.stopPropagation();
-        if (memoMode) {
-          memo.saveFinal().catch(console.error);
-        }
+        // /memo の保存は、保存フィードバックも同時に更新する MemoPanel の
+        // capture listenerへ一本化する。
       } else if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
         e.stopPropagation();
@@ -1282,7 +1285,7 @@ export default function App() {
   }
 
   if (memoEditOpen) {
-    return <MemoManageView onClose={() => { memo.refresh().catch(console.error).finally(() => setView("search")); }} onEdit={(id) => { memo.refresh().catch(console.error).finally(() => { setMemoEditorFocusRequested(true); memoSelection.selectByKey(id, Date.now() + 1000); memo.setSelectedId(id); setView("search"); }); }} version={appVersion} />;
+    return <MemoManageView onClose={() => { setView("search"); memo.refresh().catch(console.error); }} onEdit={(id) => { setMemoEditorFocusRequested(true); memoSelection.selectByKey(id, Date.now() + 1000); memo.setSelectedId(id); setView("search"); memo.refresh().catch(console.error); }} version={appVersion} />;
   }
 
   return (
@@ -1415,12 +1418,13 @@ export default function App() {
             filterText={memoFilterText}
             selectedId={selectedMemoId}
             document={memo.document}
-            onSelect={(id) => { memo.flushDraft().then(() => { setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
+            onSelect={(id, focusEditor) => { memo.flushDraft().then(() => { if (focusEditor) setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
             onContentChange={memo.updateContent}
-            onSave={() => memo.saveFinal().catch(console.error)}
+            onSave={memo.saveFinal}
             initialLeftWidth={memoPaneWidth}
             onResizeEnd={handleMemoPaneWidthChange}
-            onOpenManagement={() => setView("memoEdit")}
+            onToggleFolder={(id, collapsed) => { invoke("set_favorite_folder_collapsed", { id, collapsed }).then(() => memo.refresh()).catch(console.error); }}
+            onMoveSelection={moveSelection}
             focusEditor={memoEditorFocusRequested}
             onEditorFocused={() => setMemoEditorFocusRequested(false)}
           />

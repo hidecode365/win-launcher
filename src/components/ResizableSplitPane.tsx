@@ -70,7 +70,7 @@ export function ResizableSplitPane({
     <div ref={containerRef} className={`flex min-w-0 overflow-hidden ${className}`}>
       <div className="flex-shrink-0 min-w-0" style={{ width: leftWidth }}>{left}</div>
       <div
-        className="w-1 flex-shrink-0 bg-gray-200/60 hover:bg-blue-400/60 cursor-col-resize transition-colors"
+        className="w-1 flex-shrink-0 border-x border-gray-300 bg-gray-100 hover:border-blue-400 hover:bg-blue-100 cursor-col-resize transition-colors"
         onPointerDown={(event) => {
           event.preventDefault();
           draggingRef.current = true;
