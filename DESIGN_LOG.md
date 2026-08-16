@@ -57,3 +57,16 @@ PO承認済み。`ClipboardPanel`・`OcrPreview`・`/memo`閲覧ビューで共�
 ## 段階5「/memo」実装着手前の適用範囲
 
 上記の設計事項はPO承認済みだが、この時点では実装しない。500_リリース前作業での`docs/internal-design/*.md`および`AGENTS.md`への正式反映も別指示とし、本トピック群はDESIGN_LOG.mdで保持する。
+
+## 段階5「/memo」監査B項目の整合性・遅延書き込み対策
+
+PO承認済み。メモ実装では、単一の`settings.json`へデータを集約したまま、以下の整合性対策を行う。
+
+- `memoDocuments: Record<memoId, MemoDocument>`は`settings.json`の単一キーとし、`MemoDocumentsWriteLock`（`Mutex<()>`をTauriのapp stateとして`app.manage()`）で、そのキーのread-modify-write-save全体を直列化する
+- `favorites`キーを更新する既存の全コマンド（お気に入り・ピン止め）と新規メモ関連コマンドには`FavoriteNodesWriteLock`を共通適用する。既存の全量更新経路にアプリ側の直列化が無かったため、メモ追加を機に同じ`favorites`キー内の更新消失を防ぐ
+- メモ作成・完全削除など、2キーを同時更新する操作のロック取得順は、常に`FavoriteNodesWriteLock → MemoDocumentsWriteLock`とする。逆順を作らずデッドロックを防ぐ
+- draft保存要求には`expectedRevision`を含め、Rust側は現在の`MemoDocument.revision`と一致する場合だけ受理する。確定保存でrevisionを進めdraftをnullにするため、遅延した古いdraftによる復活を拒否できる
+- Rust側のdraft保存直前に、対象nodeが現存し`type: "memo"`であることを検証する。存在しなければ拒否し、完全削除後のMemoDocument再生成を防ぐ
+- `MEMO_TRASH_ID`は`reserved_folder_definitions()`を4件へ拡張して追加する。既存の`ensure_reserved_folders()`による起動時のidempotentな補完を使うため、専用の移行処理は設けない。予約IDを列挙するrename/remove/moveガード等の「3件」前提も4件へ同期する
+- フォルダの完全削除では、先にfavorites側のnode削除を保存し、成功後にmemoDocumentsを削除・保存する。後段失敗時は孤児MemoDocumentを残すことを許容し、本文を失ったnodeを残す逆順は採らない
+- `is_descendant_of`は既存の64階層上限により循環データでも無限ループしない。`visited`集合は追加しない
