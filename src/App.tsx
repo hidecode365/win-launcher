@@ -30,7 +30,7 @@ import { StatusFooter } from "./components/StatusFooter";
 import { MemoPanel } from "./components/MemoPanel";
 import { MemoManageView } from "./components/MemoManageView";
 import { hideWindow } from "./lib/window";
-import { groupNodesByParent, walkGroupedTree } from "./lib/nodeTree";
+import { buildMemoVisibleRows } from "./lib/memoTree";
 import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
 import type {
   ClipboardTextEntry,
@@ -88,6 +88,10 @@ export default function App() {
   const clipboardPaneWidthRef = useRef(DEFAULT_CLIPBOARD_PANE_WIDTH);
   const storeRef = useRef<Store | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const settingsEscapeHandlerRef = useRef<(() => boolean) | null>(null);
+  const registerSettingsEscapeHandler = useCallback((handler: (() => boolean) | null) => {
+    settingsEscapeHandlerRef.current = handler;
+  }, []);
   // フォーカスアウト時自動非表示の判定用（後述のフォーカス監視 useEffect は依存配列が
   // 空で一度しかマウントされないため、view state を直接参照すると初回値の古い
   // クロージャのままになる。毎レンダーで最新値を書き込むこの ref を代わりに参照する）。
@@ -105,32 +109,25 @@ export default function App() {
   memoModeRef.current = memoMode;
   const memoFilterText = memoMode ? search.query.slice(settings.appSettings.memoKeyword.length + 1) : "";
   const memo = useMemoNotes(memoMode);
-  // /memo の選択対象はフォルダ見出しではなく本文を持つメモだけ。選択位置を
-  // state化せず、識別子へのintentから導出することで再取得後も対象を追従させる。
-  const memoSelectableRows = useMemo(() => {
-    const term = memoFilterText.toLowerCase();
-    const result: Array<{ key: string }> = [];
-    const grouped = groupNodesByParent(memo.nodes);
-    walkGroupedTree(grouped, "__memo__", (node) => {
-      if (node.type === "folder") return term ? undefined : { skipChildren: node.collapsed };
-      if (node.type === "memo") {
-        const document = memo.documents[node.id];
-        if (!term || `${node.name}\n${document?.draft?.content ?? document?.content ?? ""}`.toLowerCase().includes(term)) result.push({ key: node.id });
-      }
-    });
-    return result;
-  }, [memo.nodes, memo.documents, memoFilterText]);
+  // メモ画面もお気に入り画面と同様、フォルダ見出し行を含む表示行全体を選択対象にする。
+  // 描画と選択が別々の平坦化結果を持つと行番号がずれるため、共通の純粋関数から導出する。
+  const memoVisibleRows = useMemo(
+    () => buildMemoVisibleRows(memo.nodes, memo.documents, memoFilterText),
+    [memo.nodes, memo.documents, memoFilterText]
+  );
   const memoSelection = useTreeEditSelection(
-    memoSelectableRows,
-    memoSelectableRows[0]?.key ?? "__memo_empty__",
+    memoVisibleRows.map(({ node }) => ({ key: node.id })),
+    memoVisibleRows[0]?.node.id ?? "__memo_empty__",
     memoFilterText
   );
-  const selectedMemoId = memoSelectableRows[memoSelection.selected]?.key ?? null;
+  const selectedMemoRow = memoVisibleRows[memoSelection.selected]?.node ?? null;
+  const selectedMemoRowId = selectedMemoRow?.id ?? null;
+  const selectedMemoDocumentId = selectedMemoRow?.type === "memo" ? selectedMemoRow.id : null;
   useEffect(() => {
-    if (selectedMemoId !== memo.selectedId) {
-      memo.setSelectedId(selectedMemoId);
+    if (selectedMemoDocumentId !== memo.selectedId) {
+      memo.setSelectedId(selectedMemoDocumentId);
     }
-  }, [selectedMemoId, memo.selectedId, memo.setSelectedId]);
+  }, [selectedMemoDocumentId, memo.selectedId, memo.setSelectedId]);
   const memoFlushRef = useRef(memo.flushDraft);
   memoFlushRef.current = memo.flushDraft;
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
@@ -320,6 +317,20 @@ export default function App() {
       .then(() => memo.refresh())
       .catch(console.error);
   }, [memo.refresh]);
+  const openMemoEdit = useCallback(() => {
+    memo.flushDraft().then(() => setView("memoEdit")).catch(console.error);
+  }, [memo.flushDraft]);
+  const closeMemoEdit = useCallback(() => {
+    setView("search");
+    memo.refresh().catch(console.error);
+  }, [memo.refresh]);
+  const editMemoFromManage = useCallback((id: string) => {
+    setMemoEditorFocusRequested(true);
+    memoSelection.selectByKey(id, Date.now() + 1000);
+    memo.setSelectedId(id);
+    setView("search");
+    memo.refresh().catch(console.error);
+  }, [memo.refresh, memo.setSelectedId, memoSelection.selectByKey]);
 
   const openSettings = useCallback(() => {
     setView("settings");
@@ -570,7 +581,7 @@ export default function App() {
   ]);
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
-  // ステップの操作は document レベルの keydown で処理する。input 要素のローカル
+  // ステップの操作は window レベルの keydown で処理する。input 要素のローカル
   // onKeyDown に持たせると、フォーカス状態や WebView2 のブラウザ既定動作（Ctrl+S の
   // ページ保存、Ctrl+D のブックマーク追加）の影響で発火しないことがあるため、この
   // 一箇所に統一している。
@@ -607,6 +618,15 @@ export default function App() {
         setIconMeasureOverlayOpen(false);
         return;
       }
+      // Escapeは画面内のフォーカス位置に依存させず、この1箇所から各画面の
+      // 「一段戻る」操作へ振り分ける。インライン編集だけは入力自身が伝播を止め、
+      // まず編集をキャンセルする。
+      if (e.key === "Escape" && viewRef.current === "search" && updater.dialog) {
+        e.preventDefault();
+        if (updater.dialog.kind === "installing") hideWindow().catch(console.error);
+        else updater.dismiss();
+        return;
+      }
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
         // 軸4k：Ctrl+Sは「検索画面表示中に押されたときのみ設定画面を開く」
         // 非対称な動作に変更した（以前はトグルで開閉していた）。設定画面を
@@ -631,7 +651,11 @@ export default function App() {
           openSettings();
         }
       } else if (e.key === "Escape" && showSettings) {
-        closeSettings();
+        e.preventDefault();
+        if (!settingsEscapeHandlerRef.current?.()) closeSettings();
+      } else if (e.key === "Escape" && memoEditOpen) {
+        e.preventDefault();
+        closeMemoEdit();
       } else if (favoriteEditOpen && search.pendingDeleteFavoriteFolder) {
         // 削除確認モーダル表示中は Escape のみキャンセル扱いにする（下の
         // favoriteEditOpen 単体の分岐より先に判定し、Escape でモーダルではなく
@@ -839,6 +863,12 @@ export default function App() {
           void logUiEvent("[window-keydown] key=Escape");
           search.cancelSystemCommand();
         }
+      } else if (e.key === "Escape" && ocrActive) {
+        e.preventDefault();
+        handleOcrClose();
+      } else if (e.key === "Escape" && viewRef.current === "search") {
+        e.preventDefault();
+        memoFlushRef.current().catch(console.error).finally(() => hideWindow());
       }
     };
     window.addEventListener("keydown", handler);
@@ -846,6 +876,8 @@ export default function App() {
   }, [
     iconMeasureOverlayOpen,
     showSettings,
+    memoEditOpen,
+    closeMemoEdit,
     favoriteEditOpen,
     search.pendingCommand,
     search.cancelSystemCommand,
@@ -868,6 +900,8 @@ export default function App() {
     toggleFavoriteFromEditView,
     ocrActive,
     handleOcrClose,
+    updater.dialog,
+    updater.dismiss,
     search.setQuery,
     search.pathPasteWizardMode,
     search.wizardStep,
@@ -1103,9 +1137,6 @@ export default function App() {
           }
           break;
         }
-        case "Escape":
-          memo.flushDraft().catch(console.error).finally(() => hideWindow());
-          break;
       }
     },
     [
@@ -1133,7 +1164,6 @@ export default function App() {
       search.toggleFavoriteFolderCollapsed,
       selectedFavoriteRow,
       memoMode,
-      memo.flushDraft,
     ]
   );
 
@@ -1236,6 +1266,7 @@ export default function App() {
           onOpenFolder={settings.openFolder}
           onSaveFolderSettings={settings.setFolderSettings}
           onClose={closeSettings}
+          onRegisterEscapeHandler={registerSettingsEscapeHandler}
           version={appVersion}
         />
         {iconMeasureOverlayOpen && (
@@ -1285,7 +1316,7 @@ export default function App() {
   }
 
   if (memoEditOpen) {
-    return <MemoManageView onClose={() => { setView("search"); memo.refresh().catch(console.error); }} onEdit={(id) => { setMemoEditorFocusRequested(true); memoSelection.selectByKey(id, Date.now() + 1000); memo.setSelectedId(id); setView("search"); memo.refresh().catch(console.error); }} version={appVersion} />;
+    return <MemoManageView onClose={closeMemoEdit} onEdit={editMemoFromManage} version={appVersion} />;
   }
 
   return (
@@ -1328,7 +1359,7 @@ export default function App() {
         favoriteEditVisible={search.favoriteMode}
         onOpenFavoriteEdit={openFavoriteEdit}
         memoEditVisible={memoMode}
-        onOpenMemoEdit={() => setView("memoEdit")}
+        onOpenMemoEdit={openMemoEdit}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
         }
@@ -1416,7 +1447,7 @@ export default function App() {
             nodes={memo.nodes}
             documents={memo.documents}
             filterText={memoFilterText}
-            selectedId={selectedMemoId}
+            selectedId={selectedMemoRowId}
             document={memo.document}
             onSelect={(id, focusEditor) => { memo.flushDraft().then(() => { if (focusEditor) setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
             onContentChange={memo.updateContent}
@@ -1477,6 +1508,8 @@ export default function App() {
             search.pathPasteWizardMode ? search.wizardStep : null
           }
           prefixCommandMode={search.prefixCommandMode}
+          memoMode={memoMode}
+          memoDocumentSelected={selectedMemoRow?.type === "memo"}
           selectedRowKind={selectedRow?.kind ?? null}
           favoriteSelectedKind={selectedFavoriteRow?.kind ?? null}
           version={appVersion}

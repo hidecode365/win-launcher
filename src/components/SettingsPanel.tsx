@@ -85,6 +85,7 @@ export function SettingsPanel({
   onOpenFolder,
   onSaveFolderSettings,
   onClose,
+  onRegisterEscapeHandler,
   version,
 }: {
   appSettings: AppSettings;
@@ -128,6 +129,7 @@ export function SettingsPanel({
     detail: FolderDetailSettings
   ) => Promise<string | null>;
   onClose: () => void;
+  onRegisterEscapeHandler: (handler: (() => boolean) | null) => void;
   // 軸4k：全画面共通のフッター右端バージョン番号表示に統一するため、
   // App.tsx側で一度だけ取得した値をpropsとして受け取る（以前はこのコンポーネント
   // 自身がgetVersion()を呼んでいた）。
@@ -207,6 +209,7 @@ export function SettingsPanel({
               onRemoveFolder={onRemoveFolder}
               onOpenFolder={onOpenFolder}
               onSaveFolderSettings={onSaveFolderSettings}
+              onRegisterEscapeHandler={onRegisterEscapeHandler}
             />
           )}
           {tab === "favorite" && (

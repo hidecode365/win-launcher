@@ -14,6 +14,8 @@ export function StatusFooter({
   clipboardMode,
   pathPasteWizardStep,
   prefixCommandMode,
+  memoMode,
+  memoDocumentSelected,
   selectedRowKind,
   favoriteSelectedKind,
   version,
@@ -24,6 +26,8 @@ export function StatusFooter({
   clipboardMode: boolean;
   pathPasteWizardStep: PathPasteWizardStep | null;
   prefixCommandMode: boolean;
+  memoMode: boolean;
+  memoDocumentSelected: boolean;
   // 通常モードで現在選択中の行（rows[selected]）の種類。rows に該当する行が
   // ない場合（clipboardMode・prefixCommandMode・Web検索行選択中・範囲外等）は
   // null。並び順・rows の詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照。
@@ -56,6 +60,18 @@ export function StatusFooter({
           label={pathPasteWizardStep === "folderSelect" ? "次へ" : "保存"}
         />
         <KeyHint keys="Esc" label="戻る" />
+      </FooterBar>
+    );
+  }
+
+  if (memoMode) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="↑↓" label="選択" />
+        {memoDocumentSelected && <KeyHint keys="Ctrl+E" label="本文を編集" />}
+        {memoDocumentSelected && <KeyHint keys="Ctrl+S" label="保存" />}
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label="閉じる" />
       </FooterBar>
     );
   }

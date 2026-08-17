@@ -17,16 +17,19 @@ export function useMemoNotes(active: boolean) {
     setNodes(next);
     const loaded = await Promise.all(next.filter((node) => node.type === "memo").map(async (node) => [node.id, await invoke<MemoDocument>("get_memo_document", { id: node.id })] as const));
     setDocuments(Object.fromEntries(loaded));
-    setSelectedId((current) => current && next.some((node) => node.id === current) ? current : next.find((node) => node.type === "memo")?.id ?? null);
+    setSelectedId((current) => current && next.some((node) => node.type === "memo" && node.id === current) ? current : null);
   }, []);
 
   useEffect(() => { if (active) refresh().catch(console.error); }, [active, refresh]);
   useEffect(() => {
-    if (!selectedId) { setDocument(null); return; }
+    if (!selectedId) { setDocument(null); latestRef.current = null; return; }
+    let cancelled = false;
     invoke<MemoDocument>("get_memo_document", { id: selectedId }).then((next) => {
+      if (cancelled) return;
       setDocument(next);
       latestRef.current = { id: selectedId, content: next.draft?.content ?? next.content, revision: next.revision };
     }).catch(console.error);
+    return () => { cancelled = true; };
   }, [selectedId]);
 
   const flushDraft = useCallback(async () => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FolderDetailSettings, FolderEntry } from "../types";
 import { useTruncatedPath } from "../hooks/useTruncatedPath";
 import { FeatureToggle } from "./FeatureToggle";
@@ -41,6 +41,7 @@ export function FileSearchSettings({
   onRemoveFolder,
   onOpenFolder,
   onSaveFolderSettings,
+  onRegisterEscapeHandler,
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
@@ -53,11 +54,27 @@ export function FileSearchSettings({
     path: string,
     detail: FolderDetailSettings
   ) => Promise<string | null>;
+  onRegisterEscapeHandler: (handler: (() => boolean) | null) => void;
 }) {
   const [pendingRemovePath, setPendingRemovePath] = useState<string | null>(
     null
   );
   const [detailTarget, setDetailTarget] = useState<FolderEntry | null>(null);
+
+  useEffect(() => {
+    onRegisterEscapeHandler(() => {
+      if (detailTarget) {
+        setDetailTarget(null);
+        return true;
+      }
+      if (pendingRemovePath) {
+        setPendingRemovePath(null);
+        return true;
+      }
+      return false;
+    });
+    return () => onRegisterEscapeHandler(null);
+  }, [detailTarget, onRegisterEscapeHandler, pendingRemovePath]);
 
   const handleSaveFolderDetail = async (
     detail: FolderDetailSettings
