@@ -3,7 +3,13 @@ import { FavoriteNode, MemoDocument } from "../types";
 import { buildMemoVisibleRows } from "../lib/memoTree";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { ResizableSplitPane } from "./ResizableSplitPane";
-import { FileIcon, FolderChevron, FOLDER_ICON_PATH } from "./FavoriteTreeVisuals";
+import {
+  FileIcon,
+  FolderChevron,
+  FOLDER_ICON_PATH,
+  INDENT_BASE_REM,
+  INDENT_STEP_REM,
+} from "./FavoriteTreeVisuals";
 
 export function MemoPanel({
   nodes, documents, filterText, selectedId, document, onSelect, onContentChange, onSave,
@@ -38,19 +44,26 @@ export function MemoPanel({
   useEffect(() => () => {
     if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
   }, []);
+  const content = document?.draft?.content ?? document?.content ?? "";
+  const hasDraft = Boolean(
+    document?.draft && document.draft.content !== document.content
+  );
+  useEffect(() => {
+    if (hasDraft) setSaveFeedback(false);
+  }, [hasDraft]);
   const saveWithFeedback = useCallback(async () => {
+    if (!hasDraft) return;
     await onSave();
     setSaveFeedback(true);
     if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
     feedbackTimerRef.current = setTimeout(() => setSaveFeedback(false), 2000);
-  }, [onSave]);
+  }, [hasDraft, onSave]);
   const visible = useMemo(
     () => buildMemoVisibleRows(nodes, documents, filterText),
     [nodes, documents, filterText]
   );
   const selectedIndex = visible.findIndex(({ node }) => node.id === selectedId);
   const selectedNode = visible[selectedIndex]?.node ?? null;
-  const content = document?.draft?.content ?? document?.content ?? "";
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const editorFocused = event.target === textareaRef.current;
@@ -58,11 +71,15 @@ export function MemoPanel({
         if (event.ctrlKey && event.key.toLowerCase() === "s") {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (document) saveWithFeedback().catch(console.error);
+          if (hasDraft) saveWithFeedback().catch(console.error);
         } else if (event.key === "Escape") {
           event.preventDefault();
           event.stopImmediatePropagation();
           selectedRowButtonRef.current?.focus();
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          // window上の他のリスナーへは渡さず、preventDefaultは行わない。
+          // これによりtextarea内のブラウザ標準カーソル移動だけが動作する。
+          event.stopImmediatePropagation();
         }
         return;
       }
@@ -94,7 +111,7 @@ export function MemoPanel({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [content, document, filterText, onCopyAndClose, onMoveSelection, onToggleFolder, saveWithFeedback, selectedNode]);
+  }, [content, document, filterText, hasDraft, onCopyAndClose, onMoveSelection, onToggleFolder, saveWithFeedback, selectedNode]);
   // 矢印キーでの選択移動では本文へフォーカスを奪わない。明示的なクリック／管理画面からの遷移だけが指定する。
   useEffect(() => { if (focusEditor && selectedId) { textareaRef.current?.focus(); onEditorFocused?.(); } }, [focusEditor, selectedId, onEditorFocused]);
   useScrollSelectedIntoView(listRef, selectedIndex);
@@ -109,12 +126,12 @@ export function MemoPanel({
       ) : visible.length === 0 ? (
         <div className="p-4 text-sm text-gray-400">一致するメモがありません</div>
       ) : visible.map(({ node, depth }, index) => node.type === "folder" ?
-        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => { onSelect(node.id, false); if (!filterText) onToggleFolder(node.id, !node.collapsed); }} className={`flex w-full items-center py-2 pr-3 text-left text-xs font-medium ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-500 hover:bg-gray-50"}`} style={{ paddingLeft: 12 + depth * 16 }}><FolderChevron collapsed={node.collapsed} /><svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className="truncate">{node.name}</span></button> :
-        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => onSelect(node.id, true)} className={`flex w-full items-center py-2 pr-3 text-left text-sm ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}`} style={{ paddingLeft: 12 + depth * 16 }}><FileIcon className="mr-2 h-4 w-4 flex-shrink-0" /><span className="truncate">{node.name}</span></button>
+        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => { onSelect(node.id, false); if (!filterText) onToggleFolder(node.id, !node.collapsed); }} className={`flex w-full items-center py-2 pr-4 text-left text-xs font-medium ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-500 hover:bg-gray-50"}`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FolderChevron collapsed={node.collapsed} /><svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className="truncate">{node.name}</span></button> :
+        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => onSelect(node.id, true)} className={`flex w-full items-center py-2 pr-4 text-left text-sm font-medium ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FileIcon className="mr-2 h-4 w-4 flex-shrink-0" /><span className="truncate">{node.name}</span></button>
       )}
     </div>}
     right={<div className="h-full min-w-0 flex flex-col p-3 gap-2">
-      <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm text-gray-500">{document ? <><span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><button type="button" disabled={!document} onClick={() => saveWithFeedback().catch(console.error)} className="px-3 py-1 text-xs rounded bg-blue-500 text-white disabled:opacity-50">保存</button></div>
+      <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm text-gray-500">{document ? <>{hasDraft ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">下書き中</span> : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>}{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><button type="button" disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)} className="px-3 py-1 text-xs rounded bg-blue-500 text-white disabled:opacity-50">保存</button></div>
       <textarea ref={textareaRef} disabled={!document} value={content} onFocus={() => onEditorFocusChange?.(true)} onBlur={() => onEditorFocusChange?.(false)} onChange={(event) => onContentChange(event.target.value)} className="flex-1 min-h-0 w-full resize-none rounded border border-gray-200 p-2 text-sm outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-50" placeholder="メモを選択してください" />
     </div>}
   />;

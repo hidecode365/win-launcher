@@ -133,6 +133,9 @@ export default function App() {
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
   const [memoEditorFocusRequested, setMemoEditorFocusRequested] = useState(false);
   const [memoEditorFocused, setMemoEditorFocused] = useState(false);
+  const memoHasDraft = Boolean(
+    memo.document?.draft && memo.document.draft.content !== memo.document.content
+  );
   useEffect(() => {
     if (!memoMode) setMemoEditorFocused(false);
   }, [memoMode]);
@@ -145,6 +148,11 @@ export default function App() {
   );
   const ocr = useOcr();
   const updater = useUpdater();
+  const settingsShortcutAvailable =
+    view === "search" &&
+    !search.pendingCommand &&
+    !search.favoriteDialogTarget &&
+    !search.pendingDeleteFavoriteFolder;
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -644,14 +652,7 @@ export default function App() {
       } else if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
         e.stopPropagation();
-        if (
-          viewRef.current === "search" &&
-          !showSettings &&
-          !favoriteEditOpen &&
-          !search.pendingCommand &&
-          !search.favoriteDialogTarget &&
-          !search.pendingDeleteFavoriteFolder
-        ) {
+        if (settingsShortcutAvailable) {
           openSettings();
         }
       } else if (e.ctrlKey && e.key.toLowerCase() === "d") {
@@ -908,6 +909,7 @@ export default function App() {
     search.selectWizardFolder,
     search.confirmShortcut,
     search.cancelDeleteFavoriteFolder,
+    settingsShortcutAvailable,
   ]);
 
   // ピンアイコンはファイル検索結果の行、および /recent（最近使ったファイル一覧）の
@@ -1516,6 +1518,8 @@ export default function App() {
                 : null
           }
           memoEditorFocused={memoEditorFocused}
+          memoSaveAvailable={memoHasDraft}
+          settingsShortcutAvailable={settingsShortcutAvailable}
           selectionAvailable={listLength > 0}
           registerDialogOpen={search.favoriteDialogTarget !== null}
           updateDialogOpen={updater.dialog !== null}

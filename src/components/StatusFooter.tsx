@@ -18,6 +18,8 @@ export function StatusFooter({
   memoDocumentSelected,
   memoSelectedKind,
   memoEditorFocused,
+  memoSaveAvailable,
+  settingsShortcutAvailable,
   selectionAvailable,
   registerDialogOpen,
   updateDialogOpen,
@@ -36,6 +38,8 @@ export function StatusFooter({
   memoDocumentSelected: boolean;
   memoSelectedKind: "folder" | "memo" | null;
   memoEditorFocused: boolean;
+  memoSaveAvailable: boolean;
+  settingsShortcutAvailable: boolean;
   selectionAvailable: boolean;
   registerDialogOpen: boolean;
   updateDialogOpen: boolean;
@@ -52,10 +56,15 @@ export function StatusFooter({
   favoriteSelectedKind: "folder" | "item" | null;
   version: string;
 }) {
+  const settingsHint = settingsShortcutAvailable ? (
+    <KeyHint keys="Ctrl+," label="設定を開く" />
+  ) : null;
+
   if (updateDialogOpen) {
     return (
       <FooterBar version={version}>
         <KeyHint keys="Ctrl+D" label="クリア" />
+        {settingsHint}
         <KeyHint keys="Esc" label={updateInstalling ? "ウィンドウを隠す" : "閉じる"} />
       </FooterBar>
     );
@@ -66,6 +75,7 @@ export function StatusFooter({
       <FooterBar version={version}>
         <KeyHint keys="Enter" label="保存" />
         <KeyHint keys="Ctrl+D" label="クリア" />
+        {settingsHint}
         <KeyHint keys="Esc" label="キャンセル" />
       </FooterBar>
     );
@@ -75,6 +85,7 @@ export function StatusFooter({
     return (
       <FooterBar version={version}>
         <KeyHint keys="Ctrl+D" label="クリア" />
+        {settingsHint}
         <KeyHint keys="Esc" label="キャンセル" />
       </FooterBar>
     );
@@ -93,6 +104,7 @@ export function StatusFooter({
           />
         )}
         <KeyHint keys="Ctrl+D" label="クリア" />
+        {settingsHint}
         <KeyHint keys="Esc" label="戻る" />
       </FooterBar>
     );
@@ -113,8 +125,9 @@ export function StatusFooter({
         {!memoEditorFocused && memoDocumentSelected && (
           <KeyHint keys="Ctrl+E" label="本文を編集" />
         )}
-        {memoEditorFocused && <KeyHint keys="Ctrl+S" label="保存" />}
+        {memoEditorFocused && memoSaveAvailable && <KeyHint keys="Ctrl+S" label="保存" />}
         <KeyHint keys="Ctrl+D" label="クリア" />
+        {settingsHint}
         <KeyHint keys="Esc" label={memoEditorFocused ? "一覧へ戻る" : "閉じる"} />
       </FooterBar>
     );
@@ -147,6 +160,7 @@ export function StatusFooter({
         <KeyHint keys="Shift+Enter" label="フォルダを開く" />
       )}
       <KeyHint keys="Ctrl+D" label="クリア" />
+      {settingsHint}
       <KeyHint keys="Esc" label="閉じる" />
     </FooterBar>
   );

@@ -1406,7 +1406,14 @@ fn save_memo_draft(
     let mut documents = load_memo_documents(&app);
     let document = documents.entry(id).or_insert(MemoDocument { revision: 1, content: String::new(), saved_at: now_ms(), draft: None });
     if document.revision != expected_revision { return Err("メモの版が更新されています".to_string()); }
-    document.draft = Some(MemoDraft { content, updated_at: now_ms() });
+    document.draft = if document.content == content {
+        None
+    } else {
+        Some(MemoDraft {
+            content,
+            updated_at: now_ms(),
+        })
+    };
     let result = document.clone();
     save_memo_documents(&app, &documents)?;
     Ok(result)
