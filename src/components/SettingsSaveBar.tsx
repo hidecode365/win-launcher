@@ -1,3 +1,5 @@
+import { ActionButton } from "./ActionButton";
+
 // テキスト入力・数値入力・タグ入力による設定をまとめて保存する、タブ末尾に配置する
 // 単一の保存UI（CLAUDE.md「設定画面」節の「保存モデル」を参照）。未保存の変更がある
 // 場合のみボタンを活性化し、「未保存の変更があります」を表示する。保存失敗時のエラー
@@ -14,14 +16,13 @@ export function SettingsSaveBar({
   return (
     <div className="pt-1">
       <div className="flex items-center gap-3">
-        <button
-          type="button"
+        <ActionButton
+          size="standard"
           onClick={onSave}
           disabled={!isDirty}
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
         >
           保存
-        </button>
+        </ActionButton>
         {isDirty && (
           <span className="text-xs text-amber-600">未保存の変更があります</span>
         )}

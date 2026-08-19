@@ -249,7 +249,7 @@ win-launcher/
 
 以下は `docs/internal-design/*.md` から抽出した「今後の指針・再利用可能な原則」のみを収めたダイジェストである。**各原則の背景（現状仕様の詳細・経緯・却下案・不具合の記録）は必ずポインタ先で確認すること。** 原則だけでは実装の詳細・過去の失敗パターンを把握しきれない場合がある。
 
-見出しは横断アーキテクチャ系4ファイル・機能単位系10ファイルの計14ファイルに対応する。**ポインタ先が `external-design/`（太字で示す）になっている原則は PO 承認済みの設計事項であり、AD の判断だけで変更しないこと**（変更が必要と判断した場合は 200_設計 工程として提起する）。
+見出しは横断アーキテクチャ系5ファイル・機能単位系10ファイルの計15ファイルに対応する。**ポインタ先が `external-design/`（太字で示す）になっている原則は PO 承認済みの設計事項であり、AD の判断だけで変更しないこと**（変更が必要と判断した場合は 200_設計 工程として提起する）。
 
 ### ウィンドウ・ホットキー
 
@@ -328,6 +328,16 @@ win-launcher/
 - アイコンは単色を一律適用せず、行が取りうる3状態（通常／選択中／グレーアウト）ごとに個別にコントラストを検証する。「視覚的に目立たせたい要素」と「控えめにしたい要素」が同じ行に混在する場合、`opacity` は控えめにしたい要素側だけに付与する。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#warning-icon)
 - 新しい操作アイコンにツールチップを付ける場合は必ず `Tooltip` 共通コンポーネントを使い、`title` 属性を使わない（「省略テキストの全体表示」目的の場合のみ `title` 属性を許容）。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#tooltip-component)
 - 新しい行末アイコン（ピン・★・件数バッジ・フォルダ作成・削除等）を追加する場合は必ず共通ラッパー `IconSlot` を使い、個々のコンポーネントが独自の `ml-2`・ホバー円・Tooltipラップを実装しない。余白はアイコン群を束ねる親要素の `gap-2` に一本化する。「サイズ・マージンの数値は揃えたのに見た目が揃わない」という報告を受けた場合、数値の再調整より先に各要素の実際のDOM構造（パディングの有無・ラッパーの層数）の違いを疑う。 → 詳細: [favorites-ui-iconography.md](docs/internal-design/favorites-ui-iconography.md#icon-slot-wrapper)
+
+### 共有UI・デザインシステム
+
+→ 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md)
+
+- 新しいUIは、共有コンポーネント → 共有スタイル／semantic token → 新しい共有定義、の順で検討し、画面固有のraw値を先に追加しない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#shared-ui-entry-point)
+- 複数画面で同じ意味を持つ色・spacing・文字階層だけを`tailwind.config.js`の`ui-*` tokenへ追加し、単一画面の例外値まで網羅的にtoken化しない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#semantic-tokens)
+- お気に入り管理・メモ管理の固定行／フォルダ行／内容行は、`manageTreeRowClass`と`MANAGE_TREE_ROW_LABEL`を使い、片方だけraw classで上書きしない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#manage-tree-row-variants)
+- 作業を確定する主要ボタンは`ActionButton`のsemantic variantを使い、配置密度の違いはsizeで表す。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#action-button)
+- 本文textareaは挙動を無理に共通化せず、`EDITOR_SURFACE_CLASS`で表面だけを共有する。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#editor-surface)
 
 ### 計算機能・システムコマンド・プレフィックスコマンド候補
 

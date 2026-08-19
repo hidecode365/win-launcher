@@ -82,3 +82,15 @@ PO承認済み。メモ実装では、単一の`settings.json`へデータを集
 `requirements/06-keyboard-interactions.md`表14、`external-design/01-screen-transitions.md`、issue 0021は、検索フォルダ削除確認・詳細設定でEscapeが設定画面全体を閉じる既知不具合を記載している。一方、現行実装は`FileSearchSettings`が内側オーバーレイ用Escapeハンドラを登録し、`App`の設定画面分岐がそれを先に呼ぶ構造へ修正済みであり、Escapeは内側だけを閉じる。
 
 アプリを不具合状態へ戻すのではなく、MGが修正経緯を確認したうえで要件・外部設計・issue 0021の現状記述を同期するのが妥当と考える。外部設計とissueはMG側正本のため、ADは変更しない。
+
+## デザインシステム共有基盤
+
+PO承認済みの「既存画面を目視で模倣せず、共有定義へ接続する」方針を、次の最小構成で実装する。
+
+- 複数画面で同じ意味を持つ色・spacing・文字階層のみを、`tailwind.config.js`のsemantic tokenとして定義する。単一画面の例外値は対象外とする
+- お気に入り管理画面の現行値を`fixed`／`folder`／`item`の管理ツリー行variantへ移し、お気に入り自身とメモ管理画面の双方から参照する
+- メモ保存・OCRコピー・設定保存は、いずれも現在の作業を確定するprimary actionと判断する。色・hover・disabledを共有し、画面密度の違いは`compact`／`standard` sizeで表す。OCRの閉じる操作はsecondaryとする
+- メモ本文とOCRテキストは状態・イベント・フォーカス規則が異なるためReactコンポーネントには統合せず、textareaのsurface styleだけを共有する
+- 共有UIの入口と追加判断順序は`docs/internal-design/shared-ui-system.md`を正本とし、AGENTS.mdには再利用原則のダイジェストだけを置く
+
+設計上の懸念はない。D&D表示はツリー操作固有のため行variant外に残し、destructive buttonは今回の3つのprimary actionと意味が異なるため未定義のままとする。

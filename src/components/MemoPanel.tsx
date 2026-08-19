@@ -3,6 +3,8 @@ import { FavoriteNode, MemoDocument } from "../types";
 import { buildMemoVisibleRows } from "../lib/memoTree";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { ResizableSplitPane } from "./ResizableSplitPane";
+import { ActionButton } from "./ActionButton";
+import { EDITOR_SURFACE_CLASS } from "../ui/sharedStyles";
 import {
   FileIcon,
   FolderChevron,
@@ -138,8 +140,8 @@ export function MemoPanel({
       )}
     </div>}
     right={<div className="h-full min-w-0 flex flex-col p-3 gap-2">
-      <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm text-gray-500">{document ? <>{hasDraft ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">下書き中</span> : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>}{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><button type="button" disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)} className="px-3 py-1 text-xs rounded bg-blue-500 text-white disabled:opacity-50">保存</button></div>
-      <textarea ref={textareaRef} disabled={!document} value={content} onFocus={() => onEditorFocusChange?.(true)} onBlur={() => onEditorFocusChange?.(false)} onChange={(event) => onContentChange(event.target.value)} className="flex-1 min-h-0 w-full resize-none rounded border border-gray-200 p-2 text-sm outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-gray-50" placeholder="メモを選択してください" />
+      <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-sm text-gray-500">{document ? <>{hasDraft ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">下書き中</span> : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>}{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><ActionButton disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)}>保存</ActionButton></div>
+      <textarea ref={textareaRef} disabled={!document} value={content} onFocus={() => onEditorFocusChange?.(true)} onBlur={() => onEditorFocusChange?.(false)} onChange={(event) => onContentChange(event.target.value)} className={`flex-1 min-h-0 ${EDITOR_SURFACE_CLASS}`} placeholder="メモを選択してください" />
     </div>}
   />;
 }

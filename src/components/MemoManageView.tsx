@@ -7,11 +7,16 @@ import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { isDescendantOfFolder } from "../hooks/useSearch";
 import { Tooltip } from "./Tooltip";
 import { IconSlot } from "./IconSlot";
-import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, TRASH_ICON_PATH } from "./FavoriteTreeVisuals";
+import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, INDENT_BASE_REM, INDENT_STEP_REM, TRASH_ICON_PATH } from "./FavoriteTreeVisuals";
 import { CreateFolderInlineRow, RenameInput } from "./FavoriteEditTree";
 import { ManageViewIcon } from "./SearchBox";
 import { MemoIcon } from "./MemoIcon";
 import { MemoManageFooter, type MemoManageSelectedKind } from "./MemoManageFooter";
+import {
+  MANAGE_TREE_ROW_LABEL,
+  manageTreeRowClass,
+  type ManageTreeRowVariant,
+} from "../ui/sharedStyles";
 
 type ManageRow = {
   node: FavoriteNode;
@@ -321,7 +326,13 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
           const reserved = row.kind === "root" || row.kind === "trash";
           const renamingThis = renaming === node.id;
           const dropClass = position === "before" ? "border-t-2 border-blue-500" : position === "after" ? "border-b-2 border-blue-500" : position === "into" ? "ring-2 ring-inset ring-amber-400" : "";
-          const rowClass = `flex w-full items-center py-2 pr-4 text-left text-xs transition-colors ${dropClass} ${selected ? "bg-blue-500 text-white" : row.trashed ? "bg-gray-50 text-gray-500 hover:bg-gray-100" : "text-gray-500 hover:bg-gray-50"}`;
+          const rowVariant: ManageTreeRowVariant =
+            row.kind === "root" || row.kind === "trash"
+              ? "fixed"
+              : node.type === "folder"
+                ? "folder"
+                : "item";
+          const rowClass = `${manageTreeRowClass(rowVariant, { selected, muted: row.trashed })} ${dropClass}`;
           const commonEvents = {
             onMouseEnter: () => selection.selectByKey(node.id),
             onDragOver: (event: React.DragEvent<HTMLDivElement>) => handleDragOver(event, row),
@@ -329,13 +340,13 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
             onDrop: (event: React.DragEvent<HTMLDivElement>) => { handleDrop(event, row).catch(console.error); },
           };
           if (row.kind === "root") {
-            return <Fragment key={node.id}><div role="button" data-index={index} className={rowClass} style={{ paddingLeft: "1rem" }} {...commonEvents}><svg className="mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className="flex-1 truncate font-medium">メモ</span>{renderActionIcons(row, selected)}</div>{creatingAnchorId === node.id && creating === "folder" && <CreateFolderInlineRow depth={0} targetParentId={creatingParentId} onCreateFolder={createFolder} onFolderCreated={(id) => { setCreating(null); setCreatingAnchorId(null); selection.selectByKey(id, Date.now() + 1000); }} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}{creatingAnchorId === node.id && creating === "memo" && <MemoCreateRow depth={0} name={name} onNameChange={setName} onCreate={createMemo} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}</Fragment>;
+            return <Fragment key={node.id}><div role="button" data-index={index} className={rowClass} style={{ paddingLeft: `${INDENT_BASE_REM}rem` }} {...commonEvents}><svg className="mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className={MANAGE_TREE_ROW_LABEL.fixed}>メモ</span>{renderActionIcons(row, selected)}</div>{creatingAnchorId === node.id && creating === "folder" && <CreateFolderInlineRow depth={0} targetParentId={creatingParentId} onCreateFolder={createFolder} onFolderCreated={(id) => { setCreating(null); setCreatingAnchorId(null); selection.selectByKey(id, Date.now() + 1000); }} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}{creatingAnchorId === node.id && creating === "memo" && <MemoCreateRow depth={0} name={name} onNameChange={setName} onCreate={createMemo} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}</Fragment>;
           }
-          return <Fragment key={node.id}><div role="button" data-index={index} draggable={!reserved && !renamingThis && !filtering} onDragStart={(event) => { dragInfoRef.current = { id: node.id, isFolder: node.type === "folder" }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); }} onDragEnd={() => { dragInfoRef.current = null; setDropTarget(null); }} onDoubleClick={() => { if (!row.trashed && !reserved) setRenaming(node.id); }} onClick={() => { selection.selectByKey(node.id); if (node.type === "folder" && !filtering) toggleFolder(node).catch(console.error); }} className={rowClass} style={{ paddingLeft: `${depth * 1.5 + 1}rem` }} {...commonEvents}>
+          return <Fragment key={node.id}><div role="button" data-index={index} draggable={!reserved && !renamingThis && !filtering} onDragStart={(event) => { dragInfoRef.current = { id: node.id, isFolder: node.type === "folder" }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); }} onDragEnd={() => { dragInfoRef.current = null; setDropTarget(null); }} onDoubleClick={() => { if (!row.trashed && !reserved) setRenaming(node.id); }} onClick={() => { selection.selectByKey(node.id); if (node.type === "folder" && !filtering) toggleFolder(node).catch(console.error); }} className={rowClass} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }} {...commonEvents}>
             {!reserved && !filtering ? <DragHandle selected={selected} /> : reserved ? null : <span className="mr-1.5 w-4 flex-shrink-0" />}
             {node.type === "folder" && <FolderChevron collapsed={node.collapsed} />}
             {row.kind === "trash" ? <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg> : node.type === "folder" ? <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg> : <FileIcon className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" />}
-            {renamingThis ? <RenameInput initialName={node.name} className="text-xs" onConfirm={(newName) => rename(node.id, newName)} onCancel={() => setRenaming(null)} /> : <span className="flex-1 truncate font-medium">{node.name}</span>}
+            {renamingThis ? <RenameInput initialName={node.name} className={rowVariant === "item" ? "text-ui-body" : "text-ui-meta"} onConfirm={(newName) => rename(node.id, newName)} onCancel={() => setRenaming(null)} /> : <span className={`${rowVariant === "item" ? "flex-1 " : ""}${MANAGE_TREE_ROW_LABEL[rowVariant]}`}>{node.name}</span>}
             {!renamingThis && renderActionIcons(row, selected)}
           </div>{creatingAnchorId === node.id && creating === "folder" && <CreateFolderInlineRow depth={node.type === "folder" ? depth + 1 : depth} targetParentId={creatingParentId} onCreateFolder={createFolder} onFolderCreated={(id) => { setCreating(null); setCreatingAnchorId(null); selection.selectByKey(id, Date.now() + 1000); }} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}{creatingAnchorId === node.id && creating === "memo" && <MemoCreateRow depth={node.type === "folder" ? depth + 1 : depth} name={name} onNameChange={setName} onCreate={createMemo} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}</Fragment>;
         })}
@@ -347,7 +358,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
 
 function MemoCreateRow({ depth, name, onNameChange, onCreate, onCancel }: { depth: number; name: string; onNameChange: (name: string) => void; onCreate: () => Promise<void>; onCancel: () => void }) {
   return (
-    <form className="flex items-center gap-2 py-2 pr-4" style={{ paddingLeft: `${depth * 1.5 + 1}rem` }} onSubmit={(event) => { event.preventDefault(); onCreate().catch(console.error); }}>
+    <form className="flex items-center gap-2 py-ui-row-y pr-ui-row-x" style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }} onSubmit={(event) => { event.preventDefault(); onCreate().catch(console.error); }}>
       <MemoIcon className="h-4 w-4 flex-shrink-0 text-gray-400" />
       <input autoFocus value={name} onChange={(event) => onNameChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCancel(); } }} placeholder="新しいメモ名" className="min-w-0 flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-xs outline-none focus:border-blue-400" />
     </form>

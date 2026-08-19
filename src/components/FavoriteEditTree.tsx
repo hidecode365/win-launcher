@@ -5,6 +5,10 @@ import { Tooltip } from "./Tooltip";
 import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
 import { IconSlot } from "./IconSlot";
 import {
+  MANAGE_TREE_ROW_LABEL,
+  manageTreeRowClass,
+} from "../ui/sharedStyles";
+import {
   FolderChevron,
   FileIcon,
   CreateFolderIcon,
@@ -621,11 +625,7 @@ export function FavoriteEditTree({
                   role="button"
                   data-index={index}
                   style={{ paddingLeft: `${INDENT_BASE_REM}rem` }}
-                  className={`w-full h-10 flex items-center pr-4 text-left transition-colors ${
-                    isSelected
-                      ? "bg-blue-500 text-white"
-                      : "text-gray-500 hover:bg-gray-50"
-                  } ${dropClasses}`}
+                  className={`${manageTreeRowClass("fixed", { selected: isSelected })} ${dropClasses}`}
                   onMouseEnter={() => onSelectRowByKey(row.key)}
                   onDragOver={(e) => handleDragOver(e, row)}
                   onDragLeave={() =>
@@ -646,7 +646,7 @@ export function FavoriteEditTree({
                   >
                     <path d={FOLDER_ICON_PATH} />
                   </svg>
-                  <span className="text-xs font-medium truncate flex-1">
+                  <span className={MANAGE_TREE_ROW_LABEL.fixed}>
                     お気に入り
                   </span>
                   {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
@@ -691,11 +691,7 @@ export function FavoriteEditTree({
                   data-index={index}
                   draggable={!isRenaming && !filtering}
                   style={indentStyle}
-                  className={`w-full flex items-center py-2 pr-4 text-left transition-colors ${
-                    isSelected
-                      ? "bg-blue-500 text-white"
-                      : "text-gray-500 hover:bg-gray-50"
-                  } ${dropClasses}`}
+                  className={`${manageTreeRowClass("folder", { selected: isSelected })} ${dropClasses}`}
                   onClick={() => onToggleCollapse(row.node.id)}
                   onDoubleClick={() => onStartRename(row.node.id)}
                   onMouseEnter={() => onSelectRowByKey(row.key)}
@@ -731,7 +727,7 @@ export function FavoriteEditTree({
                       onCancel={onCancelRename}
                     />
                   ) : (
-                    <span className="text-xs font-medium truncate flex-1">
+                    <span className={MANAGE_TREE_ROW_LABEL.folder}>
                       {row.node.name}
                     </span>
                   )}
@@ -822,11 +818,7 @@ export function FavoriteEditTree({
                 data-index={index}
                 draggable={!isRenaming && !filtering}
                 style={indentStyle}
-                className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
-                  isSelected
-                    ? "bg-blue-500 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                } ${dropClasses}`}
+                className={`${manageTreeRowClass("item", { selected: isSelected })} ${dropClasses}`}
                 onDoubleClick={() => onStartRename(row.node.id)}
                 onMouseEnter={() => onSelectRowByKey(row.key)}
                 onDragStart={(e) => {
@@ -868,7 +860,7 @@ export function FavoriteEditTree({
                     />
                   ) : (
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">
+                      <div className={MANAGE_TREE_ROW_LABEL.item}>
                         {item.name}
                       </div>
                       <div

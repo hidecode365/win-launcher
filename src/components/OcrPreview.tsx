@@ -1,4 +1,6 @@
 import { ResizableSplitPane } from "./ResizableSplitPane";
+import { ActionButton } from "./ActionButton";
+import { EDITOR_SURFACE_CLASS } from "../ui/sharedStyles";
 
 export function OcrPreview({
   imageUrl,
@@ -65,26 +67,23 @@ export function OcrPreview({
         {text !== null && !loading && (
           <div className="flex-1 flex flex-col min-h-0 gap-2">
             <textarea
-              className="flex-1 min-h-0 w-full text-sm text-gray-800 border border-gray-200 rounded p-2 resize-none outline-none focus:ring-1 focus:ring-blue-400 bg-white/80 overflow-y-auto"
+              className={`flex-1 min-h-0 overflow-y-auto ${EDITOR_SURFACE_CLASS}`}
               value={text}
               onChange={(e) => onTextChange(e.target.value)}
               autoFocus
             />
             <div className="flex justify-end gap-2 flex-shrink-0">
-              <button
-                type="button"
+              <ActionButton
+                variant="secondary"
                 onClick={onClose}
-                className="px-3 py-1 text-xs rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100"
               >
                 閉じる
-              </button>
-              <button
-                type="button"
+              </ActionButton>
+              <ActionButton
                 onClick={onCopyAndClose}
-                className="px-3 py-1 text-xs rounded bg-blue-500 text-white hover:bg-blue-600"
               >
                 コピーして閉じる
-              </button>
+              </ActionButton>
             </div>
           </div>
         )}
