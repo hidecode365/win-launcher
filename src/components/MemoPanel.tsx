@@ -14,7 +14,7 @@ import {
 export function MemoPanel({
   nodes, documents, filterText, selectedId, document, onSelect, onContentChange, onSave,
   onCopyAndClose, initialLeftWidth, onResizeEnd, onToggleFolder, onMoveSelection,
-  focusEditor, onEditorFocused, onEditorFocusChange,
+  focusEditor, onEditorFocused, onEditorFocusChange, onExitEditor,
 }: {
   nodes: FavoriteNode[];
   documents: Record<string, MemoDocument>;
@@ -32,6 +32,7 @@ export function MemoPanel({
   focusEditor?: boolean;
   onEditorFocused?: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
+  onExitEditor: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -75,7 +76,7 @@ export function MemoPanel({
         } else if (event.key === "Escape") {
           event.preventDefault();
           event.stopImmediatePropagation();
-          selectedRowButtonRef.current?.focus();
+          onExitEditor();
         } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           // window上の他のリスナーへは渡さず、preventDefaultは行わない。
           // これによりtextarea内のブラウザ標準カーソル移動だけが動作する。
@@ -111,7 +112,7 @@ export function MemoPanel({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [content, document, filterText, hasDraft, onCopyAndClose, onMoveSelection, onToggleFolder, saveWithFeedback, selectedNode]);
+  }, [content, document, filterText, hasDraft, onCopyAndClose, onExitEditor, onMoveSelection, onToggleFolder, saveWithFeedback, selectedNode]);
   useEffect(() => {
     const activeElement = window.document.activeElement;
     if (activeElement instanceof Node && listRef.current?.contains(activeElement)) {

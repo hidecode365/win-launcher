@@ -1458,6 +1458,7 @@ export default function App() {
             focusEditor={memoEditorFocusRequested}
             onEditorFocused={() => setMemoEditorFocusRequested(false)}
             onEditorFocusChange={setMemoEditorFocused}
+            onExitEditor={() => inputRef.current?.focus()}
           />
         ) : search.favoriteMode ? (
           <FavoriteListPanel
