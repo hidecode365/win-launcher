@@ -16,6 +16,12 @@ export function StatusFooter({
   prefixCommandMode,
   memoMode,
   memoDocumentSelected,
+  memoSelectedKind,
+  memoEditorFocused,
+  selectionAvailable,
+  registerDialogOpen,
+  updateDialogOpen,
+  updateInstalling,
   selectedRowKind,
   favoriteSelectedKind,
   version,
@@ -28,6 +34,12 @@ export function StatusFooter({
   prefixCommandMode: boolean;
   memoMode: boolean;
   memoDocumentSelected: boolean;
+  memoSelectedKind: "folder" | "memo" | null;
+  memoEditorFocused: boolean;
+  selectionAvailable: boolean;
+  registerDialogOpen: boolean;
+  updateDialogOpen: boolean;
+  updateInstalling: boolean;
   // 通常モードで現在選択中の行（rows[selected]）の種類。rows に該当する行が
   // ない場合（clipboardMode・prefixCommandMode・Web検索行選択中・範囲外等）は
   // null。並び順・rows の詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照。
@@ -40,10 +52,29 @@ export function StatusFooter({
   favoriteSelectedKind: "folder" | "item" | null;
   version: string;
 }) {
+  if (updateDialogOpen) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label={updateInstalling ? "ウィンドウを隠す" : "閉じる"} />
+      </FooterBar>
+    );
+  }
+
+  if (registerDialogOpen) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="Enter" label="保存" />
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label="キャンセル" />
+      </FooterBar>
+    );
+  }
+
   if (pendingCommand) {
     return (
       <FooterBar version={version}>
-        <KeyHint keys="Enter" label="実行" />
+        <KeyHint keys="Ctrl+D" label="クリア" />
         <KeyHint keys="Esc" label="キャンセル" />
       </FooterBar>
     );
@@ -52,13 +83,16 @@ export function StatusFooter({
   if (pathPasteWizardStep) {
     return (
       <FooterBar version={version}>
-        {pathPasteWizardStep === "folderSelect" && (
+        {pathPasteWizardStep === "folderSelect" && selectionAvailable && (
           <KeyHint keys="↑↓" label="選択" />
         )}
-        <KeyHint
-          keys="Enter"
-          label={pathPasteWizardStep === "folderSelect" ? "次へ" : "保存"}
-        />
+        {(pathPasteWizardStep === "nameEdit" || selectionAvailable) && (
+          <KeyHint
+            keys="Enter"
+            label={pathPasteWizardStep === "folderSelect" ? "次へ" : "保存"}
+          />
+        )}
+        <KeyHint keys="Ctrl+D" label="クリア" />
         <KeyHint keys="Esc" label="戻る" />
       </FooterBar>
     );
@@ -67,11 +101,21 @@ export function StatusFooter({
   if (memoMode) {
     return (
       <FooterBar version={version}>
-        <KeyHint keys="↑↓" label="選択" />
-        {memoDocumentSelected && <KeyHint keys="Ctrl+E" label="本文を編集" />}
-        {memoDocumentSelected && <KeyHint keys="Ctrl+S" label="保存" />}
+        {!memoEditorFocused && memoSelectedKind !== null && (
+          <KeyHint keys="↑↓" label="選択" />
+        )}
+        {!memoEditorFocused && memoSelectedKind === "memo" && (
+          <KeyHint keys="Enter" label="クリップボードにセット" />
+        )}
+        {!memoEditorFocused && memoSelectedKind === "folder" && (
+          <KeyHint keys="Enter" label="開閉" />
+        )}
+        {!memoEditorFocused && memoDocumentSelected && (
+          <KeyHint keys="Ctrl+E" label="本文を編集" />
+        )}
+        {memoEditorFocused && <KeyHint keys="Ctrl+S" label="保存" />}
         <KeyHint keys="Ctrl+D" label="クリア" />
-        <KeyHint keys="Esc" label="閉じる" />
+        <KeyHint keys="Esc" label={memoEditorFocused ? "一覧へ戻る" : "閉じる"} />
       </FooterBar>
     );
   }
@@ -95,8 +139,8 @@ export function StatusFooter({
 
   return (
     <FooterBar version={version}>
-      <KeyHint keys="↑↓" label="選択" />
-      <KeyHint keys="Enter" label={enterLabel} />
+      {selectionAvailable && <KeyHint keys="↑↓" label="選択" />}
+      {selectionAvailable && <KeyHint keys="Enter" label={enterLabel} />}
       {(selectedRowKind === "pinned" ||
         selectedRowKind === "file" ||
         favoriteSelectedKind === "item") && (

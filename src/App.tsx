@@ -132,6 +132,10 @@ export default function App() {
   memoFlushRef.current = memo.flushDraft;
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
   const [memoEditorFocusRequested, setMemoEditorFocusRequested] = useState(false);
+  const [memoEditorFocused, setMemoEditorFocused] = useState(false);
+  useEffect(() => {
+    if (!memoMode) setMemoEditorFocused(false);
+  }, [memoMode]);
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
   // ドメイン。00-requirements.md「お気に入り編集ビュー」節を参照）。データソースは
   // search.favoriteTree をそのまま共有する。
@@ -317,6 +321,11 @@ export default function App() {
       .then(() => memo.refresh())
       .catch(console.error);
   }, [memo.refresh]);
+  const copyMemoAndClose = useCallback(async (content: string) => {
+    await memo.flushDraft();
+    invoke("copy_to_clipboard", { text: content }).catch(console.error);
+    await search.closeWindow();
+  }, [memo.flushDraft, search.closeWindow]);
   const openMemoEdit = useCallback(() => {
     memo.flushDraft().then(() => setView("memoEdit")).catch(console.error);
   }, [memo.flushDraft]);
@@ -586,12 +595,9 @@ export default function App() {
   // ページ保存、Ctrl+D のブックマーク追加）の影響で発火しないことがあるため、この
   // 一箇所に統一している。
   // Ctrl+D は OCR プレビュー表示中のみ「閉じる」ボタン（handleOcrClose）と同一の処理を
-  // 呼び、それ以外の全モードでは現在のモードに関わらずクエリを問答無用で空文字にする
+  // 呼び、それ以外の全画面・全モードでは現在の表示に関わらずクエリを空文字にする
   // （ウィンドウは閉じないため closeWindow は経由しない。closeRefreshTick の加算も
   // 不要：query 自体が変化するので検索用 useEffect は通常通り再トリガーされる）。
-  // 検索 UI そのものが表示されていない設定パネル表示中・お気に入り編集ビュー
-  // 表示中（showSettings／favoriteEditOpen）は対象外とする。
-  //
   // パス貼り付けウィザードの両ステップ（"folderSelect"／"nameEdit"）も、SearchBox の
   // フォーカス状態に依存しないここで一括処理する。
   // - "folderSelect"：候補行は SearchBox とは別の `<button>` 要素（一覧の各行）であり、
@@ -628,12 +634,9 @@ export default function App() {
         return;
       }
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
-        // 軸4k：Ctrl+Sは「検索画面表示中に押されたときのみ設定画面を開く」
-        // 非対称な動作に変更した（以前はトグルで開閉していた）。設定画面を
-        // 閉じる手段はEscのみに一本化する（00-requirements.md「キー操作」節を
-        // 参照）。設定画面表示中にCtrl+Sを押しても何も起きないが、preventDefault
-        // 自体は常に行う（WebView2既定の「ページを保存」ダイアログを、設定画面
-        // 表示中も含めて常に抑止するため）。
+        // Ctrl+Sはメモ本文編集エリアの確定保存専用。MemoPanelのcapture listenerが
+        // 本文フォーカス中だけ先に処理し、それ以外では何も実行しない。ここでは
+        // WebView2既定の「ページを保存」ダイアログだけを全画面で抑止する。
         e.preventDefault();
         e.stopPropagation();
         // /memo の保存は、保存フィードバックも同時に更新する MemoPanel の
@@ -642,6 +645,7 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (
+          viewRef.current === "search" &&
           !showSettings &&
           !favoriteEditOpen &&
           !search.pendingCommand &&
@@ -650,6 +654,11 @@ export default function App() {
         ) {
           openSettings();
         }
+      } else if (e.ctrlKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (ocrActive) handleOcrClose();
+        else search.setQuery("");
       } else if (e.key === "Escape" && showSettings) {
         e.preventDefault();
         if (!settingsEscapeHandlerRef.current?.()) closeSettings();
@@ -769,19 +778,6 @@ export default function App() {
             }
             break;
           }
-        }
-      } else if (
-        !showSettings &&
-        !favoriteEditOpen &&
-        e.ctrlKey &&
-        e.key.toLowerCase() === "d"
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (ocrActive) {
-          handleOcrClose();
-        } else {
-          search.setQuery("");
         }
       } else if (!showSettings && !favoriteEditOpen && search.pathPasteWizardMode) {
         if (search.wizardStep === "folderSelect") {
@@ -1452,12 +1448,14 @@ export default function App() {
             onSelect={(id, focusEditor) => { memo.flushDraft().then(() => { if (focusEditor) setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
             onContentChange={memo.updateContent}
             onSave={memo.saveFinal}
+            onCopyAndClose={copyMemoAndClose}
             initialLeftWidth={memoPaneWidth}
             onResizeEnd={handleMemoPaneWidthChange}
             onToggleFolder={(id, collapsed) => { invoke("set_favorite_folder_collapsed", { id, collapsed }).then(() => memo.refresh()).catch(console.error); }}
             onMoveSelection={moveSelection}
             focusEditor={memoEditorFocusRequested}
             onEditorFocused={() => setMemoEditorFocusRequested(false)}
+            onEditorFocusChange={setMemoEditorFocused}
           />
         ) : search.favoriteMode ? (
           <FavoriteListPanel
@@ -1510,6 +1508,18 @@ export default function App() {
           prefixCommandMode={search.prefixCommandMode}
           memoMode={memoMode}
           memoDocumentSelected={selectedMemoRow?.type === "memo"}
+          memoSelectedKind={
+            selectedMemoRow?.type === "folder"
+              ? "folder"
+              : selectedMemoRow?.type === "memo"
+                ? "memo"
+                : null
+          }
+          memoEditorFocused={memoEditorFocused}
+          selectionAvailable={listLength > 0}
+          registerDialogOpen={search.favoriteDialogTarget !== null}
+          updateDialogOpen={updater.dialog !== null}
+          updateInstalling={updater.dialog?.kind === "installing"}
           selectedRowKind={selectedRow?.kind ?? null}
           favoriteSelectedKind={selectedFavoriteRow?.kind ?? null}
           version={appVersion}

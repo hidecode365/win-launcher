@@ -41,12 +41,22 @@ import { KeyHint } from "./KeyHint";
 export function FavoriteEditFooter({
   selectedKind,
   filtering,
+  deleteModalOpen,
   version,
 }: {
   selectedKind: "top" | "folder" | "item" | null;
   filtering: boolean;
+  deleteModalOpen: boolean;
   version: string;
 }) {
+  if (deleteModalOpen) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label="キャンセル" />
+      </FooterBar>
+    );
+  }
   return (
     <FooterBar version={version}>
       <KeyHint keys="↑↓" label="選択" />
@@ -65,6 +75,7 @@ export function FavoriteEditFooter({
           <KeyHint keys="Ctrl+Shift+←→" label="再親化" />
         </>
       )}
+      <KeyHint keys="Ctrl+D" label="クリア" />
       <KeyHint keys="Esc" label="戻る" />
     </FooterBar>
   );

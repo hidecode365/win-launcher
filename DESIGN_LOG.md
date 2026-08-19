@@ -70,3 +70,15 @@ PO承認済み。メモ実装では、単一の`settings.json`へデータを集
 - `MEMO_TRASH_ID`は`reserved_folder_definitions()`を4件へ拡張して追加する。既存の`ensure_reserved_folders()`による起動時のidempotentな補完を使うため、専用の移行処理は設けない。予約IDを列挙するrename/remove/moveガード等の「3件」前提も4件へ同期する
 - フォルダの完全削除では、先にfavorites側のnode削除を保存し、成功後にmemoDocumentsを削除・保存する。後段失敗時は孤児MemoDocumentを残すことを許容し、本文を失ったnodeを残す逆順は採らない
 - `is_descendant_of`は既存の64階層上限により循環データでも無限ループしない。`visited`集合は追加しない
+
+## キーボード操作仕様：アップデート確認中のEscape
+
+`requirements/06-keyboard-interactions.md`の表1はEscapeを「常時」とし、画面固有の一段戻る操作を認める一方、表13はアップデート確認のEnter/Escapeを「独自のキー処理なし（マウス操作のみ）」としており、同一文書内で適用関係が確定していない。
+
+現行実装は、過去の全画面Escape横並び修正により、更新確認・結果・エラー・更新可能表示ではEscapeでダイアログを閉じ、インストール中は処理を中断せずウィンドウだけを隠す。表1を優先するなら現行実装、表13を例外とするならEscape分岐撤去となるため、MG/PO判断までは現行実装を維持する。
+
+## キーボード操作仕様：設定内オーバーレイの既知不具合記述
+
+`requirements/06-keyboard-interactions.md`表14、`external-design/01-screen-transitions.md`、issue 0021は、検索フォルダ削除確認・詳細設定でEscapeが設定画面全体を閉じる既知不具合を記載している。一方、現行実装は`FileSearchSettings`が内側オーバーレイ用Escapeハンドラを登録し、`App`の設定画面分岐がそれを先に呼ぶ構造へ修正済みであり、Escapeは内側だけを閉じる。
+
+アプリを不具合状態へ戻すのではなく、MGが修正経緯を確認したうえで要件・外部設計・issue 0021の現状記述を同期するのが妥当と考える。外部設計とissueはMG側正本のため、ADは変更しない。

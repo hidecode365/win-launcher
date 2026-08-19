@@ -219,6 +219,7 @@ export function FavoriteEditView({
       <FavoriteEditFooter
         selectedKind={selectedRow?.kind ?? null}
         filtering={filtering}
+        deleteModalOpen={pendingDeleteFolder !== null}
         version={version}
       />
     </div>

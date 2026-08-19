@@ -31,8 +31,12 @@ export function MemoManageFooter({
         <KeyHint keys="Ctrl+Shift+↑↓" label="並び替え" />
       )}
       {movable && !filtering && (
-        <KeyHint keys="Ctrl+Shift+←→" label={trashed ? "復元・再親化" : "再親化"} />
+        <KeyHint
+          keys={trashed ? "Ctrl+Shift+←" : "Ctrl+Shift+←→"}
+          label={trashed ? "復元" : "再親化"}
+        />
       )}
+      <KeyHint keys="Ctrl+D" label="クリア" />
       <KeyHint keys="Esc" label="戻る" />
     </FooterBar>
   );

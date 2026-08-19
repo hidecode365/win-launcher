@@ -42,6 +42,7 @@ export function FileSearchSettings({
   onOpenFolder,
   onSaveFolderSettings,
   onRegisterEscapeHandler,
+  onOverlayActiveChange,
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
@@ -55,6 +56,7 @@ export function FileSearchSettings({
     detail: FolderDetailSettings
   ) => Promise<string | null>;
   onRegisterEscapeHandler: (handler: (() => boolean) | null) => void;
+  onOverlayActiveChange: (active: boolean) => void;
 }) {
   const [pendingRemovePath, setPendingRemovePath] = useState<string | null>(
     null
@@ -62,6 +64,7 @@ export function FileSearchSettings({
   const [detailTarget, setDetailTarget] = useState<FolderEntry | null>(null);
 
   useEffect(() => {
+    onOverlayActiveChange(detailTarget !== null || pendingRemovePath !== null);
     onRegisterEscapeHandler(() => {
       if (detailTarget) {
         setDetailTarget(null);
@@ -73,8 +76,11 @@ export function FileSearchSettings({
       }
       return false;
     });
-    return () => onRegisterEscapeHandler(null);
-  }, [detailTarget, onRegisterEscapeHandler, pendingRemovePath]);
+    return () => {
+      onRegisterEscapeHandler(null);
+      onOverlayActiveChange(false);
+    };
+  }, [detailTarget, onOverlayActiveChange, onRegisterEscapeHandler, pendingRemovePath]);
 
   const handleSaveFolderDetail = async (
     detail: FolderDetailSettings

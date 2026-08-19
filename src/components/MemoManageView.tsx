@@ -219,7 +219,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
   }, [filtering, moveNode, nodes, selectedNode, selectedRow]);
 
   const indentSelected = useCallback(async () => {
-    if (!selectedRow || !selectedNode || selectedRow.kind === "root" || selectedRow.kind === "trash" || filtering) return;
+    if (!selectedRow || selectedRow.trashed || !selectedNode || selectedRow.kind === "root" || selectedRow.kind === "trash" || filtering) return;
     const siblings = nodes.filter((node) => node.parentId === selectedNode.parentId).sort((a, b) => a.order - b.order);
     const index = siblings.findIndex((node) => node.id === selectedNode.id);
     if (index <= 0) return;
@@ -231,13 +231,13 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
 
   const outdentSelected = useCallback(async () => {
     if (!selectedRow || !selectedNode || selectedRow.kind === "root" || selectedRow.kind === "trash" || filtering) return;
-    const parentId = selectedNode.parentId;
-    if (parentId === MEMO_FOLDER_ID) return;
-    if (parentId === MEMO_TRASH_ID) {
+    if (selectedRow.trashed) {
       const rootCount = nodes.filter((node) => node.parentId === MEMO_FOLDER_ID && node.id !== selectedNode.id).length;
       await moveNode(selectedNode.id, MEMO_FOLDER_ID, rootCount);
       return;
     }
+    const parentId = selectedNode.parentId;
+    if (parentId === MEMO_FOLDER_ID) return;
     const parent = nodes.find((node) => node.id === parentId && node.type === "folder");
     if (!parent) return;
     const siblings = nodes.filter((node) => node.parentId === parent.parentId && node.id !== selectedNode.id).sort((a, b) => a.order - b.order);
@@ -255,7 +255,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
         return;
       }
       if (event.ctrlKey && event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); outdentSelected().catch(console.error); return; }
-      if (event.ctrlKey && event.shiftKey && event.key === "ArrowRight") { event.preventDefault(); indentSelected().catch(console.error); return; }
+      if (event.ctrlKey && event.shiftKey && event.key === "ArrowRight" && !selectedRow?.trashed) { event.preventDefault(); indentSelected().catch(console.error); return; }
       if (event.key === "Enter" && selectedNode?.type === "folder" && selectedNode.id !== MEMO_FOLDER_ID && !filtering) { event.preventDefault(); toggleFolder(selectedNode).catch(console.error); return; }
       if (event.key === "F2" && selectedRow && !selectedRow.trashed && selectedNode && ![MEMO_FOLDER_ID, MEMO_TRASH_ID].includes(selectedNode.id)) { event.preventDefault(); setRenaming(selectedNode.id); setName(selectedNode.name); return; }
       if (event.key === "Delete") { event.preventDefault(); remove().catch(console.error); return; }

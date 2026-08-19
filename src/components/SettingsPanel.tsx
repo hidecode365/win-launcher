@@ -136,6 +136,7 @@ export function SettingsPanel({
   version: string;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
+  const [overlayActive, setOverlayActive] = useState(false);
 
   return (
     <div className="flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl">
@@ -210,6 +211,7 @@ export function SettingsPanel({
               onOpenFolder={onOpenFolder}
               onSaveFolderSettings={onSaveFolderSettings}
               onRegisterEscapeHandler={onRegisterEscapeHandler}
+              onOverlayActiveChange={setOverlayActive}
             />
           )}
           {tab === "favorite" && (
@@ -295,7 +297,8 @@ export function SettingsPanel({
       </div>
 
       <FooterBar version={version}>
-        <KeyHint keys="Esc" label="閉じる" />
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label={overlayActive ? "キャンセル" : "閉じる"} />
       </FooterBar>
     </div>
   );
