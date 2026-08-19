@@ -112,6 +112,12 @@ export function MemoPanel({
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [content, document, filterText, hasDraft, onCopyAndClose, onMoveSelection, onToggleFolder, saveWithFeedback, selectedNode]);
+  useEffect(() => {
+    const activeElement = window.document.activeElement;
+    if (activeElement instanceof Node && listRef.current?.contains(activeElement)) {
+      selectedRowButtonRef.current?.focus({ preventScroll: true });
+    }
+  }, [selectedId]);
   // 矢印キーでの選択移動では本文へフォーカスを奪わない。明示的なクリック／管理画面からの遷移だけが指定する。
   useEffect(() => { if (focusEditor && selectedId) { textareaRef.current?.focus(); onEditorFocused?.(); } }, [focusEditor, selectedId, onEditorFocused]);
   useScrollSelectedIntoView(listRef, selectedIndex);
@@ -126,8 +132,8 @@ export function MemoPanel({
       ) : visible.length === 0 ? (
         <div className="p-4 text-sm text-gray-400">一致するメモがありません</div>
       ) : visible.map(({ node, depth }, index) => node.type === "folder" ?
-        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => { onSelect(node.id, false); if (!filterText) onToggleFolder(node.id, !node.collapsed); }} className={`flex w-full items-center py-2 pr-4 text-left text-xs font-medium ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-500 hover:bg-gray-50"}`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FolderChevron collapsed={node.collapsed} /><svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className="truncate">{node.name}</span></button> :
-        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => onSelect(node.id, true)} className={`flex w-full items-center py-2 pr-4 text-left text-sm font-medium ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FileIcon className="mr-2 h-4 w-4 flex-shrink-0" /><span className="truncate">{node.name}</span></button>
+        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => { onSelect(node.id, false); if (!filterText) onToggleFolder(node.id, !node.collapsed); }} className={`flex w-full items-center py-2 pr-4 text-left text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-200 ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-500 hover:bg-gray-50"}`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FolderChevron collapsed={node.collapsed} /><svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className="truncate">{node.name}</span></button> :
+        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => onSelect(node.id, true)} className={`flex w-full items-center py-2 pr-4 text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-200 ${node.id === selectedId ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"}`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FileIcon className="mr-2 h-4 w-4 flex-shrink-0" /><span className="truncate">{node.name}</span></button>
       )}
     </div>}
     right={<div className="h-full min-w-0 flex flex-col p-3 gap-2">
