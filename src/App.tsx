@@ -7,7 +7,7 @@ import { Store } from "@tauri-apps/plugin-store";
 import { logUiEvent } from "./lib/uiDebugLog";
 import { useSettings } from "./hooks/useSettings";
 import { useHotkey } from "./hooks/useHotkey";
-import { useSearch } from "./hooks/useSearch";
+import { PREFIX_CHAR, useSearch } from "./hooks/useSearch";
 import { useFavoriteEditSelection } from "./hooks/useFavoriteEditSelection";
 import { useClipboard } from "./hooks/useClipboard";
 import { useOcr } from "./hooks/useOcr";
@@ -332,8 +332,11 @@ export default function App() {
   const copyMemoAndClose = useCallback(async (content: string) => {
     await memo.flushDraft();
     invoke("copy_to_clipboard", { text: content }).catch(console.error);
-    await search.closeWindow();
-  }, [memo.flushDraft, search.closeWindow]);
+    await search.closeWindow({
+      clearQuery: "prefixOnly",
+      prefix: PREFIX_CHAR + settings.appSettings.memoKeyword,
+    });
+  }, [memo.flushDraft, search.closeWindow, settings.appSettings.memoKeyword]);
   const openMemoEdit = useCallback(() => {
     memo.flushDraft().then(() => setView("memoEdit")).catch(console.error);
   }, [memo.flushDraft]);
