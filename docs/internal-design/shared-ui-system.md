@@ -58,10 +58,10 @@ token名は色相や画面名ではなく役割で付ける。新しい色を追
 `src/components/ActionButton.tsx`は、ユーザーの現在の作業を確定するactionを表す共有ボタンである。
 
 - `primary`: メモ本文の保存、OCRの「コピーして閉じる」、設定の保存
-- `secondary`: OCRの「閉じる」、メモの「下書きを破棄」等、確定actionと並ぶ低優先度の補助操作。surface・控えめなoutline・shadowでクリック可能性を示しつつ、塗りつぶしのprimaryより視覚的な優先度を下げる
-- `compact`／`standard`: semantic roleではなく配置密度の違い。色・hover・disabledの意味はsizeに関係なく共通
+- `secondary`: OCRの「閉じる」、メモの「下書きを破棄」等、確定actionと並ぶ低優先度の補助操作。不透明なsurfaceと補助文字色由来のoutlineでクリック可能性を示しつつ、塗りつぶしのprimaryより視覚的な優先度を下げる
+- `compact`／`standard`: semantic roleではなく配置密度の違い。色・hover・disabledの意味はsizeに関係なく共通。同じsizeのvariantは固定heightを共有し、outlineの有無によらず同じ外形にする
 
-`ActionButton`の基底はアイコン＋ラベルを同じgapで配置できる`inline-flex`とする。アイコンは操作の意味を補助する場合だけ付け、ラベルを置き換えない。画面側で独自のpadding・outline・shadowを追加せず、variant側の状態表現を使う。
+画面側で独自のheight・padding・outlineを追加せず、sizeとvariantの状態表現を使う。
 
 破壊的操作はprimaryへ流用しない。将来共有が必要になった時点で`destructive`の追加を検討する。
 
