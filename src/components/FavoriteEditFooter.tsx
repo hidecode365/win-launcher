@@ -4,7 +4,7 @@ import { KeyHint } from "./KeyHint";
 // お気に入り編集ビューのキー操作ヒント。/favorite ブラウジング側の
 // StatusFooter.tsx と同じ視覚スタイル（KeyHint チップの並び。共通コンポーネント
 // を軸4kで両者に切り出した）を踏襲するが、編集ビュー固有の操作（F2 リネーム・
-// Delete 削除/★解除・Ctrl+Shift+矢印による並び替え・再親化等）を持つため別
+// Ctrl+Shift+矢印による並び替え・再親化等）を持つため別
 // コンポーネントとして独立させる（StatusFooter.tsx はブラウジング/クリップ
 // ボード/プレフィックスコマンド等の複数モードを1つに束ねた汎用フッターであり、
 // 編集ビュー用の分岐をそこへ増設すると条件分岐がさらに複雑化するため）。
@@ -15,12 +15,12 @@ import { KeyHint } from "./KeyHint";
 // ツールチップとホバー反応で示す）。
 //
 // 選択中の行の種別ごとに、その行で実際に使える操作だけを表示する：
-// - Top選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成（Topはリネーム・削除・★解除・
-//   並び替え・再親化のいずれの対象にもならないため、それらは表示しない）
-// - フォルダ選択中：↑↓ 選択／Enter 開閉／Ctrl+Shift+N フォルダ作成／Delete 削除／
-//   F2 リネーム／Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
-// - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／Delete ★解除／
-//   F2 リネーム／Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
+// - Top選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成（Topはリネーム・並び替え・
+//   再親化のいずれの対象にもならないため、それらは表示しない）
+// - フォルダ選択中：↑↓ 選択／Enter 開閉／Ctrl+Shift+N フォルダ作成／F2 リネーム／
+//   Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
+// - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／F2 リネーム／
+//   Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
 // Esc 戻る はどの状態でも共通（ヘッダーの「戻る」ボタンと同じ操作）。
 //
 // 軸4j：並び替え・再親化のキー割当は最終的に Ctrl+Shift+↑↓←→ に統一した
@@ -33,8 +33,7 @@ import { KeyHint } from "./KeyHint";
 // （Ctrl+Shift+↑↓）・再親化（Ctrl+Shift+←→）が無効化される（00-requirements.md
 // 「お気に入り編集ビュー」節を参照）ため、これら3つのヒントは絞り込み中のみ
 // 非表示にする（「今何ができるか」を示すフッターの原則に従う）。リネーム・
-// 削除・★解除・フォルダ作成は絞り込み中でも有効なままのため、ヒントも表示し
-// 続ける。
+// フォルダ作成は絞り込み中でも有効なままのため、ヒントも表示し続ける。
 //
 // 軸4k：右端のバージョン番号表示・キー操作チップの共通スタイルは
 // FooterBar.tsx/KeyHint.tsx に切り出し、全画面で共有する。
@@ -64,8 +63,6 @@ export function FavoriteEditFooter({
         <KeyHint keys="Enter" label="開閉" />
       )}
       <KeyHint keys="Ctrl+Shift+N" label="フォルダ作成" />
-      {selectedKind === "folder" && <KeyHint keys="Delete" label="削除" />}
-      {selectedKind === "item" && <KeyHint keys="Delete" label="★解除" />}
       {(selectedKind === "folder" || selectedKind === "item") && (
         <KeyHint keys="F2" label="リネーム" />
       )}

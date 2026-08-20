@@ -767,18 +767,6 @@ export default function App() {
             }
             break;
           }
-          case "Delete": {
-            // 軸4f：フォルダ選択時は削除確認、アイテム選択時は★解除（確認なし、
-            // ★アイコンクリックと同じ挙動）。Top選択時は何もしない。
-            e.preventDefault();
-            const row = favoriteEdit.tree[favoriteEdit.selected];
-            if (row?.kind === "folder") {
-              requestDeleteFavoriteEditFolder(row.node.id, row.node.name);
-            } else if (row?.kind === "item") {
-              toggleFavoriteFromEditView(row.file);
-            }
-            break;
-          }
         }
       } else if (!showSettings && !favoriteEditOpen && search.pathPasteWizardMode) {
         if (search.wizardStep === "folderSelect") {
@@ -893,8 +881,6 @@ export default function App() {
     moveFavoriteNodeWithinParent,
     indentFavoriteNode,
     outdentFavoriteNode,
-    requestDeleteFavoriteEditFolder,
-    toggleFavoriteFromEditView,
     ocrActive,
     handleOcrClose,
     updater.dialog,

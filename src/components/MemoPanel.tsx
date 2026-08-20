@@ -13,6 +13,10 @@ import {
   INDENT_STEP_REM,
 } from "./FavoriteTreeVisuals";
 
+function DiscardDraftIcon() {
+  return <svg aria-hidden="true" className="h-3.5 w-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.6 9A8 8 0 1 1 7 17.3" /></svg>;
+}
+
 export function MemoPanel({
   nodes, documents, filterText, selectedId, document, onSelect, onContentChange, onSave, onDiscardDraft,
   onCopyAndClose, initialLeftWidth, onResizeEnd, onToggleFolder, onMoveSelection,
@@ -146,7 +150,7 @@ export function MemoPanel({
       )}
     </div>}
     right={<div className="h-full min-w-0 flex flex-col p-3 gap-2">
-      <div className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm text-gray-500">{document ? <>{hasDraft ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">下書き中</span> : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>}{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><div className="flex flex-shrink-0 items-center gap-2"><ActionButton variant="secondary" className="whitespace-nowrap" disabled={!hasDraft} onClick={() => discardDraft().catch(console.error)}>下書きを破棄</ActionButton><ActionButton disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)}>保存</ActionButton></div></div>
+      <div className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm text-gray-500">{document ? <>{hasDraft ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">下書き中</span> : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>}{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><div className="flex flex-shrink-0 items-center gap-2"><ActionButton variant="secondary" className="whitespace-nowrap" disabled={!hasDraft} onClick={() => discardDraft().catch(console.error)}><DiscardDraftIcon />下書きを破棄</ActionButton><ActionButton disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)}>保存</ActionButton></div></div>
       <textarea ref={textareaRef} disabled={!document} value={content} onFocus={() => onEditorFocusChange?.(true)} onBlur={() => onEditorFocusChange?.(false)} onChange={(event) => onContentChange(event.target.value)} className={`flex-1 min-h-0 ${EDITOR_SURFACE_CLASS}`} placeholder="メモを選択してください" />
     </div>}
   />;

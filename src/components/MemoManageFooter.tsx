@@ -26,7 +26,6 @@ export function MemoManageFooter({
         <KeyHint keys="Ctrl+Shift+N" label="フォルダ作成" />
       )}
       {editable && <KeyHint keys="F2" label="リネーム" />}
-      {movable && <KeyHint keys="Delete" label={trashed ? "完全削除" : "ゴミ箱へ移動"} />}
       {movable && !filtering && !trashed && (
         <KeyHint keys="Ctrl+Shift+↑↓" label="並び替え" />
       )}

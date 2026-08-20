@@ -4,13 +4,13 @@ type ActionButtonVariant = "primary" | "secondary";
 type ActionButtonSize = "compact" | "standard";
 
 const BASE_CLASS =
-  "rounded outline-none focus-visible:ring-2 focus-visible:ring-ui-focus focus-visible:ring-offset-1";
+  "inline-flex items-center justify-center gap-1.5 rounded outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-ui-focus focus-visible:ring-offset-1";
 
 const VARIANT_CLASS: Record<ActionButtonVariant, string> = {
   primary:
     "bg-ui-action text-white hover:bg-ui-action-hover disabled:cursor-not-allowed disabled:bg-ui-disabled disabled:text-ui-disabled-text",
   secondary:
-    "text-ui-muted hover:bg-ui-hover hover:text-ui-text disabled:cursor-not-allowed disabled:opacity-50",
+    "bg-ui-surface/70 text-ui-muted shadow-sm ring-1 ring-inset ring-ui-border hover:bg-ui-hover hover:text-ui-text hover:shadow active:shadow-none disabled:cursor-not-allowed disabled:bg-ui-hover-subtle disabled:text-ui-disabled-text disabled:shadow-none",
 };
 
 const SIZE_CLASS: Record<ActionButtonSize, string> = {

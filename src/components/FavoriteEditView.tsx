@@ -8,7 +8,7 @@ import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 // お気に入り編集ビュー。4bで読み取り専用のツリー描画＋選択、4cでフォルダの
 // 作成・削除、4dでリネームを実装した。4eでドラッグ&ドロップによる並び替え・
 // 再親化、軸4fで仮想行「Top」（表示名は軸4gで「お気に入り」へ改称）・
-// Delete/Ctrl+Shift+N/Alt+矢印キーによる操作・行内アイコン化（フォルダ作成
+// Ctrl+Shift+N/Ctrl+Shift+矢印キーによる操作・行内アイコン化（フォルダ作成
 // ボタンの撤去）を実装した。軸4gではヘッダーを固定見出しから常時表示の検索
 // ボックスに置き換え、絞り込み機能を追加した（00-requirements.md「お気に入り
 // 編集ビュー」節を参照）。
@@ -95,7 +95,7 @@ export function FavoriteEditView({
 }) {
   // マウント時（編集ビューを開いた時点）に絞り込み欄へフォーカスする
   // （メイン検索画面の SearchBox と同じ「常にフォーカスされた入力欄」という
-  // 前提。↑↓・F2・Delete・Ctrl+Shift+N・Alt+矢印は window レベルリスナーが
+  // 前提。↑↓・F2・Ctrl+Shift+N・Ctrl+Shift+矢印は window レベルリスナーが
   // フォーカス位置に関わらず処理するため、この入力欄にフォーカスがあっても
   // ツリー操作は妨げられない）。
   //
@@ -168,19 +168,6 @@ export function FavoriteEditView({
           type="text"
           value={filterText}
           onChange={(e) => onFilterTextChange(e.target.value)}
-          onKeyDown={(e) => {
-            // 軸4g：Delete のみ、通常のテキスト編集（文字の後方削除）として
-            // window レベルリスナーへ伝播させない。それ以外のキー（Escape・
-            // ↑↓・F2・Ctrl+Shift+N・Alt+矢印）は、絞り込み中でもリネーム・
-            // 削除・★解除・フォルダ作成・選択移動を通常通り行えるよう、あえて
-            // stopPropagation せず window レベルリスナーへ伝播させる
-            // （00-requirements.md「お気に入り編集ビュー」節「絞り込み文字列が
-            // 1文字以上入力されている間は...リネーム・削除・★解除・フォルダ
-            // 作成は...通常通り操作可能とする」を参照）。
-            if (e.key === "Delete") {
-              e.stopPropagation();
-            }
-          }}
           placeholder="お気に入りを絞り込み..."
           className="flex-1 bg-transparent outline-none text-lg text-gray-800 placeholder-gray-400"
           autoComplete="off"

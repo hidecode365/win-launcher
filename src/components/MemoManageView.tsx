@@ -263,12 +263,11 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
       if (event.ctrlKey && event.shiftKey && event.key === "ArrowRight" && !selectedRow?.trashed) { event.preventDefault(); indentSelected().catch(console.error); return; }
       if (event.key === "Enter" && selectedNode?.type === "folder" && selectedNode.id !== MEMO_FOLDER_ID && !filtering) { event.preventDefault(); toggleFolder(selectedNode).catch(console.error); return; }
       if (event.key === "F2" && selectedRow && !selectedRow.trashed && selectedNode && ![MEMO_FOLDER_ID, MEMO_TRASH_ID].includes(selectedNode.id)) { event.preventDefault(); setRenaming(selectedNode.id); setName(selectedNode.name); return; }
-      if (event.key === "Delete") { event.preventDefault(); remove().catch(console.error); return; }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "n") { event.preventDefault(); startCreate("folder"); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [filtering, indentSelected, moveSelectedWithinParent, outdentSelected, remove, selectedNode, selectedRow, selection, startCreate, toggleFolder]);
+  }, [filtering, indentSelected, moveSelectedWithinParent, outdentSelected, selectedNode, selectedRow, selection, startCreate, toggleFolder]);
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>, row: ManageRow) => {
     if (filtering) return;
@@ -315,7 +314,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
       <header data-tauri-drag-region="deep" className="flex items-center border-b border-gray-200/60 px-4 py-3">
         <Tooltip label="戻る" side="right" className="mr-2 flex-shrink-0"><button type="button" onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button></Tooltip>
         <svg className="mr-3 h-5 w-5 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-        <input ref={filterInputRef} type="text" autoFocus autoComplete="off" spellCheck={false} value={filterText} onChange={(event) => setFilterText(event.target.value)} onKeyDown={(event) => { if (event.key === "Delete") event.stopPropagation(); }} placeholder="メモを絞り込み..." className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400" />
+        <input ref={filterInputRef} type="text" autoFocus autoComplete="off" spellCheck={false} value={filterText} onChange={(event) => setFilterText(event.target.value)} placeholder="メモを絞り込み..." className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400" />
       </header>
       {moveError && <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600">{moveError}</div>}
       <div ref={listRef} className="flex-1 overflow-y-auto">

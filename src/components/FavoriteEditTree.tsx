@@ -25,7 +25,7 @@ import {
 } from "../types";
 
 // window レベルの keydown リスナー（App.tsx）が、この編集ビューの間だけ有効な
-// ショートカット（F2・Delete・Ctrl+Shift+N・Ctrl+Shift+矢印キー4方向）を持つ
+// ショートカット（F2・Ctrl+Shift+N・Ctrl+Shift+矢印キー4方向）を持つ
 // ため、これらのインライン入力欄（RenameInput・CreateFolderInlineRow）は
 // 入力中に限りこれらのキーの伝播だけを止める（入力欄自身の通常のテキスト
 // 編集を妨げないため）。
@@ -46,8 +46,7 @@ function shouldStopEditInputKeyPropagation(e: React.KeyboardEvent): boolean {
     e.key === "ArrowDown" ||
     e.key === "ArrowLeft" ||
     e.key === "ArrowRight" ||
-    e.key === "F2" ||
-    e.key === "Delete"
+    e.key === "F2"
   ) {
     return true;
   }
@@ -398,10 +397,6 @@ function computeMoveTarget(
 // 直下（アイテム選択時）にインライン入力欄を表示する。作成を開始した時点の選択行
 // （アンカー）を creatingFolderAnchorKey として親（App.tsx）が保持し、この
 // コンポーネントはそのキーに一致する行の直後に CreateFolderInlineRow を描画する。
-//
-// 削除・★解除（Delete キー、軸4f）：選択中の行がフォルダなら削除確認、アイテムなら
-// 確認なしの即時★解除。Top選択中は何もしない（App.tsx の window レベルリスナー側で
-// 判定する）。
 //
 // 並び替え・再親化（Ctrl+Shift+↑↓←→、軸4f・軸4jでキー割当を最終確定）：
 // App.tsx の window レベルリスナーが move_favorite_node_to を直接呼ぶ
