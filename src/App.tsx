@@ -1450,6 +1450,7 @@ export default function App() {
             onSelect={(id, focusEditor) => { memo.flushDraft().then(() => { if (focusEditor) setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
             onContentChange={memo.updateContent}
             onSave={memo.saveFinal}
+            onDiscardDraft={memo.discardDraft}
             onCopyAndClose={copyMemoAndClose}
             initialLeftWidth={memoPaneWidth}
             onResizeEnd={handleMemoPaneWidthChange}

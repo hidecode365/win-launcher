@@ -10,6 +10,7 @@ import {
   INDENT_BASE_REM,
 } from "./FavoriteTreeVisuals";
 import { FavoriteTreeRow, FileEntry } from "../types";
+import { browseTreeRowClass } from "../ui/sharedStyles";
 
 // フォルダの折りたたみ・展開を示す▼/▶アイコン、フォルダアイコン、インデント幅は
 // FavoriteTreeVisuals.tsx（お気に入り編集ビューと共有）を参照。
@@ -85,11 +86,7 @@ export function FavoriteListPanel({
               role="button"
               data-index={index}
               style={indentStyle}
-              className={`w-full flex items-center py-2 pr-4 text-left transition-colors ${
-                isSelected
-                  ? "bg-blue-500 text-white"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
+              className={browseTreeRowClass("folder", { selected: isSelected })}
               onClick={() => onToggleCollapse(row.node.id)}
               onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
             >
@@ -150,11 +147,7 @@ export function FavoriteListPanel({
             role="button"
             data-index={index}
             style={indentStyle}
-            className={`w-full flex items-center py-2.5 pr-4 text-left transition-colors ${
-              isSelected
-                ? "bg-blue-500 text-white"
-                : "text-gray-700 hover:bg-gray-100"
-            }`}
+            className={browseTreeRowClass("item", { selected: isSelected })}
             onClick={() => onLaunchFile(item.path)}
             onMouseEnter={(e) => onSelectRowByKey(row.key, e.clientX, e.clientY)}
           >

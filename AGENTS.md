@@ -335,6 +335,7 @@ win-launcher/
 
 - 新しいUIは、共有コンポーネント → 共有スタイル／semantic token → 新しい共有定義、の順で検討し、画面固有のraw値を先に追加しない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#shared-ui-entry-point)
 - 複数画面で同じ意味を持つ色・spacing・文字階層だけを`tailwind.config.js`の`ui-*` tokenへ追加し、単一画面の例外値まで網羅的にtoken化しない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#semantic-tokens)
+- お気に入り画面・メモ画面のフォルダ行／内容行は、`browseTreeRowClass`を使って余白・状態色・実高を共有し、子要素のサイズや行数の違いで外形をずらさない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#browse-tree-row-variants)
 - お気に入り管理・メモ管理の固定行／フォルダ行／内容行は、`manageTreeRowClass`と`MANAGE_TREE_ROW_LABEL`を使い、片方だけraw classで上書きしない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#manage-tree-row-variants)
 - 作業を確定する主要ボタンは`ActionButton`のsemantic variantを使い、配置密度の違いはsizeで表す。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#action-button)
 - 本文textareaは挙動を無理に共通化せず、`EDITOR_SURFACE_CLASS`で表面だけを共有する。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#editor-surface)

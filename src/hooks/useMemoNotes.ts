@@ -58,6 +58,20 @@ export function useMemoNotes(active: boolean) {
     setDocument(saved);
   }, []);
 
+  const discardDraft = useCallback(async () => {
+    const latest = latestRef.current;
+    if (!latest) return;
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    const confirmedContent = document?.content ?? "";
+    const saved = await invoke<MemoDocument>("save_memo_draft", {
+      id: latest.id,
+      content: confirmedContent,
+      expectedRevision: latest.revision,
+    });
+    latestRef.current = { id: latest.id, content: saved.content, revision: saved.revision };
+    setDocument(saved);
+  }, [document]);
+
   useEffect(() => () => { flushDraft().catch(console.error); }, [flushDraft]);
-  return { nodes, documents, selectedId, setSelectedId, document, updateContent, saveFinal, flushDraft, refresh };
+  return { nodes, documents, selectedId, setSelectedId, document, updateContent, saveFinal, discardDraft, flushDraft, refresh };
 }

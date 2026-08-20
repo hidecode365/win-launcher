@@ -26,6 +26,17 @@
 
 token名は色相や画面名ではなく役割で付ける。新しい色を追加する前に、既存の`ui-*`が同じ意味を表していないか確認する。
 
+<a id="browse-tree-row-variants"></a>
+
+## 閲覧ツリー行のvariant
+
+`src/ui/sharedStyles.ts`の`browseTreeRowClass`が、お気に入り画面・メモ画面の閲覧ツリー行の共通定義である。
+
+- `folder`: フォルダ見出し行。お気に入り側の件数`IconSlot`（24px）を含む実高40pxを、子要素の有無に左右されない最小高として持つ
+- `item`: ファイル・メモ等の内容行。お気に入り側の名前＋パスの2行表示を含む実高56pxを、子要素の行数に左右されない最小高として持つ
+
+両variantは左右・縦余白、通常／hover／selectedの色を共有する。お気に入りとメモでは行のDOM構造や表示情報が異なるためコンポーネント自体は統合せず、行の外形と状態表現だけを共有する。片方の子要素が増減しても行高が再びずれないよう、余白の数値だけでなく最小高もvariantの契約に含める。
+
 <a id="manage-tree-row-variants"></a>
 
 ## 管理ツリー行のvariant
@@ -62,6 +73,7 @@ token名は色相や画面名ではなく役割で付ける。新しい色を追
 
 ## 状態確認の範囲
 
+- 閲覧ツリー行: 通常、hover、selected、folder／itemの実高
 - 管理ツリー行: 通常、hover、selected、muted、D&D drop
 - ActionButton: 通常、hover、focus、disabled
 - 編集エリア: 通常、focus、disabled
