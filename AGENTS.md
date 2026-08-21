@@ -318,6 +318,7 @@ win-launcher/
 - `/recent` 等の一覧に新しい行アクション（★・メモ等）を追加する場合、`recentMode` を理由にした除外分岐を新設しない。表示可否を切り替える必要がある場合は既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を再利用する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#pinning-from-recent)
 - ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#duplicate-folder-name-validation)
 - `/favorite` モードの上下移動ボタン・フォルダ削除アイコンは、段階3の設定画面側ツリー編集UIが完成した時点で撤去予定の暫定実装である（Rustコマンド自体は再利用可能性があるため無条件に削除しない）。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features)
+- 複数の予約ルートを1つのコマンドで扱う場合、単一ルートへの所属を先に要求しない。許可するルート集合への所属を検証してから、所属ルート別の処理を選ぶ。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#multi-root-command-validation)
 
 ### ピン止め・お気に入りアイコンとツールチップ
 

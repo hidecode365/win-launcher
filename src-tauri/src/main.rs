@@ -1490,6 +1490,34 @@ fn move_memo_node_to(
     Ok(favorites)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemoDeleteMode {
+    MoveToTrash,
+    PermanentlyDelete,
+}
+
+fn memo_delete_mode(
+    favorites: &[FavoriteNode],
+    node: &FavoriteNode,
+) -> Result<MemoDeleteMode, String> {
+    let in_trash = is_descendant_of(favorites, &node.parent_id, MEMO_TRASH_ID);
+    if in_trash {
+        return Ok(MemoDeleteMode::PermanentlyDelete);
+    }
+    if is_descendant_of(favorites, &node.parent_id, MEMO_FOLDER_ID) {
+        return Ok(MemoDeleteMode::MoveToTrash);
+    }
+    Err("指定したノードはメモではありません".to_string())
+}
+
+fn memo_subtree_node_ids(favorites: &[FavoriteNode], id: &str) -> HashSet<String> {
+    favorites
+        .iter()
+        .filter(|item| item.id == id || is_descendant_of(favorites, &item.parent_id, id))
+        .map(|item| item.id.clone())
+        .collect()
+}
+
 #[tauri::command]
 fn delete_memo_node(
     app: AppHandle,
@@ -1502,8 +1530,8 @@ fn delete_memo_node(
     if [PINNED_FOLDER_ID, FAVORITES_FOLDER_ID, MEMO_FOLDER_ID, MEMO_TRASH_ID].contains(&id.as_str()) { return Err("予約フォルダは削除できません".to_string()); }
     let mut favorites = load_favorites(&app);
     let node = favorites.iter().find(|node| node.id == id).cloned().ok_or_else(|| "指定したノードが見つかりません".to_string())?;
-    if !is_descendant_of(&favorites, &node.parent_id, MEMO_FOLDER_ID) { return Err("指定したノードはメモではありません".to_string()); }
-    if !is_descendant_of(&favorites, &node.parent_id, MEMO_TRASH_ID) {
+    let delete_mode = memo_delete_mode(&favorites, &node)?;
+    if delete_mode == MemoDeleteMode::MoveToTrash {
         let next_order = favorites.iter().filter(|item| item.parent_id == MEMO_TRASH_ID).map(|item| item.order).max().unwrap_or(0) + 1;
         let target = favorites.iter_mut().find(|item| item.id == id).unwrap();
         target.parent_id = MEMO_TRASH_ID.to_string();
@@ -1511,13 +1539,91 @@ fn delete_memo_node(
         save_favorites(&app, &favorites)?;
         return Ok(favorites);
     }
-    let deleted: HashSet<String> = favorites.iter().filter(|item| item.id == id || is_descendant_of(&favorites, &item.parent_id, &id)).map(|item| item.id.clone()).collect();
+    let deleted = memo_subtree_node_ids(&favorites, &id);
     favorites.retain(|item| !deleted.contains(&item.id));
     save_favorites(&app, &favorites)?;
     let mut documents = load_memo_documents(&app);
     documents.retain(|memo_id, _| !deleted.contains(memo_id));
     save_memo_documents(&app, &documents)?;
     Ok(favorites)
+}
+
+#[cfg(test)]
+mod memo_delete_tests {
+    use super::*;
+
+    fn node(id: &str, parent_id: &str, node_type: FavoriteNodeType) -> FavoriteNode {
+        FavoriteNode {
+            id: id.to_string(),
+            parent_id: parent_id.to_string(),
+            node_type,
+            name: id.to_string(),
+            value: String::new(),
+            order: 0,
+            collapsed: false,
+        }
+    }
+
+    fn memo_tree() -> Vec<FavoriteNode> {
+        vec![
+            node(MEMO_FOLDER_ID, "", FavoriteNodeType::Folder),
+            node(MEMO_TRASH_ID, "", FavoriteNodeType::Folder),
+            node("active-memo", MEMO_FOLDER_ID, FavoriteNodeType::Memo),
+            node("active-folder", MEMO_FOLDER_ID, FavoriteNodeType::Folder),
+            node("trash-memo", MEMO_TRASH_ID, FavoriteNodeType::Memo),
+            node("trash-folder", MEMO_TRASH_ID, FavoriteNodeType::Folder),
+            node("nested-memo", "trash-folder", FavoriteNodeType::Memo),
+        ]
+    }
+
+    #[test]
+    fn active_memo_tree_nodes_move_to_trash() {
+        let favorites = memo_tree();
+        for id in ["active-memo", "active-folder"] {
+            let node = favorites.iter().find(|item| item.id == id).unwrap();
+            assert_eq!(
+                memo_delete_mode(&favorites, node),
+                Ok(MemoDeleteMode::MoveToTrash)
+            );
+        }
+    }
+
+    #[test]
+    fn trashed_memo_is_permanently_deleted() {
+        let favorites = memo_tree();
+        let node = favorites.iter().find(|item| item.id == "trash-memo").unwrap();
+        assert_eq!(
+            memo_delete_mode(&favorites, node),
+            Ok(MemoDeleteMode::PermanentlyDelete)
+        );
+        assert_eq!(
+            memo_subtree_node_ids(&favorites, &node.id),
+            HashSet::from([node.id.clone()])
+        );
+    }
+
+    #[test]
+    fn trashed_folder_deletes_descendant_memo_documents() {
+        let favorites = memo_tree();
+        let folder = favorites.iter().find(|item| item.id == "trash-folder").unwrap();
+        assert_eq!(
+            memo_delete_mode(&favorites, folder),
+            Ok(MemoDeleteMode::PermanentlyDelete)
+        );
+
+        let deleted = memo_subtree_node_ids(&favorites, &folder.id);
+        assert!(deleted.contains("trash-folder"));
+        assert!(deleted.contains("nested-memo"));
+        assert!(!deleted.contains("trash-memo"));
+
+        let mut documents = HashMap::from([
+            ("nested-memo".to_string(), ()),
+            ("trash-memo".to_string(), ()),
+        ]);
+        documents.retain(|memo_id, _| !deleted.contains(memo_id));
+        assert!(!documents.contains_key("nested-memo"));
+        assert!(documents.contains_key("trash-memo"));
+    }
 }
 
 // 新規追加フィールド用のデフォルト値。serde(default) を付けないと、旧バージョンで

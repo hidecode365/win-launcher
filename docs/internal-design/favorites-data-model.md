@@ -1,6 +1,6 @@
 # ピン止め・お気に入り・メモ機能のデータ構造
 
-対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`enforce_reserved_folders`／`is_descendant_of`／`add_favorite_folder`／`move_favorite_node`／`remove_favorite_folder`）、`src/types.ts`（`FavoriteNode`／`PINNED_FOLDER_ID`）、`src/hooks/useSearch.ts`（ピン止め・お気に入りの state・アクション）、`src/lib/nodeTree.ts`、`src/hooks/useFavoriteEditSelection.ts`（お気に入り編集ビュー専用の選択ドメイン・仮想固定行）。
+対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`enforce_reserved_folders`／`is_descendant_of`／`add_favorite_folder`／`move_favorite_node`／`remove_favorite_folder`／`delete_memo_node`）、`src/types.ts`（`FavoriteNode`／`PINNED_FOLDER_ID`）、`src/hooks/useSearch.ts`（ピン止め・お気に入りの state・アクション）、`src/lib/nodeTree.ts`、`src/hooks/useFavoriteEditSelection.ts`（お気に入り編集ビュー専用の選択ドメイン・仮想固定行）。
 
 要件・仕様の詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照。本ファイルは実装上の設計判断・注意点のみを記す。段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装。
 
@@ -183,6 +183,14 @@
 
 アルゴリズム自体に不整合は見つからなかった一方、**同一階層に同名フォルダが複数存在すると、ユーザーが登録ダイアログのフォルダ選択プルダウンで区別がつかず、意図と異なる方のフォルダを選んでしまう**（結果として「順序がおかしい」ように見える）ことが、表示上の不整合の実態として説明のつく原因だった。アルゴリズムのバグとして再現・特定するよりも、そもそも同名フォルダが作成できてしまうこと自体を防ぐ方が、再発防止として確実かつシンプルと判断し、[duplicate-folder-name-validation](#duplicate-folder-name-validation) のバリデーションを追加した。
 
+<a id="multi-root-command-validation"></a>
+
+### メモのゴミ箱で完全削除へ到達できなかった経緯
+
+`delete_memo_node`は、通常ツリー（`MEMO_FOLDER_ID`配下）のノードをゴミ箱へ移す論理削除と、ゴミ箱（`MEMO_TRASH_ID`配下）のノードを消す完全削除を1つのコマンドで扱う。導入時の実装は、対象がメモルート配下であることを先に必須化してからゴミ箱配下かを判定していた。しかし両予約ルートは親子ではなく兄弟であるため、ゴミ箱配下の全ノードが最初の検証で拒否され、完全削除分岐は到達不能だった。
+
+修正後は、対象がメモルートまたはゴミ箱ルートのどちらかに属することを検証したうえで、所属ルートに応じて論理削除／完全削除を選ぶ。完全削除時は対象フォルダの子孫IDも収集し、対応する`MemoDocument`を同時に削除する。通常ツリーのメモ・フォルダ、ゴミ箱のメモ単体、ゴミ箱のフォルダと子孫メモの3経路をRust単体テストで固定した。
+
 ## 今後の指針
 
 > 外部設計相当の指針（予約フォルダの固定ID・Rust 側での二重バリデーション・同名フォルダ禁止の理由・メモ機能実装時の再利用判断）は、外部設計書 `external-design/03-data-model.md` へ移設した。以下には実装上の指針のみを残す。
@@ -191,3 +199,4 @@
 - 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない
 - 新しい行の種類（★お気に入り・メモ等）を追加する場合、個別のオフセット変数は新設しない（詳細は [result-list-and-selection.md](result-list-and-selection.md#adding-a-row-kind) を参照）
 - メモ機能でフォルダ分類（ツリー構造）を持たせる場合、再利用する実装は `is_descendant_of`／`groupNodesByParent`+`walkGroupedTree`／配置先選択 UI の3点（判断基準は外部設計書側を参照）
+- 複数の予約ルートを1つのコマンドで扱う場合、単一ルートへの所属を先に要求しない。許可するルート集合への所属を検証してから、所属ルート別の処理を選ぶ
