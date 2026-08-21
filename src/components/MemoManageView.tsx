@@ -147,11 +147,18 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
     moveErrorTimerRef.current = setTimeout(() => setMoveError(null), 4000);
   }, []);
 
-  const moveNode = useCallback(async (id: string, newParentId: string, targetIndex: number) => {
+  const moveNode = useCallback(async (
+    id: string,
+    newParentId: string,
+    targetIndex: number,
+    source: "pointer" | "keyboard" = "pointer"
+  ) => {
     try {
       await invoke("move_memo_node_to", { id, newParentId, targetIndex });
       await reload();
-      selection.selectByKey(id, Date.now() + 1000);
+      const expiresAt = Date.now() + 1000;
+      if (source === "keyboard") selection.selectByKeyboard(id, expiresAt);
+      else selection.selectByKey(id, expiresAt);
       return null;
     } catch (error) {
       const message = String(error);
@@ -214,7 +221,7 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
     const targetSibling = siblings[nextIndex];
     const targetPosition = others.findIndex((node) => node.id === targetSibling.id);
     const targetIndex = direction === -1 ? targetPosition : targetPosition + 1;
-    await moveNode(selectedNode.id, selectedNode.parentId, targetIndex);
+    await moveNode(selectedNode.id, selectedNode.parentId, targetIndex, "keyboard");
   }, [filtering, moveNode, nodes, selectedNode, selectedRow]);
 
   const indentSelected = useCallback(async () => {
@@ -225,14 +232,14 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
     const previous = siblings[index - 1];
     if (previous.type !== "folder") return;
     const childCount = nodes.filter((node) => node.parentId === previous.id && node.id !== selectedNode.id).length;
-    await moveNode(selectedNode.id, previous.id, childCount);
+    await moveNode(selectedNode.id, previous.id, childCount, "keyboard");
   }, [filtering, moveNode, nodes, selectedNode, selectedRow]);
 
   const outdentSelected = useCallback(async () => {
     if (!selectedRow || !selectedNode || selectedRow.kind === "root" || selectedRow.kind === "trash" || filtering) return;
     if (selectedRow.trashed) {
       const rootCount = nodes.filter((node) => node.parentId === MEMO_FOLDER_ID && node.id !== selectedNode.id).length;
-      await moveNode(selectedNode.id, MEMO_FOLDER_ID, rootCount);
+      await moveNode(selectedNode.id, MEMO_FOLDER_ID, rootCount, "keyboard");
       return;
     }
     const parentId = selectedNode.parentId;
@@ -241,7 +248,12 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
     if (!parent) return;
     const siblings = nodes.filter((node) => node.parentId === parent.parentId && node.id !== selectedNode.id).sort((a, b) => a.order - b.order);
     const parentIndex = siblings.findIndex((node) => node.id === parent.id);
-    await moveNode(selectedNode.id, parent.parentId, parentIndex < 0 ? siblings.length : parentIndex + 1);
+    await moveNode(
+      selectedNode.id,
+      parent.parentId,
+      parentIndex < 0 ? siblings.length : parentIndex + 1,
+      "keyboard"
+    );
   }, [filtering, moveNode, nodes, selectedNode, selectedRow]);
 
   useEffect(() => {
@@ -311,7 +323,11 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
         <input ref={filterInputRef} type="text" autoFocus autoComplete="off" spellCheck={false} value={filterText} onChange={(event) => setFilterText(event.target.value)} placeholder="メモを絞り込み..." className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400" />
       </header>
       {moveError && <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600">{moveError}</div>}
-      <div ref={listRef} className="flex-1 overflow-y-auto">
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto"
+        onMouseMove={(event) => selection.recordMouseMove(event.clientX, event.clientY)}
+      >
         {visibleRows.map((row, index) => {
           const { node, depth } = row;
           const position = dropTarget?.id === node.id ? dropTarget.position : null;
@@ -327,7 +343,8 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
                 : "item";
           const rowClass = `${manageTreeRowClass(rowVariant, { selected, muted: row.trashed })} ${dropClass}`;
           const commonEvents = {
-            onMouseEnter: () => selection.selectByKey(node.id),
+            onMouseEnter: (event: React.MouseEvent<HTMLDivElement>) =>
+              selection.selectByHover(node.id, event.clientX, event.clientY),
             onDragOver: (event: React.DragEvent<HTMLDivElement>) => handleDragOver(event, row),
             onDragLeave: () => setDropTarget((current) => current?.id === node.id ? null : current),
             onDrop: (event: React.DragEvent<HTMLDivElement>) => { handleDrop(event, row).catch(console.error); },

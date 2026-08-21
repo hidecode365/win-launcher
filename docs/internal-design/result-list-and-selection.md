@@ -1,6 +1,6 @@
 # 検索結果一覧の選択状態管理・行構造
 
-対象コード: `src/hooks/useSearch.ts`（`rows`・intent・`resolveSelected`）、`src/App.tsx`（`handleKeyDown`・`StatusFooter` への受け渡し）、`src/components/ResultList.tsx`（`rows.map` の描画）。
+対象コード: `src/hooks/useSearch.ts`（`rows`・intent・`resolveSelected`）、`src/hooks/useTreeEditSelection.ts`（管理画面ツリーのintent・ホバー抑制）、`src/App.tsx`（`handleKeyDown`・`StatusFooter` への受け渡し）、`src/components/ResultList.tsx`（`rows.map` の描画）、`src/components/FavoriteEditTree.tsx`・`src/components/MemoManageView.tsx`（管理画面ツリーの描画）。
 
 横断アーキテクチャ系のファイル。ピン止め・お気に入り・今後のメモ機能など、検索結果一覧に新しい行種別を追加する機能はすべてこのファイルの設計に乗せること。
 
@@ -38,7 +38,7 @@ function resolveSelected(
 
 `selected` への書き込みは、`intent`／`rows`／`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになっている。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
 
-適用範囲の定義（どの選択ドメインが intent 方式に乗るか）は外部設計書 `external-design/02-list-and-selection.md#list-structure-layers` が正本。実装上の対応は以下のとおり：`useSearch.ts` 内の単一の `intent`/`selected` が「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`）」の3ドメインをモード判定で切り替えて共有するのに対し、お気に入り編集ビューは `useFavoriteEditSelection.ts` が同じ `resolveSelected` の実装を再利用しつつ**独立した** `intent`/`selected` を持つ（詳細は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row) を参照）。Web検索行の +1 特例は [web-search-row-exception](#web-search-row-exception) を参照。
+適用範囲の定義（どの選択ドメインが intent 方式に乗るか）は外部設計書 `external-design/02-list-and-selection.md#list-structure-layers` が正本。実装上の対応は以下のとおり：`useSearch.ts` 内の単一の `intent`/`selected` が「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`）」の3ドメインをモード判定で切り替えて共有する。一方、お気に入り管理画面は `useFavoriteEditSelection.ts`、メモ画面とメモ管理画面はそれぞれの `useTreeEditSelection.ts` 呼び出しが、同じ `resolveSelected` の実装を再利用しつつ**独立した** `intent`/`selected` を持つ（お気に入り管理画面の仮想ルート行は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row) を参照）。Web検索行の +1 特例は [web-search-row-exception](#web-search-row-exception) を参照。
 
 `clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした。
 
@@ -106,10 +106,12 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 
 ### マウスホバーとキーボード操作の競合回避
 
-選択インデックスの操作を「キーボード操作（`selectRowByKeyboard`）」と「マウスホバー（`selectRowFromHover`）」で分離している。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する：
+選択操作を「キーボード操作」と「マウスホバー」で分離している。検索一覧では `selectRowByKeyboard` / `selectRowFromHover`、管理画面の共有選択hookでは `selectByKeyboard` / `selectByHover` が対応する。一覧の再描画・オートスクロールでカーソル直下の行がユーザーの手を離れて入れ替わった際、その `onMouseEnter` がキーボードでの選択結果を横から上書きしてしまう不具合の対策で、以下2つの条件のいずれかに該当する `onMouseEnter` は無視する：
 
 1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
-2. `onMouseEnter` 発火時点の座標が、ルートコンテナの `onMouseMove`（`recordMouseMove`。`App.tsx` から配線）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
+2. `onMouseEnter` 発火時点の座標が、一覧コンテナの `onMouseMove`（`recordMouseMove`）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
+
+通常の↑↓だけでなく、Ctrl+Shift+矢印による並び替え・再親化もキーボード操作として扱い、移動対象を `selectByKeyboard` に渡す。非同期再取得後に選択を明示復元する経路では、その復元時にも `selectByKeyboard` を使って再描画直後をホバー抑止期間の起点にする。D&D・クリック・作成後の選択はポインター／プログラム起点なので `selectByKey` を使い、この抑止時刻を更新しない。
 
 <a id="dom-structure-and-dividers"></a>
 
@@ -134,6 +136,12 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 ## 経緯
 
 以下は現在の設計に至るまでの変遷の記録。置き換え済みの中間設計も、同種の設計判断を将来行う際の参考として意図的に残している。
+
+### 管理画面の並び替え後に静止カーソル位置へ選択が戻る不具合
+
+お気に入り管理画面とメモ管理画面が共有する `useTreeEditSelection` は当初、検索結果のような非同期差し替えがないという前提でホバー抑制を省いていた。しかし両管理画面の並び替え・再親化は、Rustコマンド後にツリーを再取得して行DOMを並べ直す非同期更新である。この再描画で静止カーソル直下へ別の行が移ると、その行の `onMouseEnter` が汎用の `selectByKey` を呼び、移動対象を保持していたintentを上書きしていた。
+
+個々の並び替えハンドラへフラグを追加するのではなく、`useTreeEditSelection` 自体へ検索一覧と同じキーボード／ホバー入口と座標記録を実装した。これにより、同じ構造を持つ通常の↑↓、並び替え、再親化のすべてが共通規約で保護される。
 
 ### 出発点：識別子ベースでの選択復元という原則
 

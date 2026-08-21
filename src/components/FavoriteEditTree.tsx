@@ -416,7 +416,8 @@ function computeMoveTarget(
 export function FavoriteEditTree({
   tree,
   selected,
-  onSelectRowByKey,
+  onSelectRowByHover,
+  onRecordMouseMove,
   onToggleCollapse,
   filtering,
   onRequestDeleteFolder,
@@ -436,7 +437,8 @@ export function FavoriteEditTree({
   // tree（Top行込みの合成ツリー）上の選択インデックス。フォルダ見出し行・
   // アイテム行・Top行のいずれも対象（useFavoriteEditSelection.ts を参照）。
   selected: number;
-  onSelectRowByKey: (key: string) => void;
+  onSelectRowByHover: (key: string, clientX: number, clientY: number) => void;
+  onRecordMouseMove: (clientX: number, clientY: number) => void;
   onToggleCollapse: (folderId: string) => void;
   // 軸4g：絞り込み中（filterText 非空）は並び替え・再親化のD&Dを無効化する
   // （00-requirements.md「お気に入り編集ビュー」節を参照）。キー操作側の無効化は
@@ -600,7 +602,11 @@ export function FavoriteEditTree({
           {dragError}
         </div>
       )}
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto"
+        onMouseMove={(event) => onRecordMouseMove(event.clientX, event.clientY)}
+      >
         {isEmpty && (
           <div className="flex items-center justify-center text-gray-400 text-sm py-6">
             ★ボタンでファイルを登録すると、ここに表示されます
@@ -626,7 +632,9 @@ export function FavoriteEditTree({
                   data-index={index}
                   style={{ paddingLeft: `${INDENT_BASE_REM}rem` }}
                   className={`${manageTreeRowClass("fixed", { selected: isSelected })} ${dropClasses}`}
-                  onMouseEnter={() => onSelectRowByKey(row.key)}
+                  onMouseEnter={(event) =>
+                    onSelectRowByHover(row.key, event.clientX, event.clientY)
+                  }
                   onDragOver={(e) => handleDragOver(e, row)}
                   onDragLeave={() =>
                     setDropTarget((prev) => (prev?.key === row.key ? null : prev))
@@ -694,7 +702,9 @@ export function FavoriteEditTree({
                   className={`${manageTreeRowClass("folder", { selected: isSelected })} ${dropClasses}`}
                   onClick={() => onToggleCollapse(row.node.id)}
                   onDoubleClick={() => onStartRename(row.node.id)}
-                  onMouseEnter={() => onSelectRowByKey(row.key)}
+                  onMouseEnter={(event) =>
+                    onSelectRowByHover(row.key, event.clientX, event.clientY)
+                  }
                   onDragStart={(e) => {
                     dragInfoRef.current = { id: row.node.id, isFolder: true };
                     e.dataTransfer.effectAllowed = "move";
@@ -820,7 +830,9 @@ export function FavoriteEditTree({
                 style={indentStyle}
                 className={`${manageTreeRowClass("item", { selected: isSelected })} ${dropClasses}`}
                 onDoubleClick={() => onStartRename(row.node.id)}
-                onMouseEnter={() => onSelectRowByKey(row.key)}
+                onMouseEnter={(event) =>
+                  onSelectRowByHover(row.key, event.clientX, event.clientY)
+                }
                 onDragStart={(e) => {
                   dragInfoRef.current = { id: row.node.id, isFolder: false };
                   e.dataTransfer.effectAllowed = "move";

@@ -533,11 +533,12 @@ export default function App() {
       );
       const targetIndex =
         direction === -1 ? swapIndexInOthers : swapIndexInOthers + 1;
+      favoriteEdit.selectByKeyboard(row.key);
       search.moveFavoriteNodeTo(row.node.id, parentId, targetIndex).then((err) => {
         if (err) console.error(err);
       });
     },
-    [favoriteEdit.tree, favoriteEdit.selected, search.moveFavoriteNodeTo, search.favoriteEditFilterText]
+    [favoriteEdit.tree, favoriteEdit.selected, favoriteEdit.selectByKeyboard, search.moveFavoriteNodeTo, search.favoriteEditFilterText]
   );
 
   // 軸4f：Ctrl+Shift+→（軸4hでAlt+→から変更）による再親化（インデント）。
@@ -560,6 +561,7 @@ export default function App() {
     const newParentChildren = favoriteEdit.tree
       .filter(hasFavoriteNode)
       .filter((r) => r.node.parentId === prevSibling.node.id);
+    favoriteEdit.selectByKeyboard(row.key);
     search
       .moveFavoriteNodeTo(row.node.id, prevSibling.node.id, newParentChildren.length)
       .then((err) => {
@@ -568,6 +570,7 @@ export default function App() {
   }, [
     favoriteEdit.tree,
     favoriteEdit.selected,
+    favoriteEdit.selectByKeyboard,
     search.moveFavoriteNodeTo,
     search.favoriteEditFilterText,
   ]);
@@ -598,12 +601,14 @@ export default function App() {
     );
     const targetIndex =
       parentPos === -1 ? grandparentChildren.length : parentPos + 1;
+    favoriteEdit.selectByKeyboard(row.key);
     search.moveFavoriteNodeTo(row.node.id, grandparentId, targetIndex).then((err) => {
       if (err) console.error(err);
     });
   }, [
     favoriteEdit.tree,
     favoriteEdit.selected,
+    favoriteEdit.selectByKeyboard,
     search.moveFavoriteNodeTo,
     search.favoriteEditFilterText,
   ]);
@@ -1285,7 +1290,8 @@ export default function App() {
         <FavoriteEditView
           tree={favoriteEdit.tree}
           selected={favoriteEdit.selected}
-          onSelectRowByKey={favoriteEdit.selectByKey}
+          onSelectRowByHover={favoriteEdit.selectByHover}
+          onRecordMouseMove={favoriteEdit.recordMouseMove}
           onToggleCollapse={search.toggleFavoriteFolderCollapsedInEdit}
           filterText={search.favoriteEditFilterText}
           onFilterTextChange={search.setFavoriteEditFilterText}

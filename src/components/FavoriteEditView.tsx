@@ -29,7 +29,7 @@ import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 // requestDeleteFavoriteFolder 等、useSearch.ts に定義）は編集ビュー専用
 // （/favorite ブラウジング側の暫定UIは撤去済み）。選択状態のみ、
 // useFavoriteEditSelection による独立したドメインを App.tsx 側で持つ（props で
-// selected/onSelectRowByKey として受け取る）。
+// selected/onSelectRowByHover として受け取る）。
 //
 // 画面下部の固定「+ ここにフォルダを作成」ボタンは撤去済み。フォルダ作成の起点は
 // 選択中の行（Topを含む）に表示する行内アイコン、または Ctrl+Shift+N キー
@@ -38,7 +38,8 @@ import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 export function FavoriteEditView({
   tree,
   selected,
-  onSelectRowByKey,
+  onSelectRowByHover,
+  onRecordMouseMove,
   onToggleCollapse,
   filterText,
   onFilterTextChange,
@@ -63,7 +64,8 @@ export function FavoriteEditView({
 }: {
   tree: FavoriteEditTreeRow[];
   selected: number;
-  onSelectRowByKey: (key: string) => void;
+  onSelectRowByHover: (key: string, clientX: number, clientY: number) => void;
+  onRecordMouseMove: (clientX: number, clientY: number) => void;
   onToggleCollapse: (folderId: string) => void;
   // 軸4g：編集ビュー専用の絞り込み文字列。ヘッダーの検索ボックスに束縛する
   // （00-requirements.md「お気に入り編集ビュー」節を参照）。
@@ -193,7 +195,8 @@ export function FavoriteEditView({
       <FavoriteEditTree
         tree={tree}
         selected={selected}
-        onSelectRowByKey={onSelectRowByKey}
+        onSelectRowByHover={onSelectRowByHover}
+        onRecordMouseMove={onRecordMouseMove}
         onToggleCollapse={onToggleCollapse}
         filtering={filtering}
         onRequestDeleteFolder={onRequestDeleteFolder}
