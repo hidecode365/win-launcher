@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CreateFolderResult, FavoriteNode, MEMO_FOLDER_ID, MEMO_TRASH_ID } from "../types";
 import { groupNodesByParent, walkGroupedTree } from "../lib/nodeTree";
 import { useTreeEditSelection } from "../hooks/useTreeEditSelection";
@@ -64,7 +64,7 @@ function DragHandle({ selected }: { selected: boolean }) {
   );
 }
 
-export function MemoManageView({ onClose, onEdit, version }: { onClose: () => void; onEdit: (id: string) => void; version: string }) {
+export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandler, version }: { onClose: () => void; onEdit: (id: string) => void; onRegisterLocalQueryClearHandler: (handler: (() => void) | null) => void; version: string }) {
   const [nodes, setNodes] = useState<FavoriteNode[]>([]);
   const [creating, setCreating] = useState<"folder" | "memo" | null>(null);
   const [creatingParentId, setCreatingParentId] = useState(MEMO_FOLDER_ID);
@@ -78,6 +78,11 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
   const moveErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filterInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    onRegisterLocalQueryClearHandler(() => setFilterText(""));
+    return () => onRegisterLocalQueryClearHandler(null);
+  }, [onRegisterLocalQueryClearHandler]);
 
   const reload = useCallback(async () => {
     const next = await invoke<FavoriteNode[]>("get_memo_manage_nodes");

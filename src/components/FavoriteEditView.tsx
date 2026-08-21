@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Tooltip } from "./Tooltip";
 import { FavoriteEditTree } from "./FavoriteEditTree";
 import { FavoriteFolderDeleteModal } from "./FavoriteFolderDeleteModal";
@@ -42,6 +42,7 @@ export function FavoriteEditView({
   onToggleCollapse,
   filterText,
   onFilterTextChange,
+  onRegisterLocalQueryClearHandler,
   onCreateFolder,
   onFolderCreated,
   creatingFolderAnchorKey,
@@ -68,6 +69,7 @@ export function FavoriteEditView({
   // （00-requirements.md「お気に入り編集ビュー」節を参照）。
   filterText: string;
   onFilterTextChange: (text: string) => void;
+  onRegisterLocalQueryClearHandler: (handler: (() => void) | null) => void;
   onCreateFolder: (
     parentId: string,
     name: string
@@ -93,6 +95,11 @@ export function FavoriteEditView({
   onClose: () => void;
   version: string;
 }) {
+  useLayoutEffect(() => {
+    onRegisterLocalQueryClearHandler(() => onFilterTextChange(""));
+    return () => onRegisterLocalQueryClearHandler(null);
+  }, [onFilterTextChange, onRegisterLocalQueryClearHandler]);
+
   // マウント時（編集ビューを開いた時点）に絞り込み欄へフォーカスする
   // （メイン検索画面の SearchBox と同じ「常にフォーカスされた入力欄」という
   // 前提。↑↓・F2・Ctrl+Shift+N・Ctrl+Shift+矢印は window レベルリスナーが

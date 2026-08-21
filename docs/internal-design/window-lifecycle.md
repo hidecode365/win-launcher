@@ -1,6 +1,6 @@
 # ウィンドウのライフサイクル管理（表示・非表示・クローズ処理）
 
-対象コード: `src/App.tsx`（`MainView` 型・フォーカス監視・`showSettingsRef`）、`src/hooks/useSearch.ts`（`closeWindow`・世代ID管理・フォーカス回復時再取得テーブル）、`src/lib/window.ts`（`hideWindow`）、`src-tauri/src/main.rs`（`window.center()`・`show()`・グローバルショートカットの表示/非表示トグル）。
+対象コード: `src/App.tsx`（`MainView` 型・フォーカス監視・`showSettingsRef`・Ctrl+Dのクエリ消去）、`src/components/FavoriteEditView.tsx`／`MemoManageView.tsx`（管理画面固有のクエリ消去登録）、`src/hooks/useSearch.ts`（`closeWindow`・世代ID管理・フォーカス回復時再取得テーブル）、`src/lib/window.ts`（`hideWindow`）、`src-tauri/src/main.rs`（`window.center()`・`show()`・グローバルショートカットの表示/非表示トグル）。
 
 横断アーキテクチャ系のファイル。ウィンドウを閉じる・フォーカスを失う・"/" プレフィックスモードへ切り替わるといった「表示状態の変化」に関わる設計は、機能ごとに個別実装せずすべてここに記載されたパターンへ乗せること。
 
@@ -17,6 +17,16 @@
 **既存分岐との後方互換**：`showSettings` という名前で `boolean` を直接参照する既存分岐が多数あったため（[focus-out-auto-hide](#focus-out-auto-hide) の `showSettingsRef` 等）、`view` の導入後も `const showSettings = view === "settings"` という派生値をそのまま残し、呼び出し側の書き換えを最小限にとどめた。同様に、お気に入り編集ビューかどうかの判定用に `favoriteEditOpen = view === "favoriteEdit"` も派生値として用意している。フォーカスアウト自動非表示の適用除外条件（[focus-out-auto-hide](#focus-out-auto-hide) 参照）も、旧来「`showSettings` のときだけ除外」だったものを「検索ビュー（`view === "search"`）以外では除外」という条件へ一般化した。
 
 **今後の指針**：4枚目以降の全画面ビューを追加する場合は、`MainView` の Union 型へ新しい文字列リテラルを1つ追加するだけにすること。独立した `boolean` state（かつての `showSettings` のような形）を新設しない。3画面化のときに二値では表現しきれず enum 化した経緯を繰り返さないため。
+
+<a id="local-query-clear-dispatch"></a>
+
+### Ctrl+Dによる画面固有クエリの消去
+
+Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwindow `keydown`ハンドラ1箇所で処理する。メイン検索の`search.query`は常に`search.setQuery("")`で消去し、全画面の管理ビューが独自の可視クエリを持つ場合は、表示中のビューが`localQueryClearHandlerRef`へ消去処理を登録する。同じキーのwindowリスナーを画面側へ追加しない。
+
+お気に入り管理画面は`favoriteEditFilterText`、メモ管理画面はコンポーネントローカルの`filterText`を使う。両画面とも`useLayoutEffect`で同じ登録口へ`setFilterText("")`相当を登録し、アンマウント時に解除する。layout effectを使うのは、ビューのDOMが表示されてから通常effectが実行されるまでの間に登録が空となる時間窓を作らないためである。
+
+導入前は共通ハンドラが`search.setQuery("")`だけを呼び、管理画面の絞り込みstateへ経路が無かった。そのためフッターにはCtrl+Dが表示される一方、メモ管理・お気に入り管理のどちらでも可視の絞り込み文字列が残っていた。複数のクエリstateを持つ画面を今後追加する場合も、共通ハンドラへ画面名の分岐とsetterを直接列挙せず、この登録口を使う。
 
 <a id="focus-out-auto-hide"></a>
 
@@ -172,6 +182,7 @@ const closeWindow = useCallback(
 ## 今後の指針
 
 - 新しいウィンドウクローズ系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない
+- 全画面ビューが独自の可視クエリを持つ場合、Ctrl+D用のwindowリスナーを新設せず、`localQueryClearHandlerRef`へ消去処理を登録する
 - 画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。この順序さえ守れば、後処理の重さや連鎖的な再レンダリングを個別に気にする必要はない
 - 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得が必要なら `focusRegainTableRef.current` にエントリを1つ追加するだけで済ませ、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない
 - モーダル・ダイアログ（`SystemCommandModal`／`RegisterEntryDialog`／`FavoriteFolderDeleteModal`／`PathPasteWizard` 等）のキー操作は、外部設計書 `external-design/01-screen-transitions.md#modal-key-policy` の非対称原則に従う：Escapeのみ DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化し、Enterはブラウザ標準のフォーカス経路（Tab で移動したボタン上の Enter）に委ねて window レベルに独自分岐を設けない

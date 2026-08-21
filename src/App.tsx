@@ -89,8 +89,12 @@ export default function App() {
   const storeRef = useRef<Store | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const settingsEscapeHandlerRef = useRef<(() => boolean) | null>(null);
+  const localQueryClearHandlerRef = useRef<(() => void) | null>(null);
   const registerSettingsEscapeHandler = useCallback((handler: (() => boolean) | null) => {
     settingsEscapeHandlerRef.current = handler;
+  }, []);
+  const registerLocalQueryClearHandler = useCallback((handler: (() => void) | null) => {
+    localQueryClearHandlerRef.current = handler;
   }, []);
   // フォーカスアウト時自動非表示の判定用（後述のフォーカス監視 useEffect は依存配列が
   // 空で一度しかマウントされないため、view state を直接参照すると初回値の古い
@@ -666,7 +670,13 @@ export default function App() {
         e.preventDefault();
         e.stopPropagation();
         if (ocrActive) handleOcrClose();
-        else search.setQuery("");
+        else {
+          // メイン検索クエリに加え、現在の全画面ビューが独自に持つ可視の
+          // 絞り込み文字列も同じCtrl+Dからクリアする。キーリスナー自体は
+          // 画面ごとに増やさず、このwindowハンドラへ一本化する。
+          search.setQuery("");
+          localQueryClearHandlerRef.current?.();
+        }
       } else if (e.key === "Escape" && showSettings) {
         e.preventDefault();
         if (!settingsEscapeHandlerRef.current?.()) closeSettings();
@@ -1279,6 +1289,7 @@ export default function App() {
           onToggleCollapse={search.toggleFavoriteFolderCollapsedInEdit}
           filterText={search.favoriteEditFilterText}
           onFilterTextChange={search.setFavoriteEditFilterText}
+          onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler}
           onCreateFolder={search.createFavoriteFolder}
           onFolderCreated={handleFavoriteEditFolderCreated}
           creatingFolderAnchorKey={creatingFolderAnchorKey}
@@ -1307,7 +1318,7 @@ export default function App() {
   }
 
   if (memoEditOpen) {
-    return <MemoManageView onClose={closeMemoEdit} onEdit={editMemoFromManage} version={appVersion} />;
+    return <MemoManageView onClose={closeMemoEdit} onEdit={editMemoFromManage} onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler} version={appVersion} />;
   }
 
   return (

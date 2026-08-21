@@ -265,6 +265,7 @@ win-launcher/
 
 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md)
 
+- Ctrl+DはAppのwindowハンドラ1箇所で処理する。全画面ビューが独自の可視クエリを持つ場合は、画面固有のkeydownを追加せず`localQueryClearHandlerRef`へ消去処理を登録する。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)
 - フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
 - モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **`external-design/01-screen-transitions.md#modal-key-policy`**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
@@ -466,7 +467,7 @@ win-launcher/
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
 - 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+S` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
-- `Ctrl+D`：`Ctrl+S`（設定パネルの開閉トグル）と同じ `window` への `keydown` イベントリスナーで一括処理する。OCR プレビュー表示中は「閉じる」ボタンと同じハンドラを呼び出し、それ以外の全モードでは `search.setQuery("")` でクエリを完全に空文字へ戻す。設定パネル表示中は対象外
+- `Ctrl+D`：同じ `window` の `keydown`イベントリスナーで一括処理する。OCRプレビュー表示中は「閉じる」ボタンと同じハンドラを呼び出し、それ以外では`search.setQuery("")`に加え、表示中の管理画面が`localQueryClearHandlerRef`へ登録した可視の絞り込み文字列もクリアする（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)）
 - クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history) を参照）
 - OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。閉じる／コピーして閉じるの挙動詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature) を参照
 - 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list) を参照。`Ctrl+S` または Esc で検索 UI に戻る
