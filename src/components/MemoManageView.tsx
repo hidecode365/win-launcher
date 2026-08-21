@@ -339,7 +339,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
           </div>{creatingAnchorId === node.id && creating === "folder" && <CreateFolderInlineRow depth={node.type === "folder" ? depth + 1 : depth} targetParentId={creatingParentId} onCreateFolder={createFolder} onFolderCreated={(id) => { setCreating(null); setCreatingAnchorId(null); selection.selectByKey(id, Date.now() + 1000); }} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}{creatingAnchorId === node.id && creating === "memo" && <MemoCreateRow depth={node.type === "folder" ? depth + 1 : depth} name={name} onNameChange={setName} onCreate={createMemo} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}</Fragment>;
         })}
       </div>
-      <MemoManageFooter selectedKind={selectedRow?.kind ?? null} trashed={selectedRow?.trashed ?? false} filtering={filtering} version={version} />
+      <MemoManageFooter selectedKind={selectedRow?.kind ?? null} trashed={selectedRow?.trashed ?? false} filtering={filtering} renaming={renaming !== null} version={version} />
     </div>
   );
 }

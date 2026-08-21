@@ -109,9 +109,13 @@ export function RenameInput({
             e.preventDefault();
             e.stopPropagation();
             onCancel();
-          } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-            e.preventDefault();
+          } else if (e.key === "Enter") {
+            // IME変換中のEnterは変換確定だけに使うが、一覧側のEnter処理へは
+            // 常に伝播させない。isComposingを伝播停止の条件にも使うと、
+            // フォルダ開閉やメモのコピーが誤発火する。
             e.stopPropagation();
+            if (e.nativeEvent.isComposing) return;
+            e.preventDefault();
             confirm();
           } else if (shouldStopEditInputKeyPropagation(e)) {
             // ツリーの選択移動・別の行のリネーム開始・削除・フォルダ作成・
@@ -121,6 +125,7 @@ export function RenameInput({
             e.stopPropagation();
           }
         }}
+        data-inline-rename-input="true"
         className={`min-w-0 flex-1 rounded border border-gray-300 px-1.5 py-0.5 outline-none focus:border-blue-400 text-gray-800 ${className}`}
         autoComplete="off"
         spellCheck={false}

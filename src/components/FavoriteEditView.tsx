@@ -207,6 +207,7 @@ export function FavoriteEditView({
         selectedKind={selectedRow?.kind ?? null}
         filtering={filtering}
         deleteModalOpen={pendingDeleteFolder !== null}
+        renaming={renamingNodeId !== null}
         version={version}
       />
     </div>

@@ -133,11 +133,15 @@ export default function App() {
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
   const [memoEditorFocusRequested, setMemoEditorFocusRequested] = useState(false);
   const [memoEditorFocused, setMemoEditorFocused] = useState(false);
+  const [memoRenamingNodeId, setMemoRenamingNodeId] = useState<string | null>(null);
   const memoHasDraft = Boolean(
     memo.document?.draft && memo.document.draft.content !== memo.document.content
   );
   useEffect(() => {
-    if (!memoMode) setMemoEditorFocused(false);
+    if (!memoMode) {
+      setMemoEditorFocused(false);
+      setMemoRenamingNodeId(null);
+    }
   }, [memoMode]);
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
   // ドメイン。00-requirements.md「お気に入り編集ビュー」節を参照）。データソースは
@@ -1450,6 +1454,8 @@ export default function App() {
             onEditorFocused={() => setMemoEditorFocusRequested(false)}
             onEditorFocusChange={setMemoEditorFocused}
             onExitEditor={() => inputRef.current?.focus()}
+            renamingNodeId={memoRenamingNodeId}
+            onRenamingNodeIdChange={setMemoRenamingNodeId}
           />
         ) : search.favoriteMode ? (
           <FavoriteListPanel
@@ -1510,6 +1516,7 @@ export default function App() {
                 : null
           }
           memoEditorFocused={memoEditorFocused}
+          memoRenaming={memoRenamingNodeId !== null}
           memoSaveAvailable={memoHasDraft}
           settingsShortcutAvailable={settingsShortcutAvailable}
           selectionAvailable={listLength > 0}

@@ -18,6 +18,7 @@ export function StatusFooter({
   memoDocumentSelected,
   memoSelectedKind,
   memoEditorFocused,
+  memoRenaming,
   memoSaveAvailable,
   settingsShortcutAvailable,
   selectionAvailable,
@@ -38,6 +39,7 @@ export function StatusFooter({
   memoDocumentSelected: boolean;
   memoSelectedKind: "folder" | "memo" | null;
   memoEditorFocused: boolean;
+  memoRenaming: boolean;
   memoSaveAvailable: boolean;
   settingsShortcutAvailable: boolean;
   selectionAvailable: boolean;
@@ -111,6 +113,16 @@ export function StatusFooter({
   }
 
   if (memoMode) {
+    if (memoRenaming) {
+      return (
+        <FooterBar version={version}>
+          <KeyHint keys="Enter" label="確定" />
+          <KeyHint keys="Ctrl+D" label="クリア" />
+          {settingsHint}
+          <KeyHint keys="Esc" label="キャンセル" />
+        </FooterBar>
+      );
+    }
     return (
       <FooterBar version={version}>
         {!memoEditorFocused && memoSelectedKind !== null && (

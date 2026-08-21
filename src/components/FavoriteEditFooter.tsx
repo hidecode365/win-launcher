@@ -41,16 +41,27 @@ export function FavoriteEditFooter({
   selectedKind,
   filtering,
   deleteModalOpen,
+  renaming,
   version,
 }: {
   selectedKind: "top" | "folder" | "item" | null;
   filtering: boolean;
   deleteModalOpen: boolean;
+  renaming: boolean;
   version: string;
 }) {
   if (deleteModalOpen) {
     return (
       <FooterBar version={version}>
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label="キャンセル" />
+      </FooterBar>
+    );
+  }
+  if (renaming) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="Enter" label="確定" />
         <KeyHint keys="Ctrl+D" label="クリア" />
         <KeyHint keys="Esc" label="キャンセル" />
       </FooterBar>

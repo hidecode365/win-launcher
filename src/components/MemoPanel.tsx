@@ -17,7 +17,7 @@ import { MemoNodeRenameInput } from "./MemoNodeRenameInput";
 export function MemoPanel({
   nodes, documents, filterText, selectedId, document, onSelect, onContentChange, onSave, onDiscardDraft,
   onCopyAndClose, onNodesChanged, initialLeftWidth, onResizeEnd, onToggleFolder, onMoveSelection,
-  focusEditor, onEditorFocused, onEditorFocusChange, onExitEditor,
+  focusEditor, onEditorFocused, onEditorFocusChange, onExitEditor, renamingNodeId, onRenamingNodeIdChange,
 }: {
   nodes: FavoriteNode[];
   documents: Record<string, MemoDocument>;
@@ -38,11 +38,12 @@ export function MemoPanel({
   onEditorFocused?: () => void;
   onEditorFocusChange?: (focused: boolean) => void;
   onExitEditor: () => void;
+  renamingNodeId: string | null;
+  onRenamingNodeIdChange: (id: string | null) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRowRef = useRef<HTMLDivElement>(null);
-  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState(false);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -97,10 +98,12 @@ export function MemoPanel({
       }
       const target = event.target;
       if (
-        renamingNodeId !== null &&
         target instanceof HTMLInputElement &&
+        target.dataset.inlineRenameInput === "true" &&
         listRef.current?.contains(target)
       ) {
+        // capture listenerは入力欄自身のReact onKeyDownより先に動く。
+        // React stateではなく実際のevent.targetで判定し、入力欄へ処理を譲る。
         return;
       }
       const listFocused =
@@ -129,12 +132,12 @@ export function MemoPanel({
       } else if (event.key === "F2" && selectedNode) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        setRenamingNodeId(selectedNode.id);
+        onRenamingNodeIdChange(selectedNode.id);
       }
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [content, document, filterText, hasDraft, onCopyAndClose, onExitEditor, onMoveSelection, onToggleFolder, renamingNodeId, saveWithFeedback, selectedNode]);
+  }, [content, document, filterText, hasDraft, onCopyAndClose, onExitEditor, onMoveSelection, onRenamingNodeIdChange, onToggleFolder, saveWithFeedback, selectedNode]);
   useEffect(() => {
     const activeElement = window.document.activeElement;
     if (activeElement instanceof Node && listRef.current?.contains(activeElement)) {
@@ -163,7 +166,7 @@ export function MemoPanel({
       ) : visible.map(({ node, depth }, index) => {
         const renaming = node.id === renamingNodeId;
         const finishRename = () => {
-          setRenamingNodeId(null);
+          onRenamingNodeIdChange(null);
           onExitEditor();
         };
         const label = renaming ? (
@@ -192,7 +195,7 @@ export function MemoPanel({
               onSelect(node.id, false);
               if (!renaming && !filterText) onToggleFolder(node.id, !node.collapsed);
             }}
-            onDoubleClick={() => { if (!renaming) setRenamingNodeId(node.id); }}
+            onDoubleClick={() => { if (!renaming) onRenamingNodeIdChange(node.id); }}
             className={`${browseTreeRowClass("folder", { selected: node.id === selectedId })} text-ui-meta font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`}
             style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}
           >
@@ -209,7 +212,7 @@ export function MemoPanel({
             tabIndex={0}
             onMouseEnter={() => onSelect(node.id, false)}
             onClick={() => { if (!renaming) onSelect(node.id, true); }}
-            onDoubleClick={() => { if (!renaming) setRenamingNodeId(node.id); }}
+            onDoubleClick={() => { if (!renaming) onRenamingNodeIdChange(node.id); }}
             className={`${browseTreeRowClass("item", { selected: node.id === selectedId })} text-ui-body font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`}
             style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}
           >

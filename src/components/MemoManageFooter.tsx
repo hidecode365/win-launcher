@@ -7,13 +7,24 @@ export function MemoManageFooter({
   selectedKind,
   trashed,
   filtering,
+  renaming,
   version,
 }: {
   selectedKind: MemoManageSelectedKind;
   trashed: boolean;
   filtering: boolean;
+  renaming: boolean;
   version: string;
 }) {
+  if (renaming) {
+    return (
+      <FooterBar version={version}>
+        <KeyHint keys="Enter" label="確定" />
+        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Esc" label="キャンセル" />
+      </FooterBar>
+    );
+  }
   const editable = !trashed && (selectedKind === "folder" || selectedKind === "memo");
   const movable = selectedKind === "folder" || selectedKind === "memo";
   return (
