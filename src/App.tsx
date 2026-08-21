@@ -1441,6 +1441,7 @@ export default function App() {
             onSave={memo.saveFinal}
             onDiscardDraft={memo.discardDraft}
             onCopyAndClose={copyMemoAndClose}
+            onNodesChanged={memo.refresh}
             initialLeftWidth={memoPaneWidth}
             onResizeEnd={handleMemoPaneWidthChange}
             onToggleFolder={(id, collapsed) => { invoke("set_favorite_folder_collapsed", { id, collapsed }).then(() => memo.refresh()).catch(console.error); }}

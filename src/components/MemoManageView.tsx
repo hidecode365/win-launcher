@@ -8,7 +8,8 @@ import { isDescendantOfFolder } from "../hooks/useSearch";
 import { Tooltip } from "./Tooltip";
 import { IconSlot } from "./IconSlot";
 import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, INDENT_BASE_REM, INDENT_STEP_REM, TRASH_ICON_PATH } from "./FavoriteTreeVisuals";
-import { CreateFolderInlineRow, RenameInput } from "./FavoriteEditTree";
+import { CreateFolderInlineRow } from "./FavoriteEditTree";
+import { MemoNodeRenameInput } from "./MemoNodeRenameInput";
 import { ManageViewIcon } from "./SearchBox";
 import { MemoIcon } from "./MemoIcon";
 import { MemoManageFooter, type MemoManageSelectedKind } from "./MemoManageFooter";
@@ -175,18 +176,6 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
       return { folder: null, error: String(error) };
     }
   };
-  const rename = async (id: string, newName: string) => {
-    const row = visibleRows.find((item) => item.node.id === id);
-    if (!row || row.trashed || [MEMO_FOLDER_ID, MEMO_TRASH_ID].includes(id)) return "名前を変更できません";
-    try {
-      await invoke("rename_favorite_node", { id, newName });
-      setRenaming(null);
-      await reload();
-      return null;
-    } catch (error) {
-      return String(error);
-    }
-  };
   const remove = useCallback(async () => {
     if (!selectedNode || [MEMO_FOLDER_ID, MEMO_TRASH_ID].includes(selectedNode.id)) return;
     try {
@@ -262,7 +251,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
       if (event.ctrlKey && event.shiftKey && event.key === "ArrowLeft") { event.preventDefault(); outdentSelected().catch(console.error); return; }
       if (event.ctrlKey && event.shiftKey && event.key === "ArrowRight" && !selectedRow?.trashed) { event.preventDefault(); indentSelected().catch(console.error); return; }
       if (event.key === "Enter" && selectedNode?.type === "folder" && selectedNode.id !== MEMO_FOLDER_ID && !filtering) { event.preventDefault(); toggleFolder(selectedNode).catch(console.error); return; }
-      if (event.key === "F2" && selectedRow && !selectedRow.trashed && selectedNode && ![MEMO_FOLDER_ID, MEMO_TRASH_ID].includes(selectedNode.id)) { event.preventDefault(); setRenaming(selectedNode.id); setName(selectedNode.name); return; }
+      if (event.key === "F2" && selectedRow && !selectedRow.trashed && selectedNode && ![MEMO_FOLDER_ID, MEMO_TRASH_ID].includes(selectedNode.id)) { event.preventDefault(); setRenaming(selectedNode.id); return; }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "n") { event.preventDefault(); startCreate("folder"); }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -345,7 +334,7 @@ export function MemoManageView({ onClose, onEdit, version }: { onClose: () => vo
             {!reserved && !filtering ? <DragHandle selected={selected} /> : reserved ? null : <span className="mr-1.5 w-4 flex-shrink-0" />}
             {node.type === "folder" && <FolderChevron collapsed={node.collapsed} />}
             {row.kind === "trash" ? <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg> : node.type === "folder" ? <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg> : <FileIcon className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" />}
-            {renamingThis ? <RenameInput initialName={node.name} className={rowVariant === "item" ? "text-ui-body" : "text-ui-meta"} onConfirm={(newName) => rename(node.id, newName)} onCancel={() => setRenaming(null)} /> : <span className={`${rowVariant === "item" ? "flex-1 " : ""}${MANAGE_TREE_ROW_LABEL[rowVariant]}`}>{node.name}</span>}
+            {renamingThis ? <MemoNodeRenameInput nodeId={node.id} initialName={node.name} className={rowVariant === "item" ? "text-ui-body" : "text-ui-meta"} onRenamed={async () => { setRenaming(null); await reload(); }} onCancel={() => setRenaming(null)} /> : <span className={`${rowVariant === "item" ? "flex-1 " : ""}${MANAGE_TREE_ROW_LABEL[rowVariant]}`}>{node.name}</span>}
             {!renamingThis && renderActionIcons(row, selected)}
           </div>{creatingAnchorId === node.id && creating === "folder" && <CreateFolderInlineRow depth={node.type === "folder" ? depth + 1 : depth} targetParentId={creatingParentId} onCreateFolder={createFolder} onFolderCreated={(id) => { setCreating(null); setCreatingAnchorId(null); selection.selectByKey(id, Date.now() + 1000); }} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}{creatingAnchorId === node.id && creating === "memo" && <MemoCreateRow depth={node.type === "folder" ? depth + 1 : depth} name={name} onNameChange={setName} onCreate={createMemo} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}</Fragment>;
         })}

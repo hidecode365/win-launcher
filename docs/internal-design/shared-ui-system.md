@@ -1,6 +1,6 @@
 # 共有UI・デザインシステム
 
-対象コード: `tailwind.config.js`、`src/ui/sharedStyles.ts`、`src/components/ActionButton.tsx`。アイコン専用の共有設計は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
+対象コード: `tailwind.config.js`、`src/ui/sharedStyles.ts`、`src/components/ActionButton.tsx`、`src/components/MemoNodeRenameInput.tsx`。アイコン専用の共有設計は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
 
 本ファイルは、新しい画面やUI要素を実装するときの共有UIの入口である。具体的な値の正本はコードとし、本書は「どの共有定義を、どの意味で使うか」を索引として管理する。
 
@@ -50,6 +50,14 @@ token名は色相や画面名ではなく役割で付ける。新しい色を追
 状態は`selected`と`muted`を引数で表す。`selected`は全variantで選択背景＋白文字、`muted`はゴミ箱配下等の控えめなsurface／hoverを表す。D&Dのbefore／after／into表示は操作固有の状態なので、共有行classの外側で追加する。
 
 `FavoriteEditTree.tsx`自身もこの定義を参照する。値を変える場合はお気に入り・メモ双方へ波及する変更として扱い、片方だけをraw classで上書きしない。
+
+<a id="memo-inline-rename"></a>
+
+## メモノードのインラインリネーム
+
+`src/components/MemoNodeRenameInput.tsx`が、メモ画面とメモ管理画面に共通するリネーム処理の入口である。入力UIとEnter確定・Escキャンセル・エラー表示は既存の`RenameInput`を合成し、保存は両画面ともRustの`rename_favorite_node`を呼ぶ。同一階層内の重複・空文字・予約フォルダ等の最終的な検証はRust側を正本とし、画面別の検証処理を追加しない。
+
+画面側は、リネーム可能な行かどうかの判定、成功後の一覧再取得、フォーカス復帰だけを担当する。メモ画面には作成・削除・並び替え・再親化の導線を追加せず、閲覧側の例外的な構造操作をこのコンポーネントへ限定する。
 
 <a id="action-button"></a>
 

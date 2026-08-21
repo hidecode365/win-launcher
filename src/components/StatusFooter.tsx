@@ -122,6 +122,9 @@ export function StatusFooter({
         {!memoEditorFocused && memoSelectedKind === "folder" && (
           <KeyHint keys="Enter" label="開閉" />
         )}
+        {!memoEditorFocused && memoSelectedKind !== null && (
+          <KeyHint keys="F2" label="リネーム" />
+        )}
         {!memoEditorFocused && memoDocumentSelected && (
           <KeyHint keys="Ctrl+E" label="本文を編集" />
         )}

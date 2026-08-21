@@ -12,10 +12,11 @@ import {
   INDENT_BASE_REM,
   INDENT_STEP_REM,
 } from "./FavoriteTreeVisuals";
+import { MemoNodeRenameInput } from "./MemoNodeRenameInput";
 
 export function MemoPanel({
   nodes, documents, filterText, selectedId, document, onSelect, onContentChange, onSave, onDiscardDraft,
-  onCopyAndClose, initialLeftWidth, onResizeEnd, onToggleFolder, onMoveSelection,
+  onCopyAndClose, onNodesChanged, initialLeftWidth, onResizeEnd, onToggleFolder, onMoveSelection,
   focusEditor, onEditorFocused, onEditorFocusChange, onExitEditor,
 }: {
   nodes: FavoriteNode[];
@@ -28,6 +29,7 @@ export function MemoPanel({
   onSave: () => Promise<void>;
   onDiscardDraft: () => Promise<void>;
   onCopyAndClose: (content: string) => Promise<void>;
+  onNodesChanged: () => Promise<void>;
   initialLeftWidth: number;
   onResizeEnd: (width: number) => void;
   onToggleFolder: (id: string, collapsed: boolean) => void;
@@ -39,7 +41,8 @@ export function MemoPanel({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const selectedRowButtonRef = useRef<HTMLButtonElement>(null);
+  const selectedRowRef = useRef<HTMLDivElement>(null);
+  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState(false);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -93,6 +96,13 @@ export function MemoPanel({
         return;
       }
       const target = event.target;
+      if (
+        renamingNodeId !== null &&
+        target instanceof HTMLInputElement &&
+        listRef.current?.contains(target)
+      ) {
+        return;
+      }
       const listFocused =
         target === window.document.body ||
         target instanceof HTMLInputElement ||
@@ -116,19 +126,29 @@ export function MemoPanel({
           event.stopImmediatePropagation();
           onToggleFolder(selectedNode.id, !selectedNode.collapsed);
         }
+      } else if (event.key === "F2" && selectedNode) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setRenamingNodeId(selectedNode.id);
       }
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [content, document, filterText, hasDraft, onCopyAndClose, onExitEditor, onMoveSelection, onToggleFolder, saveWithFeedback, selectedNode]);
+  }, [content, document, filterText, hasDraft, onCopyAndClose, onExitEditor, onMoveSelection, onToggleFolder, renamingNodeId, saveWithFeedback, selectedNode]);
   useEffect(() => {
     const activeElement = window.document.activeElement;
     if (activeElement instanceof Node && listRef.current?.contains(activeElement)) {
-      selectedRowButtonRef.current?.focus({ preventScroll: true });
+      selectedRowRef.current?.focus({ preventScroll: true });
     }
   }, [selectedId]);
   // 矢印キーでの選択移動では本文へフォーカスを奪わない。明示的なクリック／管理画面からの遷移だけが指定する。
-  useEffect(() => { if (focusEditor && selectedId) { textareaRef.current?.focus(); onEditorFocused?.(); } }, [focusEditor, selectedId, onEditorFocused]);
+  useEffect(() => {
+    if (!focusEditor || !selectedId) return;
+    if (!renamingNodeId) textareaRef.current?.focus();
+    // ダブルクリックでは先行するclickが本文フォーカスを予約し得る。リネーム中は
+    // その予約だけを消費し、RenameInputからフォーカスを奪わない。
+    onEditorFocused?.();
+  }, [focusEditor, onEditorFocused, renamingNodeId, selectedId]);
   useScrollSelectedIntoView(listRef, selectedIndex);
   const hasMemo = nodes.some((node) => node.type === "memo");
   return <ResizableSplitPane
@@ -140,10 +160,64 @@ export function MemoPanel({
         <div className="p-4 text-sm text-gray-400">クリップボード履歴からメモ登録するか、管理画面で新規作成すると、ここに表示されます</div>
       ) : visible.length === 0 ? (
         <div className="p-4 text-sm text-gray-400">一致するメモがありません</div>
-      ) : visible.map(({ node, depth }, index) => node.type === "folder" ?
-        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => { onSelect(node.id, false); if (!filterText) onToggleFolder(node.id, !node.collapsed); }} className={`${browseTreeRowClass("folder", { selected: node.id === selectedId })} text-ui-meta font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FolderChevron collapsed={node.collapsed} /><svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg><span className="truncate">{node.name}</span></button> :
-        <button ref={node.id === selectedId ? selectedRowButtonRef : undefined} key={node.id} data-index={index} type="button" onMouseEnter={() => onSelect(node.id, false)} onClick={() => onSelect(node.id, true)} className={`${browseTreeRowClass("item", { selected: node.id === selectedId })} text-ui-body font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`} style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}><FileIcon className="mr-2 h-4 w-4 flex-shrink-0" /><span className="truncate">{node.name}</span></button>
-      )}
+      ) : visible.map(({ node, depth }, index) => {
+        const renaming = node.id === renamingNodeId;
+        const finishRename = () => {
+          setRenamingNodeId(null);
+          onExitEditor();
+        };
+        const label = renaming ? (
+          <MemoNodeRenameInput
+            nodeId={node.id}
+            initialName={node.name}
+            className={node.type === "memo" ? "text-ui-body" : "text-ui-meta"}
+            onRenamed={async () => {
+              finishRename();
+              await onNodesChanged();
+            }}
+            onCancel={finishRename}
+          />
+        ) : (
+          <span className="truncate">{node.name}</span>
+        );
+        return node.type === "folder" ? (
+          <div
+            ref={node.id === selectedId ? selectedRowRef : undefined}
+            key={node.id}
+            data-index={index}
+            role="button"
+            tabIndex={0}
+            onMouseEnter={() => onSelect(node.id, false)}
+            onClick={() => {
+              onSelect(node.id, false);
+              if (!renaming && !filterText) onToggleFolder(node.id, !node.collapsed);
+            }}
+            onDoubleClick={() => { if (!renaming) setRenamingNodeId(node.id); }}
+            className={`${browseTreeRowClass("folder", { selected: node.id === selectedId })} text-ui-meta font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`}
+            style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}
+          >
+            <FolderChevron collapsed={node.collapsed} />
+            <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg>
+            {label}
+          </div>
+        ) : (
+          <div
+            ref={node.id === selectedId ? selectedRowRef : undefined}
+            key={node.id}
+            data-index={index}
+            role="button"
+            tabIndex={0}
+            onMouseEnter={() => onSelect(node.id, false)}
+            onClick={() => { if (!renaming) onSelect(node.id, true); }}
+            onDoubleClick={() => { if (!renaming) setRenamingNodeId(node.id); }}
+            className={`${browseTreeRowClass("item", { selected: node.id === selectedId })} text-ui-body font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus`}
+            style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}
+          >
+            <FileIcon className="mr-2 h-4 w-4 flex-shrink-0" />
+            {label}
+          </div>
+        );
+      })}
     </div>}
     right={<div className="h-full min-w-0 flex flex-col p-3 gap-2">
       <div className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2 text-sm text-gray-500">{document ? <>{hasDraft ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">下書き中</span> : <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">v{document.revision}</span>}{saveFeedback ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ 保存しました</span> : <span className="text-xs">{`${new Date(document.savedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存`}</span>}</> : "メモを選択してください"}</span><div className="flex flex-shrink-0 items-center gap-2"><ActionButton variant="secondary" className="whitespace-nowrap" disabled={!hasDraft} onClick={() => discardDraft().catch(console.error)}>下書きを破棄</ActionButton><ActionButton disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)}>保存</ActionButton></div></div>
