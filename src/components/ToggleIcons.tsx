@@ -162,7 +162,6 @@ export function PinToggleButton({
       selected={selected}
       tooltip={active ? "ピン止めから削除" : "ピン止めに追加"}
       onClick={onToggle}
-      measureId="pin"
     >
       <PinIcon filled={active} />
     </IconSlot>
@@ -188,7 +187,6 @@ export function FavoriteToggleButton({
       selected={selected}
       tooltip={active ? "お気に入りから削除" : "お気に入りに追加"}
       onClick={onToggle}
-      measureId="star"
     >
       <FavoriteIcon filled={active} />
     </IconSlot>

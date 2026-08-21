@@ -20,7 +20,7 @@
 | `/memo`閲覧 | `StatusFooter.tsx`（`memoMode`分岐） | 一覧側では↑↓ 選択／Enter（フォルダ見出し行は「開閉」、メモ行は「クリップボードにセット」）／F2 リネーム／（メモ行選択時）Ctrl+E 本文を編集／Esc 閉じる。本文編集エリアでは（下書きがある場合）Ctrl+S 保存／Esc 一覧へ戻る。リネーム中はEnter 確定／Esc キャンセルへ切り替える。全状態でCtrl+D クリア |
 | お気に入り管理画面 | `FavoriteEditFooter.tsx`（専用コンポーネント） | ↑↓ 選択／（フォルダ選択時）Enter 開閉／Ctrl+Shift+N フォルダ作成／（フォルダ・アイテム選択時）F2 リネーム・Ctrl+Shift+↑↓ 並び替え・Ctrl+Shift+←→ 再親化／Esc 戻る（絞り込み中はEnter 開閉・並び替え・再親化のチップを非表示にする。リネーム中はEnter 確定／Esc キャンセルへ切り替える。削除・★解除はマウス操作のみのため表示しない） |
 | メモ管理画面 | `MemoManageFooter.tsx`（専用コンポーネント） | ↑↓ 選択／（フォルダ・ゴミ箱選択時）Enter 開閉／（ゴミ箱外のメモ・フォルダ・固定行「メモ」選択時）Ctrl+Shift+N フォルダ作成／（ゴミ箱外のメモ・フォルダ選択時）F2 リネーム・Ctrl+Shift+↑↓ 並び替え・Ctrl+Shift+←→ 再親化／（ゴミ箱配下選択時）Ctrl+Shift+← 復元／Esc 戻る（絞り込み中はEnter 開閉・並び替え・再親化・復元のチップを非表示にする。リネーム中はEnter 確定／Esc キャンセルへ切り替える。ゴミ箱への移動・完全削除はマウス操作のみのため表示しない） |
-| 設定画面 | `SettingsPanel.tsx`（`FooterBar`/`KeyHint` を使用） | Esc 閉じる（Ctrl+Sは設定画面表示中は無効なため表示しない） |
+| 設定画面 | `SettingsPanel.tsx`（`FooterBar`/`KeyHint` を使用） | Esc 閉じる（Ctrl+,は設定画面表示中は無効なため表示しない） |
 
 ## 今後の指針
 

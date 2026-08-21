@@ -123,7 +123,7 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 - `type="button"` 属性は行の要素には元々付与されていなかった（`div` になった今も不要）。`PinToggleButton`／`FavoriteToggleButton` 自身の `<button type="button">` は実在する `<button>` として維持しており、入れ子構造ではなくなったため `type="button"`・クリックの `stopPropagation()` ともにそのまま機能する
 - `<button>` → `<div>` の変更に伴う見た目の補正は不要だった。本プロジェクトは `@tailwind base`（Preflight）を有効にしており、Preflight が `button` 要素に対して `border-width: 0`・`background-color: transparent`・`font-family: inherit` 等を既定で適用するため、これらの行の `<button>` は元々ブラウザ既定の見た目（枠線・背景色・ボタン風フォント）を一切持っていなかった。カーソル形状についても、ブラウザは `<button>` に既定で `cursor: pointer` を与えない（`<a href>` とは異なる）ため、`<div>` 化してもカーソル形状は変化しない。レイアウトに関わる `display`/`text-align`/`width` 等はいずれも `className`（`flex items-center` `text-left` `w-full` 等）で明示済みのため、タグ変更による差分は生じない
 
-**結果行のルート要素は `<div role="button">` であり、行の内部に操作ボタン（ピン止めトグル、★お気に入りボタン、将来のメモのノートアイコン等）を複数個置く前提の構造である。** 行に新しい操作ボタンを追加する場合、行のルート要素を `<button>` に戻さないこと（内部の操作ボタンとの入れ子が再発する）。
+**結果行のルート要素は `<div role="button">` であり、行の内部に操作ボタン（ピン止めトグル、★お気に入りボタン、メモ作成アイコン等）を複数個置く前提の構造である。** 行に新しい操作ボタンを追加する場合、行のルート要素を `<button>` に戻さないこと（内部の操作ボタンとの入れ子が再発する）。
 
 **結果行に区切り線（`border-b`/`border-t` 等）は使わない。** 視認できない装飾を残す実益がないため、既存の全種別の行から削除し統一した。**今後、結果行に区切りを表現したくなった場合も `border-b`/`border-t` のような境界線ではなく、既存の選択中/非選択の背景色差・hover 背景色のみで表現すること**（設定画面の「縦ラインによる区切りは使わない」方針と同様。詳細は [settings-panel-architecture.md](settings-panel-architecture.md) を参照）。
 

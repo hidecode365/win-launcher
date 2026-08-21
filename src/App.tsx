@@ -25,7 +25,6 @@ import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
 import { FavoriteListPanel } from "./components/FavoriteListPanel";
 import { FavoriteEditView } from "./components/FavoriteEditView";
 import { UpdateDialog } from "./components/UpdateDialog";
-import { IconSlotMeasureOverlay } from "./components/IconSlotMeasureOverlay";
 import { StatusFooter } from "./components/StatusFooter";
 import { MemoPanel } from "./components/MemoPanel";
 import { MemoManageView } from "./components/MemoManageView";
@@ -54,8 +53,8 @@ function hasFavoriteNode(
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 const DEFAULT_MEMO_PANE_WIDTH = 280;
 
-// 「検索」「設定」「お気に入り編集」の3枚の全画面ビュー（軸4a）。二択の boolean
-// swap（旧 showSettings）では3枚目のビューを表現できないため enum 化した。
+// 「検索」「設定」「お気に入り管理」「メモ管理」の全画面ビュー。二択の boolean
+// swap（旧 showSettings）では3枚目以降を表現できないため enum 化した。
 // いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは
 // 作らない（00-requirements.md「お気に入り編集ビュー」節を参照）。
 type MainView = "search" | "settings" | "favoriteEdit" | "memoEdit";
@@ -78,10 +77,6 @@ export default function App() {
     getVersion().then((v) => setAppVersion(v));
   }, []);
   const [ocrClosing, setOcrClosing] = useState(false);
-  // 400_テスト・バグ修正：IconSlot実測サイズのデバッグオーバーレイ（一時的な
-  // 開発者向け機能）。Ctrl+Alt+Mでトグルする。詳細は
-  // IconSlotMeasureOverlay.tsx のコメントを参照。
-  const [iconMeasureOverlayOpen, setIconMeasureOverlayOpen] = useState(false);
   const [clipboardPaneWidth, setClipboardPaneWidth] = useState(
     DEFAULT_CLIPBOARD_PANE_WIDTH
   );
@@ -99,8 +94,8 @@ export default function App() {
   // フォーカスアウト時自動非表示の判定用（後述のフォーカス監視 useEffect は依存配列が
   // 空で一度しかマウントされないため、view state を直接参照すると初回値の古い
   // クロージャのままになる。毎レンダーで最新値を書き込むこの ref を代わりに参照する）。
-  // 検索UI自体が表示されていないビュー（設定・お気に入り編集のいずれも）では
-  // 自動非表示を適用しない（元は showSettings 専用の例外だったが、3枚目の
+  // 検索UI自体が表示されていないビュー（設定・お気に入り管理・メモ管理）では
+  // 自動非表示を適用しない（元は showSettings 専用の例外だったが、管理画面の
   // ビュー追加に伴い「検索ビュー以外では適用しない」という条件へ一般化した）。
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -615,9 +610,8 @@ export default function App() {
 
   // 設定パネルの開閉・クエリ全クリア（Ctrl+D）・パス貼り付けウィザードのフォルダ選択
   // ステップの操作は window レベルの keydown で処理する。input 要素のローカル
-  // onKeyDown に持たせると、フォーカス状態や WebView2 のブラウザ既定動作（Ctrl+S の
-  // ページ保存、Ctrl+D のブックマーク追加）の影響で発火しないことがあるため、この
-  // 一箇所に統一している。
+  // onKeyDown に持たせると、フォーカス状態やブラウザ既定動作の影響で発火しないことが
+  // あるため、この一箇所に統一している。
   // Ctrl+D は OCR プレビュー表示中のみ「閉じる」ボタン（handleOcrClose）と同一の処理を
   // 呼び、それ以外の全画面・全モードでは現在の表示に関わらずクエリを空文字にする
   // （ウィンドウは閉じないため closeWindow は経由しない。closeRefreshTick の加算も
@@ -635,19 +629,6 @@ export default function App() {
   //   （PathPasteWizard の入力欄からは Enter/Escape の onKeyDown を削除済み）。
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // 400_テスト・バグ修正：IconSlot実測サイズのデバッグオーバーレイ
-      // （一時的な開発者向け機能）。他のどのモードよりも優先して最初に判定し、
-      // 該当する場合は以降の分岐を一切実行しない（return）。
-      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === "m") {
-        e.preventDefault();
-        setIconMeasureOverlayOpen((v) => !v);
-        return;
-      }
-      if (iconMeasureOverlayOpen && e.key === "Escape") {
-        e.preventDefault();
-        setIconMeasureOverlayOpen(false);
-        return;
-      }
       // Escapeは画面内のフォーカス位置に依存させず、この1箇所から各画面の
       // 「一段戻る」操作へ振り分ける。インライン編集だけは入力自身が伝播を止め、
       // まず編集をキャンセルする。
@@ -881,7 +862,6 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [
-    iconMeasureOverlayOpen,
     showSettings,
     memoEditOpen,
     closeMemoEdit,
@@ -1182,11 +1162,11 @@ export default function App() {
   // 即時に hide() せず、一定時間後も本当にフォーカスが戻っていない場合のみ非表示にする。
   //
   // 設定画面表示中はこの自動非表示自体を適用しない（00-requirements.md「キー操作」＞
-  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。3枚目の
-  // お気に入り編集ビュー表示中も同じ理由（検索UI自体が表示されていない）で適用
+  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。管理画面の
+  // お気に入り管理・メモ管理の表示中も同じ理由（検索UI自体が表示されていない）で適用
   // しない。判定は viewRef（毎レンダーで最新の view を書き込む ref）で行う。
-  // openSettings/closeSettings/openFavoriteEdit/closeFavoriteEdit はいずれも単一の
-  // view state を介するため、開閉の経路（歯車・編集アイコン・Ctrl+S・Esc・各ビューの
+  // 各全画面ビューの開閉関数はいずれも単一の
+  // view state を介するため、開閉の経路（歯車・編集アイコン・Ctrl+,・Esc・各ビューの
   // 戻るボタン）を個別にフックする必要はなく、この ref を見るだけで全経路に
   // 自動的に追従する。
   useEffect(() => {
@@ -1275,11 +1255,6 @@ export default function App() {
           onRegisterEscapeHandler={registerSettingsEscapeHandler}
           version={appVersion}
         />
-        {iconMeasureOverlayOpen && (
-          <IconSlotMeasureOverlay
-            onClose={() => setIconMeasureOverlayOpen(false)}
-          />
-        )}
       </>
     );
   }
@@ -1314,11 +1289,6 @@ export default function App() {
           onClose={closeFavoriteEdit}
           version={appVersion}
         />
-        {iconMeasureOverlayOpen && (
-          <IconSlotMeasureOverlay
-            onClose={() => setIconMeasureOverlayOpen(false)}
-          />
-        )}
       </>
     );
   }
@@ -1334,12 +1304,6 @@ export default function App() {
       }`}
       onMouseMove={(e) => search.recordMouseMove(e.clientX, e.clientY)}
     >
-      {iconMeasureOverlayOpen && (
-        <IconSlotMeasureOverlay
-          onClose={() => setIconMeasureOverlayOpen(false)}
-        />
-      )}
-
       {/* お気に入り登録ダイアログ（★を押した未登録行から開く。段階5の /memo でも
           同じ RegisterEntryDialog を再利用する想定のため、お気に入り固有の文言・
           データはすべてここで props として与える）。マウント時に自身の名前入力欄へ

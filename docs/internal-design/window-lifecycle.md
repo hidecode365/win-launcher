@@ -1,6 +1,6 @@
 # ウィンドウのライフサイクル管理（表示・非表示・クローズ処理）
 
-対象コード: `src/App.tsx`（`MainView` 型・フォーカス監視・`showSettingsRef`・Ctrl+Dのクエリ消去）、`src/components/FavoriteEditView.tsx`／`MemoManageView.tsx`（管理画面固有のクエリ消去登録）、`src/hooks/useSearch.ts`（`closeWindow`・世代ID管理・フォーカス回復時再取得テーブル）、`src/lib/window.ts`（`hideWindow`）、`src-tauri/src/main.rs`（`window.center()`・`show()`・グローバルショートカットの表示/非表示トグル）。
+対象コード: `src/App.tsx`（`MainView` 型・フォーカス監視・`viewRef`・Ctrl+Dのクエリ消去）、`src/components/FavoriteEditView.tsx`／`MemoManageView.tsx`（管理画面固有のクエリ消去登録）、`src/hooks/useSearch.ts`（`closeWindow`・世代ID管理・フォーカス回復時再取得テーブル）、`src/lib/window.ts`（`hideWindow`）、`src-tauri/src/main.rs`（`window.center()`・`show()`・グローバルショートカットの表示/非表示トグル）。
 
 横断アーキテクチャ系のファイル。ウィンドウを閉じる・フォーカスを失う・"/" プレフィックスモードへ切り替わるといった「表示状態の変化」に関わる設計は、機能ごとに個別実装せずすべてここに記載されたパターンへ乗せること。
 
@@ -8,15 +8,15 @@
 
 <a id="main-view-enum"></a>
 
-### 3枚の全画面ビューの状態管理（`MainView` 型）
+### 4枚の全画面ビューの状態管理（`MainView` 型）
 
-`App.tsx` は「検索」「設定」「お気に入り編集」の3枚の全画面ビューを、単一の `type MainView = "search" | "settings" | "favoriteEdit"`（`useState<MainView>`）で管理する。いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは作らない。
+`App.tsx` は「検索」「設定」「お気に入り管理」「メモ管理」の4枚の全画面ビューを、単一の `type MainView = "search" | "settings" | "favoriteEdit" | "memoEdit"`（`useState<MainView>`）で管理する。いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは作らない。
 
 **導入経緯**：お気に入り編集ビュー（段階3・軸4a）を追加する以前は、検索画面と設定画面の二択を単一の `boolean`（`showSettings`）で管理していた。3枚目のビューは `boolean` の二値では表現できないため、文字列リテラルの Union 型（enum 相当）へ変更した。
 
-**既存分岐との後方互換**：`showSettings` という名前で `boolean` を直接参照する既存分岐が多数あったため（[focus-out-auto-hide](#focus-out-auto-hide) の `showSettingsRef` 等）、`view` の導入後も `const showSettings = view === "settings"` という派生値をそのまま残し、呼び出し側の書き換えを最小限にとどめた。同様に、お気に入り編集ビューかどうかの判定用に `favoriteEditOpen = view === "favoriteEdit"` も派生値として用意している。フォーカスアウト自動非表示の適用除外条件（[focus-out-auto-hide](#focus-out-auto-hide) 参照）も、旧来「`showSettings` のときだけ除外」だったものを「検索ビュー（`view === "search"`）以外では除外」という条件へ一般化した。
+**既存分岐との後方互換**：`showSettings` という名前で `boolean` を直接参照する既存分岐が多数あったため、`view` の導入後も `const showSettings = view === "settings"` という派生値をそのまま残し、呼び出し側の書き換えを最小限にとどめた。同様に、管理画面判定用の `favoriteEditOpen = view === "favoriteEdit"`／`memoEditOpen = view === "memoEdit"` も派生値として用意している。フォーカスアウト自動非表示の適用除外条件（[focus-out-auto-hide](#focus-out-auto-hide) 参照）も、旧来「`showSettings` のときだけ除外」だったものを「検索ビュー（`view === "search"`）以外では除外」という条件へ一般化した。
 
-**今後の指針**：4枚目以降の全画面ビューを追加する場合は、`MainView` の Union 型へ新しい文字列リテラルを1つ追加するだけにすること。独立した `boolean` state（かつての `showSettings` のような形）を新設しない。3画面化のときに二値では表現しきれず enum 化した経緯を繰り返さないため。
+**今後の指針**：5枚目以降の全画面ビューを追加する場合は、`MainView` の Union 型へ新しい文字列リテラルを1つ追加するだけにすること。独立した `boolean` state（かつての `showSettings` のような形）を新設しない。3画面化のときに二値では表現しきれず enum 化した経緯を繰り返さないため。
 
 <a id="local-query-clear-dispatch"></a>
 
@@ -36,10 +36,10 @@ Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwi
 
 - WebView2 はウィンドウ内操作（設定パネルへの切替による DOM 入れ替え、ドラッグ開始など）でも一時的にフォーカス喪失を通知することがあるため、即時 `hide()` はしない
 - フォーカス喪失通知後 150ms 待ち、`isFocused()` で再確認してなお非フォーカスの場合のみ `hide()` する（誤って隠れるのを防ぐデバウンス処理）
-- **設定画面表示中はこの自動非表示を適用しない**（詳細は 00-requirements.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカス喪失の検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結しているため、Rust 側に状態を持たせたり IPC でフラグを同期したりする必要はなく、フロントエンドの `showSettings` state を判定に使うだけで完結する
-  - `App.tsx` のフォーカス監視 `useEffect` は依存配列が空（マウント時に一度だけ登録）のため、`showSettings` state を直接クロージャで参照すると初回値（`false`）に固定されてしまう。これを避けるため、毎レンダーで最新の `showSettings` を書き込む `showSettingsRef`（`useRef`）を用意し、150ms のデバウンス後に `hide()` を呼ぶかどうかの判定（`if (stillFocused || showSettingsRef.current) return;`）はこの ref を参照する
-  - 設定画面の開閉は `openSettings`/`closeSettings`（いずれも単一の `showSettings` state を更新するだけ）に一本化されており、呼び出し元（歯車アイコンクリック・`Ctrl+S`・`Esc`・設定パネル自身の閉じるボタン）が複数あってもすべてこの2関数を経由する。そのため `showSettingsRef` を見るだけで全ての開閉経路に自動的に追従し、経路ごとに個別のフラグリセット処理を書く必要がない
-  - 設定画面を閉じた直後の最初のフォーカスアウトから、通常のフェードアウト・非表示挙動に戻る（`closeSettings` 実行時点で `showSettings` が `false` に更新され、次のレンダーで `showSettingsRef.current` も追従するため、追加のリセット処理は不要）
+- **設定画面・お気に入り管理・メモ管理ではこの自動非表示を適用しない**（設定画面の要件詳細は 00-requirements.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカス喪失の検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結し、`viewRef.current !== "search"` なら非表示処理を中止する
+  - `App.tsx` のフォーカス監視 `useEffect` は依存配列が空（マウント時に一度だけ登録）のため、`view` state を直接クロージャで参照すると初回値（`"search"`）に固定される。これを避けるため、毎レンダーで最新の `view` を書き込む `viewRef`（`useRef`）を用意し、150ms後の再確認に使う
+  - 各全画面ビューの開閉は単一の `view` state を更新する関数へ一本化されているため、`viewRef` を見るだけで歯車・編集アイコン・`Ctrl+,`・`Esc`・戻るボタンの全経路へ追従する
+  - 管理画面から検索画面へ戻った直後の最初のフォーカスアウトから、通常の非表示挙動に戻る。追加のリセット処理は不要
 - グローバルホットキー（Alt+Space）は Rust 側の「表示中なら非表示、非表示中なら表示」というトグル判定（`main.rs` の `with_handler`、`window.is_visible()` のみを見る）のままで変更していない。設定画面表示中にホットキーを押すと、フォーカスの有無に関わらず「表示中」なので非表示になる（設定画面の状態は保持され、再度ホットキーを押すと同じ設定画面の状態のまま復帰する）
 - フォーカスイン時（グローバルホットキー等での再表示時）は検索欄の内容を保持したまま再フォーカスする
 - 位置の永続化は行わない。`tauri.conf.json` の `center: true` により再起動時は常に画面中央へ戻る（ウィンドウを表示するすべての箇所——グローバルホットキー / トレイ「Show」/ トレイアイコンクリック——で `show()` 直前に Rust 側から `window.center()` を呼び出す）
@@ -89,6 +89,8 @@ const closeWindow = useCallback(
 **原則そのもの**（キャンセル（Escape）はフォーカス位置に依存させず window レベルへ一本化し、確定（Enter）はブラウザ標準のフォーカス経路に委ねて独自の Enter 分岐を設けない、という非対称な扱い）は、外部設計書 `external-design/01-screen-transitions.md#modal-key-policy` へ移設した。本節には実装パターンのみを記す。
 
 **Escape（キャンセル）の実装**：`SystemCommandModal`（システムコマンド確認）・`RegisterEntryDialog`（お気に入り登録ダイアログ）・`FavoriteFolderDeleteModal`（フォルダ削除確認）・`PathPasteWizard`（パス貼り付けウィザード）など、検索ビュー上に開閉するモーダル・ダイアログ・ウィザードの Escape は、`App.tsx` の window レベルの共通 `keydown` リスナー（[ウィンドウを閉じる系アクションの共通設計](#close-window-common-design) 節と同じ `useEffect`）で処理する。個別コンポーネントのローカル `onKeyDown` によるフォーカス依存の判定を新設しない。
+
+アップデートダイアログも同じwindowリスナーでEscapeを受ける。確認中・更新あり・エラー等は `updater.dismiss()` で閉じ、インストール中は処理を中断できないためウィンドウだけを `hideWindow()` で隠す。設定画面内の詳細ダイアログは `SettingsPanel` が `registerSettingsEscapeHandler` へ「一段だけ戻る」処理を登録し、App側はその戻り値が未処理のときだけ設定画面全体を閉じる。これにより、設定内オーバーレイ表示中のEscapeが一度に設定画面まで閉じることを防ぐ。
 
 フォーカス位置に依存させられない具体的な事情：モーダルを開くトリガー要素（★ボタン・ゴミ箱アイコン等の `<button>`）はクリック直後もそれ自身がフォーカスを持ち続けることがある。ダイアログ自身のマウント時 `focus()`（`requestAnimationFrame` 越しでも）が間に合わない、あるいは一覧行のルート要素が実在の `<button>` だった場合はクリックで選択した行自身にフォーカスが残り続ける（詳細は [result-list-and-selection.md](result-list-and-selection.md#row-focus-retention-bug) を参照）。これらの事情により、意図した要素にフォーカスが無い瞬間に Escape が押されると、フォーカス依存のローカル `onKeyDown` では拾えずキャンセルできなくなる（詳細は「経緯」節の [modal-keydown-focus-incidents](#modal-keydown-focus-incidents) を参照）。
 

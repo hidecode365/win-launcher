@@ -17,6 +17,7 @@ For a detailed introduction and screenshots, visit the [introduction site](https
 - **File Search** — Incremental search across configured folders with frecency-based ranking
 - **Pinned Files** — Keep frequently used files at the top of the result list
 - **Favorites** — Organize files into a folder tree and recall them with `/favorite`
+- **Memos** — Organize and edit text notes in a folder tree, then recall them with `/memo`
 - **Recent Files** — Browse recently opened files with `/recent`
 - **Calculator** — Type expressions like `1000 + 200` for instant results
 - **Clipboard History** — Browse and restore text & image history with `/cb`
@@ -43,10 +44,11 @@ winget install hidecode365.WinLauncher
 | `↑↓` | Navigate results |
 | `Enter` | Launch / execute |
 | `Esc` | Close |
-| `Ctrl+S` | Open settings |
+| `Ctrl+,` | Open settings |
 | `/cb` | Open clipboard history |
 | `/recent` | Browse recently opened files |
 | `/favorite` | Browse favorites |
+| `/memo` | Browse and edit memos |
 | `Ctrl+V` (with image) | Extract text from clipboard image via OCR |
 
 ## Security Note

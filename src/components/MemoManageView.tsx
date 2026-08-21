@@ -5,7 +5,14 @@ import { groupNodesByParent, walkGroupedTree } from "../lib/nodeTree";
 import { memoNodeDisplayName } from "../lib/memoTree";
 import { useTreeEditSelection } from "../hooks/useTreeEditSelection";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
-import { isDescendantOfFolder } from "../hooks/useSearch";
+import {
+  computeTreeMoveTarget,
+  dropPositionFromRatio,
+  isCircularTreeMove,
+  resolveTreeDropParent,
+  type TreeDropPosition as DropPosition,
+  type TreeDropTarget,
+} from "../lib/treeEditUtils";
 import { Tooltip } from "./Tooltip";
 import { IconSlot } from "./IconSlot";
 import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, INDENT_BASE_REM, INDENT_STEP_REM, TRASH_ICON_PATH } from "./FavoriteTreeVisuals";
@@ -26,7 +33,6 @@ type ManageRow = {
   trashed: boolean;
   kind: MemoManageSelectedKind;
 };
-type DropPosition = "before" | "after" | "into";
 type DragInfo = { id: string; isFolder: boolean };
 
 const CIRCULAR_MOVE_ERROR = "フォルダを自分自身の中に移動することはできません";
@@ -35,14 +41,21 @@ function dropPositionFromEvent(event: React.DragEvent<HTMLDivElement>, row: Mana
   if (row.kind === "root" || row.kind === "trash") return "into";
   const rect = event.currentTarget.getBoundingClientRect();
   const ratio = (event.clientY - rect.top) / rect.height;
-  if (row.node.type === "folder" && ratio > 0.25 && ratio < 0.75) return "into";
-  return ratio < 0.5 ? "before" : "after";
+  return dropPositionFromRatio(ratio, row.node.type === "folder");
 }
 
-function destinationParent(row: ManageRow, position: DropPosition): string {
-  if (row.kind === "root") return MEMO_FOLDER_ID;
-  if (row.kind === "trash") return MEMO_TRASH_ID;
-  return position === "into" && row.node.type === "folder" ? row.node.id : row.node.parentId;
+function memoDropTarget(row: ManageRow): TreeDropTarget {
+  return {
+    id: row.node.id,
+    parentId: row.node.parentId,
+    isFolder: row.node.type === "folder",
+    fixedParentId:
+      row.kind === "root"
+        ? MEMO_FOLDER_ID
+        : row.kind === "trash"
+          ? MEMO_TRASH_ID
+          : undefined,
+  };
 }
 
 function isValidDropTarget(
@@ -53,8 +66,8 @@ function isValidDropTarget(
 ): boolean {
   if (dragged.id === row.node.id) return false;
   if (!dragged.isFolder) return true;
-  const parentId = destinationParent(row, position);
-  return parentId !== dragged.id && !isDescendantOfFolder(nodes, parentId, dragged.id);
+  const parentId = resolveTreeDropParent(memoDropTarget(row), position);
+  return !isCircularTreeMove(nodes, dragged.id, parentId);
 }
 
 function DragHandle({ selected }: { selected: boolean }) {
@@ -305,11 +318,13 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
     if (!dragged || dragged.id === row.node.id) return;
     const position = dropPositionFromEvent(event, row);
     if (!isValidDropTarget(nodes, dragged, row, position)) { showMoveError(CIRCULAR_MOVE_ERROR); return; }
-    const parentId = destinationParent(row, position);
-    const siblings = nodes.filter((node) => node.parentId === parentId && node.id !== dragged.id).sort((a, b) => a.order - b.order);
-    const targetPosition = siblings.findIndex((node) => node.id === row.node.id);
-    const targetIndex = position === "into" ? siblings.length : Math.max(0, targetPosition + (position === "after" ? 1 : 0));
-    await moveNode(dragged.id, parentId, targetIndex);
+    const { newParentId, targetIndex } = computeTreeMoveTarget(
+      nodes,
+      dragged.id,
+      memoDropTarget(row),
+      position
+    );
+    await moveNode(dragged.id, newParentId, targetIndex);
   };
 
   const renderActionIcons = (row: ManageRow, selected: boolean) => {

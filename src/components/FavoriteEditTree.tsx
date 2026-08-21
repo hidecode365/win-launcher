@@ -1,6 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
-import { isDescendantOfFolder } from "../hooks/useSearch";
+import {
+  computeTreeMoveTarget,
+  dropPositionFromRatio,
+  isCircularTreeMove,
+  resolveTreeDropParent,
+  shouldStopEditInputKeyPropagation,
+  type TreeDropPosition as DropPosition,
+  type TreeDropTarget,
+} from "../lib/treeEditUtils";
 import { Tooltip } from "./Tooltip";
 import { WarningIcon, FavoriteToggleButton } from "./ToggleIcons";
 import { IconSlot } from "./IconSlot";
@@ -40,22 +48,6 @@ import {
 // 持たないが、入力中に window リスナー側の並び替えが誤発火しないよう同様に
 // 止める。矢印キー自体は修飾キーの有無に関わらず常に伝播を止めているため、
 // 個別に判定する必要はない）。
-function shouldStopEditInputKeyPropagation(e: React.KeyboardEvent): boolean {
-  if (
-    e.key === "ArrowUp" ||
-    e.key === "ArrowDown" ||
-    e.key === "ArrowLeft" ||
-    e.key === "ArrowRight" ||
-    e.key === "F2"
-  ) {
-    return true;
-  }
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
-    return true;
-  }
-  return false;
-}
-
 // リネーム中の行のインライン入力欄（4d）。CreateFolderInlineRow と同じ
 // 「テキストボックス＋Enter確定・Esc取り消し」の見た目・操作感を踏襲する。
 // フォーカス時にテキストを全選択する点は RegisterEntryDialog.tsx の表示名欄と同じ。
@@ -283,23 +275,6 @@ function DragHandle({
 // ドロップ位置。"before"/"after" はドロップ先の行と同じ親の下で前後どちらに
 // 挿入するか、"into" はドロップ先のフォルダ行の配下（末尾）への再親化を表す
 // （"into" はフォルダ見出し行・仮想行「Top」のみが対象になりうる）。
-type DropPosition = "before" | "after" | "into";
-
-// マウスの相対Y位置（0〜1）から、そのポイントに対応するドロップ位置を判定する。
-// フォルダ行は上下25%を「前後に挿入」、中央50%を「配下へ再親化」の3分割、
-// アイテム行は「配下」の概念を持たないため上半分/下半分の2分割にする。
-// 仮想行「Top」は常に "into"（ルート直下への再親化）固定のため、この関数は
-// 呼ばない（呼び出し元で分岐する）。
-function dropPositionFromRatio(
-  ratio: number,
-  targetIsFolder: boolean
-): DropPosition {
-  if (targetIsFolder && ratio > 0.25 && ratio < 0.75) {
-    return "into";
-  }
-  return ratio < 0.5 ? "before" : "after";
-}
-
 // フォルダを自分自身、または自分の子孫の中へドロップしようとした場合のエラー文言。
 // Rust側 move_favorite_node_to の同一チェックが返すメッセージと文言を揃えている
 // （このチェックはドラッグ中の事前判定・onDrop時の即時判定の両方で使うため、
@@ -311,8 +286,8 @@ const CIRCULAR_MOVE_ERROR = "フォルダを自分自身の中に移動するこ
 // （4e追加：事前フィードバック）。無効の場合、挿入線・リング枠の視覚フィードバックを
 // 出さず、禁止カーソルを表示する。
 // - 循環参照（フォルダを自分自身、またはその子孫の中へ移動しようとしている）は
-//   Rust側 move_favorite_node_to と同じロジック（isDescendantOfFolder。
-//   useSearch.ts から再利用）でドラッグ中に事前判定できる
+//   Rust側 move_favorite_node_to と同じ祖先走査を、共有の
+//   isCircularTreeMoveでドラッグ中に事前判定できる
 // - 同名重複はドラッグ中の全ドロップ先を都度計算するとコストが高く、かつ
 //   Rust側でしか正確に判定できない（同名判定はトリム・大文字小文字を無視する等の
 //   詳細ロジックを持つ）ため、ここでは事前チェックせず、実際のドロップ時に
@@ -326,56 +301,30 @@ function isValidDropTarget(
   targetRow: FavoriteEditTreeRow,
   position: DropPosition
 ): boolean {
-  if (targetRow.kind === "top") return true;
-  if (targetRow.node.id === draggedId) return false;
+  const target = favoriteDropTarget(targetRow);
+  if (target.id === draggedId) return false;
   if (!draggedIsFolder) return true;
-  const newParentId =
-    position === "into" && targetRow.kind === "folder"
-      ? targetRow.node.id
-      : targetRow.node.parentId;
   const rawNodes = tree.filter((r) => r.kind !== "top").map((r) => r.node);
-  return !isDescendantOfFolder(rawNodes, newParentId, draggedId);
+  const newParentId = resolveTreeDropParent(target, position);
+  return !isCircularTreeMove(rawNodes, draggedId, newParentId);
 }
 
-// ドロップ先の行・位置から、Rustコマンド（move_favorite_node_to）に渡す
-// newParentId・targetIndex を算出する。target_index は「移動対象自身を除いた、
-// 移動先の親を共有する兄弟を order 昇順に並べた配列」上の挿入位置（Rust側の
-// 契約と揃える。main.rs の move_favorite_node_to のコメントを参照）。
-//
-// favoriteTree は深さ優先のフラット配列で、同じ親を持つ兄弟同士が配列上で
-// 隣接しているとは限らない（間に子孫の行が挟まる）。ただし各親の子は既に
-// order 昇順で辿られているため、`parentId` が一致する行だけを抽出すれば、
-// その相対順序はそのまま order 順になる（groupNodesByParent/walkGroupedTree の
-// 前提。詳細は src/lib/nodeTree.ts を参照）。
-//
-// 仮想行「Top」がドロップ先の場合は、ルート（FAVORITES_FOLDER_ID）配下の末尾に
-// 追加する（フォルダ見出し行への "into" ドロップと同じ「末尾に追加」の考え方を、
-// ルート自身に対しても適用する）。
-function computeMoveTarget(
-  tree: FavoriteEditTreeRow[],
-  draggedId: string,
-  targetRow: FavoriteEditTreeRow,
-  position: DropPosition
-): { newParentId: string; targetIndex: number } {
-  if (targetRow.kind === "top") {
-    const rootSiblings = tree.filter(
-      (r) => r.kind !== "top" && r.node.parentId === FAVORITES_FOLDER_ID && r.node.id !== draggedId
-    );
-    return { newParentId: FAVORITES_FOLDER_ID, targetIndex: rootSiblings.length };
+function favoriteDropTarget(row: FavoriteEditTreeRow): TreeDropTarget {
+  if (row.kind === "top") {
+    return {
+      id: FAVORITES_FOLDER_ID,
+      parentId: "",
+      isFolder: true,
+      fixedParentId: FAVORITES_FOLDER_ID,
+    };
   }
-  if (position === "into" && targetRow.kind === "folder") {
-    // 末尾に追加する。target_index は Rust側で兄弟数にクランプされるため、
-    // 実際の兄弟数（自分自身が既にその配下にある場合を含む）を気にせず
-    // directChildCount をそのまま渡してよい。
-    return { newParentId: targetRow.node.id, targetIndex: targetRow.directChildCount };
-  }
-  const parentId = targetRow.node.parentId;
-  const siblings = tree.filter(
-    (r) => r.kind !== "top" && r.node.parentId === parentId && r.node.id !== draggedId
-  );
-  const targetPos = siblings.findIndex((r) => r.kind !== "top" && r.node.id === targetRow.node.id);
-  const insertIndex = position === "before" ? targetPos : targetPos + 1;
-  return { newParentId: parentId, targetIndex: Math.max(insertIndex, 0) };
+  return {
+    id: row.node.id,
+    parentId: row.node.parentId,
+    isFolder: row.kind === "folder",
+    directChildCount:
+      row.kind === "folder" ? row.directChildCount : undefined,
+  };
 }
 
 // お気に入り編集ビューのツリー表示。走査結果（tree）自体は /favorite ブラウジング
@@ -557,10 +506,13 @@ export function FavoriteEditTree({
       showDragError(CIRCULAR_MOVE_ERROR);
       return;
     }
-    const { newParentId, targetIndex } = computeMoveTarget(
-      tree,
+    const rawNodes = tree
+      .filter((treeRow) => treeRow.kind !== "top")
+      .map((treeRow) => treeRow.node);
+    const { newParentId, targetIndex } = computeTreeMoveTarget(
+      rawNodes,
       dragged.id,
-      row,
+      favoriteDropTarget(row),
       position
     );
     onMoveNode(dragged.id, newParentId, targetIndex).then((err) => {
@@ -583,7 +535,6 @@ export function FavoriteEditTree({
       selected={selected}
       tooltip="ここにフォルダを作成"
       onClick={onStartCreateFolder}
-      measureId="create-folder"
     >
       <CreateFolderIcon className="w-4 h-4" />
     </IconSlot>
@@ -753,7 +704,6 @@ export function FavoriteEditTree({
                     <IconSlot
                       interactive={false}
                       selected={isSelected}
-                      measureId="count-badge"
                     >
                       {/* 軸4m：円のサイズを他のIconSlot系アイコン（★・ピン・
                           削除・フォルダ作成、いずれも実測circle=24）と統一する
@@ -789,7 +739,6 @@ export function FavoriteEditTree({
                         onClick={() =>
                           onRequestDeleteFolder(row.node.id, row.node.name)
                         }
-                        measureId="delete"
                       >
                         <svg
                           className="w-4 h-4"

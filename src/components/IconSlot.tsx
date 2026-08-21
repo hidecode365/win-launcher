@@ -42,17 +42,12 @@ export function IconSlot({
   selected,
   tooltip,
   onClick,
-  measureId,
 }: {
   children: ReactNode;
   interactive: boolean;
   selected: boolean;
   tooltip?: string;
   onClick?: () => void;
-  // 計測用の一時的な data 属性（400_テスト・バグ修正、画面をまたいだ
-  // アイコン実測サイズ比較用）。見た目・挙動には一切影響しない。
-  // 恒久的に残してよいが、不要になれば呼び出し元ごと削除してよい。
-  measureId?: string;
 }) {
   const boxClassName = `relative flex-shrink-0 w-6 h-6 rounded-full p-1 inline-flex items-center justify-center transition-colors ${
     interactive
@@ -64,7 +59,7 @@ export function IconSlot({
 
   if (!interactive) {
     return (
-      <span className={boxClassName} data-icon-slot={measureId}>
+      <span className={boxClassName}>
         {children}
       </span>
     );
@@ -78,7 +73,6 @@ export function IconSlot({
         onClick?.();
       }}
       className={boxClassName}
-      data-icon-slot={measureId}
     >
       {children}
     </button>

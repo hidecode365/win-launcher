@@ -109,7 +109,7 @@ export function FavoriteListPanel({
                   表示専用（クリック不可）のため interactive=false とする。
                   軸4m：以前は桁数に応じて幅が変わるピル型
                   （ExtensionFilterEditor.tsx のタグ表示と同系統）を意図的に
-                  維持していたが、実測（Ctrl+Alt+M）でお気に入り編集ビューの
+                  維持していたが、実測でお気に入り編集ビューの
                   円形バッジ（circle=24）との不一致が判明したため、こちらも
                   固定サイズの円形（`absolute inset-0` で箱いっぱいの24pxに
                   広げる）に統一した。3桁までは実際の文字サイズで収まる想定
@@ -123,7 +123,6 @@ export function FavoriteListPanel({
                 <IconSlot
                   interactive={false}
                   selected={isSelected}
-                  measureId="count-badge"
                 >
                   <span
                     className={`absolute inset-0 flex items-center justify-center rounded-full border text-[11px] ${

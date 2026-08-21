@@ -266,7 +266,7 @@ win-launcher/
 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md)
 
 - Ctrl+DはAppのwindowハンドラ1箇所で処理する。全画面ビューが独自の可視クエリを持つ場合は、画面固有のkeydownを追加せず`localQueryClearHandlerRef`へ消去処理を登録する。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)
-- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。設定画面表示中は `showSettingsRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
+- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。検索以外の全画面ビューでは `viewRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
 - モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **`external-design/01-screen-transitions.md#modal-key-policy`**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
 - 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#search-overlay-active-consolidation)
@@ -313,12 +313,15 @@ win-launcher/
 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md)
 
 - `FavoriteNode` は `parentId` を持つフラットな配列（隣接リスト）で管理する。再帰的な木構造にせず、ノードの移動は1フィールドの更新で表現する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-node-structure)
-- 予約フォルダ（ピン止め／お気に入り／メモ）は固定IDで参照する。Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）。バリデーションはフロントエンドだけでなくRust側（保存直前）でも必ず行う。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#reserved-folders)
+- 予約フォルダ（ピン止め／お気に入り／メモ／メモのゴミ箱）は固定IDで参照する。Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）。バリデーションはフロントエンドだけでなくRust側（保存直前）でも必ず行う。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#reserved-folders)
+- メモ本文は`MemoDocument`としてツリーとは別に保存し、フロントエンドからstoreへ直接書き込まない。保存はRustコマンドへ一本化し、`expectedRevision`で競合を検出する。お気に入り配列と本文マップを同時に扱う場合のロック順はFavoriteNodes → MemoDocumentsに固定する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-document-persistence)
+- メモ削除は通常ルートではゴミ箱への論理削除、ゴミ箱内では子孫本文を含む完全削除とする。予約ルート自身は移動・リネーム・削除・ドラッグ対象にしない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-trash-lifecycle)
+- お気に入り管理とメモ管理は`nodeTree`／`useTreeEditSelection`／入力部品に加え、キー伝播・drop位置・循環移動・移動先計算を`treeEditUtils`で共有する。固定行モデルと更新契約が異なるため、行描画・D&Dイベント・更新コマンドは専用実装を保ち、共有層へ機能固有条件を持ち込まない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-edit-tree-boundary)
 - 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#search-exclusion)
 - `dragDropEnabled: false` によりOSネイティブD&Dは無効化済み。HTML5 D&Dによる並び替えとOSからのファイルドロップ受け入れは現状の実装では二者択一の関係にある。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#dnd-reordering)
 - `/recent` 等の一覧に新しい行アクション（★・メモ等）を追加する場合、`recentMode` を理由にした除外分岐を新設しない。表示可否を切り替える必要がある場合は既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を再利用する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#pinning-from-recent)
-- ツリー構造を持つ一覧（お気に入り、将来のメモ機能等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#duplicate-folder-name-validation)
-- `/favorite` モードの上下移動ボタン・フォルダ削除アイコンは、段階3の設定画面側ツリー編集UIが完成した時点で撤去予定の暫定実装である（Rustコマンド自体は再利用可能性があるため無条件に削除しない）。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features)
+- ツリー構造を持つ一覧（お気に入り・メモ等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#duplicate-folder-name-validation)
+- `/favorite` モードに前倒し実装していた上下移動ボタン・フォルダ削除アイコンは、お気に入り管理画面の完成時に撤去済みである。一覧閲覧とツリー管理の責務を再び混在させない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features)
 - 複数の予約ルートを1つのコマンドで扱う場合、単一ルートへの所属を先に要求しない。許可するルート集合への所属を検証してから、所属ルート別の処理を選ぶ。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#multi-root-command-validation)
 
 ### ピン止め・お気に入りアイコンとツールチップ
@@ -357,6 +360,7 @@ win-launcher/
 
 - クリップボード画像を扱う処理は画像本体を JS 側へ渡さず Rust 側で完結させる（IPC 越しの重量データ転送を避ける）。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history)
 - `clipboardPaneWidthRef`（mouseup用）と `clipboardPaneWidth` state（props用）は必ず同時に更新する。ref のみ更新すると、パネル再マウント時に古い幅が渡されるバグになる。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history)
+- 左右ペインは共有`ResizableSplitPane`を使い、分割線の見た目・pointer操作・幅制約・親リサイズ追従を画面側で再実装しない。各画面は内容と幅の永続化要否だけを持つ。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#resizable-split-pane)
 - OCR前処理（拡大・グレースケール化・コントラスト補正）による精度改善は検証済みで却下・見送り確定。同じアプローチを再検証しない。改善が必要な場合はWindows OCRエンジン自体の限界を前提に別モデルの導入を検討する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-preprocessing-rejected)
 - ウィンドウを閉じる新しい演出（フェードアウト等）を追加する場合、`closeWindow()` の「隠れるまで state を変更しない」原則の例外にするかどうかを明確に判断し、例外にする場合は理由を明記する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature)
 
@@ -467,11 +471,11 @@ win-launcher/
   - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md#auto-update) を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
-- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+S` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
+- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+,` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
 - `Ctrl+D`：同じ `window` の `keydown`イベントリスナーで一括処理する。OCRプレビュー表示中は「閉じる」ボタンと同じハンドラを呼び出し、それ以外では`search.setQuery("")`に加え、表示中の管理画面が`localQueryClearHandlerRef`へ登録した可視の絞り込み文字列もクリアする（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)）
 - クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history) を参照）
 - OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。閉じる／コピーして閉じるの挙動詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature) を参照
-- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list) を参照。`Ctrl+S` または Esc で検索 UI に戻る
+- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list) を参照。Escで検索 UI に戻る（表示中の`Ctrl+,`は無効）
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
 - `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` / `check-for-update-requested` イベントを受信する
 - `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide) を参照）

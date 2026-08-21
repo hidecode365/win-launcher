@@ -44,7 +44,7 @@ CF_HDROP の確認と、パスの実在判定（テキスト解釈）は、別�
 
 ウィザード進行中（`wizardStep !== "idle"`）は `pathPasteWizardMode` として公開され、ファイル検索・数式計算・URLエンコード/デコード・プレフィックスコマンド候補と排他になる（メインの検索効果（`useEffect`）は早期 return し、`search_files`/`calculate` を呼ばない）。
 
-**ウィザード中のキー操作（↑↓・Enter・Escape）は、`"folderSelect"`／`"nameEdit"` いずれのステップも `App.tsx` の window レベル `keydown` リスナー（Ctrl+S/Ctrl+D と同じもの）が一括して処理する。`SearchBox`・各ステップの入力要素側にはローカルの `onKeyDown` を持たせない**（経緯は「経緯」節を参照）。
+**ウィザード中のキー操作（↑↓・Enter・Escape）は、`"folderSelect"`／`"nameEdit"` いずれのステップも `App.tsx` の window レベル `keydown` リスナー（Ctrl+,／Ctrl+D と同じもの）が一括して処理する。`SearchBox`・各ステップの入力要素側にはローカルの `onKeyDown` を持たせない**（経緯は「経緯」節を参照）。
 
 Escape は `wizardBack()` でステップを1つ戻す（名前編集→フォルダ選択、フォルダ選択→候補行表示 or 通常のファイル検索結果表示）。これは Esc＝ウィンドウ非表示という基本挙動の例外。
 
@@ -101,7 +101,7 @@ Windows のトースト通知には `tauri-plugin-notification`（Tauri 公式�
 
 ### ウィザード中のキー操作を window レベルへ統一した経緯
 
-当初 `"folderSelect"` ステップの候補行（`SearchBox` とは別の `<button>` 要素）は Enter 確定直後や行のクリックでフォーカスが `SearchBox` から外れることがあり、フォーカス先の行がステップ遷移で DOM から消えると `document.body` にフォーカスが戻って `SearchBox` の React `onKeyDown` に keydown が届かなくなる（＝ Escape 等が効かない）不具合があった。Ctrl+S/Ctrl+D と同じ理由（フォーカス状態に依存しないよう window レベルに統一する）で `"folderSelect"` のみを window リスナーに移した際、`"nameEdit"` ステップ側は専用入力欄のローカル `onKeyDown`（Enter＝保存／Escape＝1ステップ戻る）に残したままにしたところ、window リスナー・ローカル `onKeyDown` の双方が同一の Escape キー押下に反応しうる状態になり、「名前編集ステップの Escape が1ステップ（フォルダ選択に戻る）ではなく2ステップ分（通常の検索状態まで）戻ってしまう」というリグレッションが発生した。これを踏まえ、`"nameEdit"` 側のローカル `onKeyDown` を撤去し、`"folderSelect"` と同じ window リスナーに一本化することで、二重ハンドラの併存自体を構造的に無くした。
+当初 `"folderSelect"` ステップの候補行（`SearchBox` とは別の `<button>` 要素）は Enter 確定直後や行のクリックでフォーカスが `SearchBox` から外れることがあり、フォーカス先の行がステップ遷移で DOM から消えると `document.body` にフォーカスが戻って `SearchBox` の React `onKeyDown` に keydown が届かなくなる（＝ Escape 等が効かない）不具合があった。Ctrl+,／Ctrl+D と同じ理由（フォーカス状態に依存しないよう window レベルに統一する）で `"folderSelect"` のみを window リスナーに移した際、`"nameEdit"` ステップ側は専用入力欄のローカル `onKeyDown`（Enter＝保存／Escape＝1ステップ戻る）に残したままにしたところ、window リスナー・ローカル `onKeyDown` の双方が同一の Escape キー押下に反応しうる状態になり、「名前編集ステップの Escape が1ステップ（フォルダ選択に戻る）ではなく2ステップ分（通常の検索状態まで）戻ってしまう」というリグレッションが発生した。これを踏まえ、`"nameEdit"` 側のローカル `onKeyDown` を撤去し、`"folderSelect"` と同じ window リスナーに一本化することで、二重ハンドラの併存自体を構造的に無くした。
 
 <a id="mslnk-to-shell-link-history"></a>
 

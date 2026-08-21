@@ -1,8 +1,8 @@
 # ピン止め・お気に入り・メモ機能のデータ構造
 
-対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`enforce_reserved_folders`／`is_descendant_of`／`add_favorite_folder`／`move_favorite_node`／`remove_favorite_folder`／`delete_memo_node`）、`src/types.ts`（`FavoriteNode`／`PINNED_FOLDER_ID`）、`src/hooks/useSearch.ts`（ピン止め・お気に入りの state・アクション）、`src/lib/nodeTree.ts`、`src/hooks/useFavoriteEditSelection.ts`（お気に入り編集ビュー専用の選択ドメイン・仮想固定行）。
+対象コード: `src-tauri/src/main.rs`（`FavoriteNode`／`MemoDocument`／`enforce_reserved_folders`／お気に入り・メモ用コマンド）、`src/types.ts`（`FavoriteNode`／`MemoDocument`／予約ID定数）、`src/hooks/useSearch.ts`（ピン止め・お気に入り・メモの state・アクション）、`src/hooks/useMemoNotes.ts`、`src/lib/nodeTree.ts`、`src/lib/treeEditUtils.ts`、`src/hooks/useTreeEditSelection.ts`、`src/components/FavoriteEditTree.tsx`、`src/components/MemoManageView.tsx`。
 
-要件・仕様の詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照。本ファイルは実装上の設計判断・注意点のみを記す。段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を実装済み。「メモ」は予約フォルダ（器）のみを生成し、機能自体は未実装。
+要件・仕様の詳細は 00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照。本ファイルは実装上の設計判断・注意点のみを記す。段階1・段階1.5（v0.10.0〜v0.10.2）で「ピン止め」を、段階2で「お気に入り」（★登録 + `/favorite` 呼び出し）を、段階5で「メモ」（`/memo` 閲覧 + メモ管理）を実装済み。
 
 アイコンの意匠・視認性・ツールチップは [favorites-ui-iconography.md](favorites-ui-iconography.md) を、選択状態の維持・結果行のDOM構造は [result-list-and-selection.md](result-list-and-selection.md) を参照。
 
@@ -37,9 +37,37 @@
 
 **固定IDを採用する方針とその理由、Rust 側での二重バリデーション方針**は、外部設計書 `external-design/03-data-model.md#reserved-folders` へ移設した。本節には実装上の対応と注意点のみを記す。
 
-- 定数の実体：`main.rs` の `PINNED_FOLDER_ID`（`"__pinned__"`）／`FAVORITES_FOLDER_ID`（`"__favorites__"`）／`MEMO_FOLDER_ID`（`"__memo__"`）
-- **Rust 側の定数値を変更する場合、フロントエンド側（`src/types.ts` の `PINNED_FOLDER_ID`）の定数も必ず同時に更新すること。** 両者は文字列リテラルの一致だけで結び付いており、型システムによる自動追従はない
+- 定数の実体：`main.rs` の `PINNED_FOLDER_ID`（`"__pinned__"`）／`FAVORITES_FOLDER_ID`（`"__favorites__"`）／`MEMO_FOLDER_ID`（`"__memo__"`）／`MEMO_TRASH_ID`（`"__memo_trash__"`）
+- **Rust 側の定数値を変更する場合、フロントエンド側（`src/types.ts` の同名定数）も必ず同時に更新すること。** 両者は文字列リテラルの一致だけで結び付いており、型システムによる自動追従はない
 - 整合性の是正は `enforce_reserved_folders`（`main.rs`）が担う。起動時（`setup()` の `ensure_reserved_folders`）に加え、`set_favorites` コマンド内でも毎回呼ぶ
+
+<a id="memo-document-persistence"></a>
+
+### メモ本文の保存経路・版管理
+
+メモのツリー構造は既存の `FavoriteNode` を再利用し、本文だけを `MemoDocument` として `memoDocuments` キーへ分離して保存する。メモIDはこのmapのキーであり、値の `MemoDocument` は `content`／`revision`／`savedAt`／`draft` を持つ。`savedAt`と`draft.updatedAt`はどちらもミリ秒の数値（TypeScriptは`number`、Rustは`u64`）である。本文の読み書きは `get_memo_document`／`add_memo`／`save_memo_draft`／`save_memo_final` の Rust コマンドだけを経由する。フロントエンドの `useMemoNotes` はこれらのコマンドを呼ぶ責務を持ち、`@tauri-apps/plugin-store` へ直接書き込まない。
+
+`revision` は永続本文の版であり、`save_memo_final` で本文が変わったときだけ増加する。`draft` は同じ revision に紐づく未確定本文で、下書き保存では revision を増やさない。保存コマンドは `expectedRevision` を受け取り、保存済み revision と一致しない場合は競合として拒否する。メモ管理画面の構造変更前には `flushDraft` で編集中本文を確定し、ツリー更新と本文更新の順序を明示する。
+
+Rust 側はお気に入り配列とメモ本文マップを別々の `Mutex` で保護する。両方を扱う処理では常に FavoriteNodes → MemoDocuments の順でロックし、逆順を作らない。本文の追加・取得・保存時は対象IDが通常のメモルート配下のメモノードとして存在することを検証し、ゴミ箱内では本文編集を許可しない。完全削除では、先にお気に入り配列からノードを保存し、その後に対応本文を削除・保存する。後段が失敗しても参照先だけが消える状態を避け、未参照本文が残る側へ倒す。
+
+<a id="memo-trash-lifecycle"></a>
+
+### メモのゴミ箱と削除ライフサイクル
+
+`MEMO_FOLDER_ID` と `MEMO_TRASH_ID` は親子ではなく、予約ルート同士の兄弟である。`/memo` 閲覧画面には通常ルート配下だけを表示し、メモ管理画面では通常ルートとゴミ箱ルートを固定行として合成する。両予約行自身は、移動・リネーム・削除・ドラッグの対象にしない。
+
+通常ツリーの削除は `delete_memo_node` によりゴミ箱へ移す論理削除で、ゴミ箱内のノードには同じコマンドで完全削除を適用する。移動と復元は `move_memo_node_to` を使い、移動先・循環・深さ上限（64）・予約ルートの制約を Rust 側で検証する。完全削除するフォルダは子孫ノードと子孫メモ本文をまとめて削除する。実装時に判明した到達不能分岐の経緯は「メモのゴミ箱で完全削除へ到達できなかった経緯」を参照。
+
+<a id="memo-edit-tree-boundary"></a>
+
+### お気に入り管理とメモ管理の共通化境界
+
+お気に入り管理とメモ管理は操作パターンを揃えるが、行コンポーネント全体は共通化しない。共有するのは、ツリー平坦化の `nodeTree.ts`、選択intent・ホバー・通常矢印移動を扱う `useTreeEditSelection`、入力部品の `RenameInput`／`CreateFolderInlineRow`、純粋計算の `treeEditUtils.ts` など、機能固有の分岐を持たない薄い契約に限定する。`useFavoriteEditSelection` はお気に入りの仮想先頭行を与える薄いラッパーである。
+
+`treeEditUtils.ts` は、入力中にwindowショートカットへ伝播させないキー判定、相対Y位置からのdrop位置判定、循環移動判定、drop先から親ID・挿入位置を求める計算を共有する。画面側は固定行を `TreeDropTarget.fixedParentId`、折りたたみ中も保持すべき実子数を `directChildCount` へ変換するだけにし、同じ計算を再実装しない。
+
+`FavoriteEditTree` と `MemoManageView` の行描画・HTML5 D&Dイベント処理・更新コマンドは専用実装のまま保つ。お気に入りは仮想 `top` 行、メモは永続化された通常ルートとゴミ箱ルートという異なる固定行モデルを持ち、メモ側には移動・復元・完全削除・本文確定もあるためである。共有層は純粋計算の最小契約に留め、機能別の操作可否や副作用を持ち込まない。
 
 <a id="search-exclusion"></a>
 

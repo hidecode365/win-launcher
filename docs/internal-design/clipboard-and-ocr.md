@@ -1,6 +1,6 @@
 # クリップボード履歴・OCR機能
 
-対象コード: `src-tauri/src/main.rs`（`handle_clipboard_change`／`ocr_from_clipboard`／`ClipboardImageCache`）、`src/hooks/useClipboard.ts`／`useOcr.ts`、`src/components/ClipboardPanel.tsx`／`OcrPreview.tsx`。
+対象コード: `src-tauri/src/main.rs`（`handle_clipboard_change`／`ocr_from_clipboard`／`ClipboardImageCache`）、`src/hooks/useClipboard.ts`／`useOcr.ts`、`src/components/ClipboardPanel.tsx`／`OcrPreview.tsx`／`MemoPanel.tsx`／`ResizableSplitPane.tsx`。
 
 どちらもクリップボードの画像を扱う点で実装上の関心が近いため1ファイルにまとめている。
 
@@ -47,16 +47,24 @@
 - テキストの書き戻しは既存の `copy_to_clipboard`（Rust コマンド）を再利用する
 - 画像の書き戻しは `paste_clipboard_image(id)` を呼ぶだけ。Rust 側は `ClipboardImageCache` から `id` に対応する PNG バイナリを取得し、`image::load_from_memory` で RGBA にデコードしたうえで Win32 API（`OpenClipboard` → `EmptyClipboard` → `SetClipboardData(CF_DIB, ...)` → `CloseClipboard`）を直接呼んでクリップボードへ書き込む（`GlobalAlloc`/`GlobalLock`/`GlobalUnlock` で確保した `GMEM_MOVEABLE` メモリに BITMAPINFOHEADER ＋ ボトムアップ BGRA ピクセル列を書き込み、`SetClipboardData` に渡す。渡したメモリの所有権は OS に移るため明示的な解放は行わない）
 
-**分割線リサイズ**：`ClipboardPanel` コンポーネントが左右ペイン間に分割線要素（幅 4px）を描画し、`onMouseDown` でドラッグ開始を検出する。
-
-- 左ペイン幅を `useState` でコンポーネント内部管理し、`initialLeftWidth` props（App.tsx が store から読み込んで渡す）で初期値を設定する（デフォルト 224px）
-- ドラッグ中は `document` レベルの `mousemove`/`mouseup` を `useEffect` で登録して追従し、`useEffect` のクリーンアップで解除する。`isDragging`（ref）と `leftWidthRef`（現在幅を mouseup コールバックに伝えるための ref）の 2 本を使って実装する
-- 左ペインの最小幅 150px、最大幅はパネル全体の 60%
-- 幅確定（mouseup）時に `onWidthChange` コールバックを呼び、App.tsx が `settings.json` の `"clipboardPaneWidth"` を即時保存する。フォーカスアウト（blur）時にも `clipboardPaneWidthRef` を使って同キーへ保存する。**`clipboardPaneWidthRef`（mouseup コールバック用）と `clipboardPaneWidth` state（ClipboardPanel への props 用）は必ず同時に更新する。ref のみ更新して state を更新しないと、パネル再マウント時に古い幅が渡されるバグになる**
+**分割線リサイズ**：実装は後述の共有 `ResizableSplitPane` を使用する。クリップボード固有なのは幅の保存責務だけで、幅確定時に `onWidthChange` を通じて App.tsx が `settings.json` の `"clipboardPaneWidth"` を即時保存する。フォーカスアウト（blur）時にも `clipboardPaneWidthRef` を使って同キーへ保存する。**`clipboardPaneWidthRef`（保存用）と `clipboardPaneWidth` state（ClipboardPanel への props 用）は必ず同時に更新する。ref のみ更新して state を更新しないと、パネル再マウント時に古い幅が渡されるバグになる**
 
 **右パネル**：クリップボード履歴モードのときのみ、左リストの右側に詳細パネルを表示する2カラムレイアウトに切り替える。選択中のエントリがテキストなら本文（折り返し表示）とコピー日時・文字数、画像ならサムネイルとコピー日時・画像サイズを表示する。
 
 **必要な権限**：`clipboard-manager:allow-read-text`（テキスト取得用。画像の読み書きは Rust 内部で直接呼ぶため JS 側のコマンド許可は不要）。
+
+<a id="resizable-split-pane"></a>
+
+### 左右ペインの共有リサイズ実装
+
+`ClipboardPanel`／`OcrPreview`／`MemoPanel` は、左右ペインの骨格と分割線を `ResizableSplitPane` で共有する。各画面は `left`／`right` と初期幅、必要なら幅確定時の `onResizeEnd` だけを渡し、ドラッグ追従や境界線の見た目を再実装しない。
+
+- 分割線は幅4px、左右borderと背景色を持ち、hover時に青く変化する。操作領域と視覚上の境界を同じ要素で表す
+- `pointerdown` で開始し、documentレベルの `pointermove`／`pointerup`／`pointercancel` で追従・終了する。ドラッグ中はbodyのcursorと文字選択を抑止し、終了・アンマウントのどちらでも必ず復元する
+- 左幅は150px以上・コンテナ幅の60%以下に丸める。`ResizeObserver` で親サイズ変更後も同じ制約へ戻す
+- クリップボードは初期224pxで `clipboardPaneWidth`、メモは初期280pxで `memoPaneWidth` に確定幅を保存する。OCRは初期320pxで、再表示時の幅は永続化しない
+
+この共通化はレイアウト機構だけを対象とする。選択、本文、保存など各画面固有の状態は `ResizableSplitPane` に持ち込まない。
 
 <a id="ocr-feature"></a>
 
