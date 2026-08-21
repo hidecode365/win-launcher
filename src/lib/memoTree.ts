@@ -4,6 +4,12 @@ import { groupNodesByParent, walkGroupedTree } from "./nodeTree";
 
 export type MemoVisibleRow = { node: FavoriteNode; depth: number };
 
+export const UNTITLED_MEMO_LABEL = "無題のメモ";
+
+export function memoNodeDisplayName(node: FavoriteNode): string {
+  return node.type === "memo" && node.name === "" ? UNTITLED_MEMO_LABEL : node.name;
+}
+
 export function buildMemoVisibleRows(
   nodes: FavoriteNode[],
   documents: Record<string, MemoDocument>,
@@ -18,7 +24,7 @@ export function buildMemoVisibleRows(
     for (const node of nodes) {
       if (node.type !== "memo") continue;
       const document = documents[node.id];
-      const searchable = `${node.name}\n${document?.draft?.content ?? document?.content ?? ""}`.toLowerCase();
+      const searchable = `${memoNodeDisplayName(node)}\n${document?.draft?.content ?? document?.content ?? ""}`.toLowerCase();
       if (!searchable.includes(term)) continue;
       included.add(node.id);
       let parentId = node.parentId;

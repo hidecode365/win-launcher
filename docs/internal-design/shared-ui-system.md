@@ -61,6 +61,8 @@ token名は色相や画面名ではなく役割で付ける。新しい色を追
 
 `RenameInput`は、EnterとEscを入力欄内で完結させ、一覧側へ伝播させない。IME変換中のEnterはリネーム確定を行わないが、伝播停止は必ず行う。window captureで一覧キーを処理する画面は、入力欄より先にイベントを受け取るため、React stateの「リネーム中」フラグではなく、実際の`event.target`に付けた`data-inline-rename-input`で除外する。state更新後のeffect再登録を待つ判定は、入力欄が既に表示された直後にも古いクロージャを参照しうるため使わない。
 
+メモ管理画面の新規メモ作成は、既存ノード用の`MemoNodeRenameInput`を経由しない。作成専用の`MemoCreateRow`でタイトルを確定した時点に限って`add_memo`を呼び、トリム済みタイトルを`name`と`content`の両方へ渡す。Rust側の`add_memo`はその内容で`revision: 1`の`MemoDocument`を直接作るため、「新規作成直後」を示す一時フラグや、v2へ進める追加保存は不要である。空入力では両値を空文字のまま渡し、表示だけを`memoNodeDisplayName`で「無題のメモ」へフォールバックする。通常リネームは引き続き`rename_favorite_node`だけを呼び、本文へ触れない。
+
 <a id="action-button"></a>
 
 ## ActionButton

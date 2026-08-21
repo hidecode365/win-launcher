@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CreateFolderResult, FavoriteNode, MEMO_FOLDER_ID, MEMO_TRASH_ID } from "../types";
 import { groupNodesByParent, walkGroupedTree } from "../lib/nodeTree";
+import { memoNodeDisplayName } from "../lib/memoTree";
 import { useTreeEditSelection } from "../hooks/useTreeEditSelection";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { isDescendantOfFolder } from "../hooks/useSearch";
@@ -123,7 +124,7 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const included = new Set<string>([MEMO_FOLDER_ID, MEMO_TRASH_ID]);
     for (const node of nodes) {
-      if (!node.name.toLowerCase().includes(term)) continue;
+      if (!memoNodeDisplayName(node).toLowerCase().includes(term)) continue;
       included.add(node.id);
       let parentId = node.parentId;
       while (parentId) {
@@ -168,9 +169,16 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
   }, [reload, selection, showMoveError]);
 
   const createMemo = async () => {
-    const memoName = name.trim() || "無題のメモ";
+    // この入力は既存ノードのRenameInputではなく、新規作成専用の確定経路。
+    // add_memoが作るv1へタイトルと同じ内容を直接渡すことで、後続の通常リネームと
+    // 本文更新を結び付ける一時フラグを持たずに「最初の確定」だけへ限定する。
+    const memoName = name.trim();
     const existingIds = new Set(nodes.map((node) => node.id));
-    const created = await invoke<FavoriteNode[]>("add_memo", { name: memoName, content: "", parentId: creatingParentId });
+    const created = await invoke<FavoriteNode[]>("add_memo", {
+      name: memoName,
+      content: memoName,
+      parentId: creatingParentId,
+    });
     setCreating(null);
     setCreatingAnchorId(null);
     setName("");
@@ -356,7 +364,7 @@ export function MemoManageView({ onClose, onEdit, onRegisterLocalQueryClearHandl
             {!reserved && !filtering ? <DragHandle selected={selected} /> : reserved ? null : <span className="mr-1.5 w-4 flex-shrink-0" />}
             {node.type === "folder" && <FolderChevron collapsed={node.collapsed} />}
             {row.kind === "trash" ? <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg> : node.type === "folder" ? <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg> : <FileIcon className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" />}
-            {renamingThis ? <MemoNodeRenameInput nodeId={node.id} initialName={node.name} className={rowVariant === "item" ? "text-ui-body" : "text-ui-meta"} onRenamed={async () => { setRenaming(null); await reload(); }} onCancel={() => setRenaming(null)} /> : <span className={`${rowVariant === "item" ? "flex-1 " : ""}${MANAGE_TREE_ROW_LABEL[rowVariant]}`}>{node.name}</span>}
+            {renamingThis ? <MemoNodeRenameInput nodeId={node.id} initialName={node.name} className={rowVariant === "item" ? "text-ui-body" : "text-ui-meta"} onRenamed={async () => { setRenaming(null); await reload(); }} onCancel={() => setRenaming(null)} /> : <span className={`${rowVariant === "item" ? "flex-1 " : ""}${MANAGE_TREE_ROW_LABEL[rowVariant]}`}>{memoNodeDisplayName(node)}</span>}
             {!renamingThis && renderActionIcons(row, selected)}
           </div>{creatingAnchorId === node.id && creating === "folder" && <CreateFolderInlineRow depth={node.type === "folder" ? depth + 1 : depth} targetParentId={creatingParentId} onCreateFolder={createFolder} onFolderCreated={(id) => { setCreating(null); setCreatingAnchorId(null); selection.selectByKey(id, Date.now() + 1000); }} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}{creatingAnchorId === node.id && creating === "memo" && <MemoCreateRow depth={node.type === "folder" ? depth + 1 : depth} name={name} onNameChange={setName} onCreate={createMemo} onCancel={() => { setCreating(null); setCreatingAnchorId(null); }} />}</Fragment>;
         })}

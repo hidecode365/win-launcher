@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FavoriteNode, MemoDocument } from "../types";
-import { buildMemoVisibleRows } from "../lib/memoTree";
+import { buildMemoVisibleRows, memoNodeDisplayName } from "../lib/memoTree";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { ResizableSplitPane } from "./ResizableSplitPane";
 import { ActionButton } from "./ActionButton";
@@ -181,7 +181,7 @@ export function MemoPanel({
             onCancel={finishRename}
           />
         ) : (
-          <span className="truncate">{node.name}</span>
+          <span className="truncate">{memoNodeDisplayName(node)}</span>
         );
         return node.type === "folder" ? (
           <div
