@@ -186,6 +186,8 @@ win-launcher/
 │   │   ├── SettingsPanel.tsx       # 設定パネル全体（タブ構成）
 │   │   ├── GeneralSettings.tsx     # 全般タブ（ホットキー）
 │   │   ├── FileSearchSettings.tsx  # ファイル検索タブ
+│   │   ├── FavoriteSettings.tsx    # お気に入りタブ
+│   │   ├── MemoSettings.tsx        # メモタブ
 │   │   ├── PathPasteSettings.tsx   # パス貼り付けタブ
 │   │   ├── ConvertSettings.tsx     # 計算・変換タブ
 │   │   ├── SystemCommandSettings.tsx # システムコマンドタブ
@@ -458,7 +460,7 @@ win-launcher/
 
 ## フロントエンド
 
-- `App.tsx` はルートのコンポジションのみを担う（検索/計算 UI + 設定パネルの2画面の切替、`storeRef`／`inputRef` の保持、フック間をつなぐ `handleKeyDown`・`closeSettings` 等の組み立て）。機能ごとのロジックはカスタムフックへ、UI は `components/` 配下の個別コンポーネントへ分離している
+- `App.tsx` はルートのコンポジションのみを担う（検索/計算 UI・設定パネル・お気に入り管理・メモ管理の4ビュー（`MainView`）の切替、`storeRef`／`inputRef` の保持、フック間をつなぐ `handleKeyDown`・`closeSettings` 等の組み立て）。機能ごとのロジックはカスタムフックへ、UI は `components/` 配下の個別コンポーネントへ分離している
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する

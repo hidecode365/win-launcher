@@ -12,7 +12,7 @@
 
 設定パネルは左にカテゴリナビ、右に選択中カテゴリの内容を表示するタブ構成（`SettingsPanel` 内でタブ選択状態をローカル `useState` 管理）。カテゴリは以下の順：
 
-全般／ファイル検索／お気に入り／パス貼り付け／計算・変換／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR／このアプリについて
+全般／ファイル検索／お気に入り／メモ／パス貼り付け／計算・変換／システムコマンド／Web検索／クリップボード／最近使ったファイル／OCR／このアプリについて
 
 **この箇条書きがカテゴリナビ一覧の正本である。** タブを追加・削除・改名した場合、以下すべてを同時に更新すること（詳細は CLAUDE.md「変更時の同期チェックリスト」節を参照）：
 
@@ -32,7 +32,7 @@
 **本節のフィールド一覧は意図的に内部設計書側へ残している**（コードから読み取れる派生情報のため、外部設計書へ置くと設定追加のたびに PO レビューと同期漏れが発生する。詳細は移設先の注記を参照）。以下が現在の一覧：
 
 - `folders: { path, enabled, maxDepth, includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions }[]`（ファイル検索カテゴリの検索フォルダ一覧。フォルダごとの詳細設定は [file-search-and-frecency.md](file-search-and-frecency.md) を参照）
-- `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled, checkUpdateOnStartup, urlConvertEnabled, urlConvertKeepSpaceEncoded, recentFilesEnabled, recentKeyword, recentMaxAgeDays, recentMaxResults, recentIncludeFolders, recentExtensionFilterMode, recentBlacklistExtensions, recentWhitelistExtensions, pathPasteEnabled, pinEnabled, favoriteEnabled, favoriteKeyword }`。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix` のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`、`favoriteKeyword` のデフォルトは `"favorite"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。6つのキーワード（shutdown/restart/sleep/clipboard/recent/favorite）は互いに重複できない（`validate_unique_keyword`。詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md) を参照）。フィールドの並び順は `src/types.ts` の `AppSettings` interface の宣言順と一致させている
+- `appSettings: { hotkey, fileSearchEnabled, calcEnabled, systemCommandEnabled, shutdownKeyword, restartKeyword, sleepKeyword, webSearchEnabled, copyWithComma, clipboardEnabled, clipboardPrefix, clipboardMaxItems, ocrEnabled, checkUpdateOnStartup, urlConvertEnabled, urlConvertKeepSpaceEncoded, recentFilesEnabled, recentKeyword, recentMaxAgeDays, recentMaxResults, recentIncludeFolders, recentExtensionFilterMode, recentBlacklistExtensions, recentWhitelistExtensions, pathPasteEnabled, pinEnabled, favoriteEnabled, favoriteKeyword, memoEnabled, memoKeyword }`。ON/OFF はデフォルト全て `true`、`hotkey` のデフォルトは `Alt+Space`、`shutdownKeyword`/`restartKeyword`/`sleepKeyword` のデフォルトはそれぞれ `"shutdown"`/`"restart"`/`"sleep"`、`clipboardPrefix` のデフォルトは `"cb"`、`clipboardMaxItems` のデフォルトは `50`、`recentKeyword` のデフォルトは `"recent"`、`favoriteKeyword` のデフォルトは `"favorite"`、`memoKeyword` のデフォルトは `"memo"`。いずれのキーワードも `"/"` を固定の区切り文字として先頭に付与したうえで検索クエリと前方一致判定する（`"/"` 自体は設定で変更不可）。7つのキーワード（shutdown/restart/sleep/clipboard/recent/favorite/memo）は互いに重複できない（`validate_unique_keyword`。詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md) を参照）。フィールドの並び順は `src/types.ts` の `AppSettings` interface の宣言順と一致させている
 - `frecency: { [path]: { count, lastUsed } }`（設定画面には表示せず、フロントエンドが JS の plugin-store API で直接読み書きする。詳細は [file-search-and-frecency.md](file-search-and-frecency.md) を参照）
 - `prefixCommandFrecency: { [keyword]: { count, lastUsed } }`（詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md) を参照）
 - `clipboardHistory: ClipboardTextEntry[]`（詳細は [clipboard-and-ocr.md](clipboard-and-ocr.md) を参照）
