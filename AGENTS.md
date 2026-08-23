@@ -285,6 +285,7 @@ win-launcher/
 - 新しい行種別（★お気に入り・メモ等）の追加は `ResultRow` に `kind` を1つ足して `rows` 構築ロジック（`useSearch.ts` 内の1箇所）に組み込むだけで完結させる。個別のオフセット変数（`pinnedLength` 等）は新設しない。選択中の行種別の判定は常に `rows[selected].kind` で行う。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#adding-a-row-kind)
 - Web検索行は現在 `rows` に未統合で `baseLength+1` の特例（意図的な保留）。選択のずれ・消失の不具合はまずこの特例を疑うこと。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#web-search-row-exception)
 - 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない（内部に複数の操作ボタンを持つ前提の構造）。この規約は `ResultList.tsx` の行に限らず、選択可能な一覧行を描画する全コンポーネント（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する（行が実在の `<button>` だとクリック後にDOMフォーカスが残留し、モーダル確認等の window レベル `keydown` リスナーを誤って発火させる不具合の実例があった）。個別の内部操作ボタン・D&D等の事情が無い新しい一覧行は、まず共通ラッパー `SelectableRow.tsx` の利用を検討する。結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要な場合は背景色差のみで表現する。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#dom-structure-and-dividers)
+- 一覧・ツリーの行操作（開閉トグル・クリップボードへのセット等）を window レベルの `keydown` リスナーでEnterを処理する画面（お気に入り画面・メモ画面等）では、`event.target instanceof HTMLButtonElement` の間はガードして行操作を発火させない。行内・ヘッダーの操作ボタン（`IconSlot` 等）へTabでフォーカスした状態のEnterは、ボタン自身の `click`（ブラウザ標準の確定経路）に一本化し、window レベル側と二重発火させない。 → 詳細: [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#window-level-enter-vs-focused-button-bug)
 
 ### フッター表示
 

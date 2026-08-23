@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CreateFolderResult, FavoriteNode, MEMO_FOLDER_ID, MEMO_TRASH_ID } from "../types";
+import { CreateFolderResult, FavoriteNode, MemoDocument, MEMO_FOLDER_ID, MEMO_TRASH_ID } from "../types";
 import { groupNodesByParent, walkGroupedTree } from "../lib/nodeTree";
 import { memoNodeDisplayName } from "../lib/memoTree";
 import { useTreeEditSelection } from "./useTreeEditSelection";
@@ -20,6 +20,10 @@ export type MemoManageRow = {
   depth: number;
   trashed: boolean;
   kind: MemoManageSelectedKind;
+  // フォルダ行のみ意味を持つ、直接の子ノード数（孫は含めない）。件数バッジ表示用。
+  // お気に入り画面（useSearch.ts）と同じ考え方で、折りたたみ・絞り込みの影響を
+  // 受けない実際の全直下件数を使う。
+  directChildCount?: number;
 };
 export type MemoDragInfo = { id: string; isFolder: boolean };
 
@@ -74,6 +78,9 @@ function isValidDropTarget(
 // 従来 App.tsx 側にあった useEffect をこのフック内に移設した。
 export function useMemoManage(active: boolean) {
   const [nodes, setNodes] = useState<FavoriteNode[]>([]);
+  // ローカル絞り込みの本文検索用（issue 0026 補足仕様）。メモIDをキーにした
+  // 確定版本文のみのマップ。ツリーとは別に一括取得する（下記 reload を参照）。
+  const [bodies, setBodies] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState<"folder" | "memo" | null>(null);
   const [creatingParentId, setCreatingParentId] = useState(MEMO_FOLDER_ID);
   const [creatingAnchorId, setCreatingAnchorId] = useState<string | null>(null);
@@ -88,6 +95,21 @@ export function useMemoManage(active: boolean) {
   const reload = useCallback(async () => {
     const next = await invoke<FavoriteNode[]>("get_memo_manage_nodes");
     setNodes(next);
+    // 絞り込み用の本文一括取得。ゴミ箱配下のメモも対象に含める（issue 0026
+    // 補足仕様。`get_memo_document` はトラッシュ配下の読み取りを許可済み）。
+    const memoNodes = next.filter((node) => node.type === "memo");
+    const loaded = await Promise.all(
+      memoNodes.map(async (node) => {
+        try {
+          const doc = await invoke<MemoDocument>("get_memo_document", { id: node.id });
+          return [node.id, doc.content] as const;
+        } catch (error) {
+          console.error(error);
+          return [node.id, ""] as const;
+        }
+      })
+    );
+    setBodies(Object.fromEntries(loaded));
   }, []);
   // 「表示のたび」に取得し直す（/recent 等の pull型モードと同じ考え方）。設定を
   // 開いて戻ってきた場合も active が再び true になり、最新の状態へ更新する。
@@ -101,9 +123,16 @@ export function useMemoManage(active: boolean) {
   // 表示上の固定行「メモ」は置かない（issue 0026 軸A）。ゴミ箱の固定行のみ維持する。
   const rows = useMemo<MemoManageRow[]>(() => {
     const grouped = groupNodesByParent(nodes);
+    const childCount = (id: string) => (grouped.get(id) ?? []).length;
     const result: MemoManageRow[] = [];
     walkGroupedTree(grouped, MEMO_FOLDER_ID, (node, depth) => {
-      result.push({ node, depth, trashed: false, kind: node.type === "folder" ? "folder" : "memo" });
+      result.push({
+        node,
+        depth,
+        trashed: false,
+        kind: node.type === "folder" ? "folder" : "memo",
+        directChildCount: node.type === "folder" ? childCount(node.id) : undefined,
+      });
       return filterText ? undefined : { skipChildren: node.type === "folder" && node.collapsed };
     });
     const trash = nodes.find((node) => node.id === MEMO_TRASH_ID);
@@ -111,7 +140,13 @@ export function useMemoManage(active: boolean) {
       result.push({ node: trash, depth: 0, trashed: true, kind: "trash" });
       if (filterText || !trash.collapsed) {
         walkGroupedTree(grouped, MEMO_TRASH_ID, (node, depth) => {
-          result.push({ node, depth: depth + 1, trashed: true, kind: node.type === "folder" ? "folder" : "memo" });
+          result.push({
+            node,
+            depth: depth + 1,
+            trashed: true,
+            kind: node.type === "folder" ? "folder" : "memo",
+            directChildCount: node.type === "folder" ? childCount(node.id) : undefined,
+          });
           return filterText ? undefined : { skipChildren: node.type === "folder" && node.collapsed };
         });
       }
@@ -119,13 +154,21 @@ export function useMemoManage(active: boolean) {
     return result;
   }, [nodes, filterText]);
 
+  // issue 0026 補足仕様：ローカル絞り込みはフォルダ名・メモタイトルに加え、
+  // メモ本文（確定版）も対象とし、ゴミ箱配下も検索対象に含める
+  // （02-saved-items.md「メモ画面」節）。本文はツリー取得（get_memo_manage_nodes）
+  // には含まれないため、絞り込み用に別途一括取得する（bodies state・下記の
+  // reload 内 fetch を参照）。
   const visibleRows = useMemo(() => {
     const term = filterText.trim().toLowerCase();
     if (!term) return rows;
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const included = new Set<string>([MEMO_TRASH_ID]);
     for (const node of nodes) {
-      if (!memoNodeDisplayName(node).toLowerCase().includes(term)) continue;
+      const titleMatch = memoNodeDisplayName(node).toLowerCase().includes(term);
+      const bodyMatch =
+        node.type === "memo" && (bodies[node.id]?.toLowerCase().includes(term) ?? false);
+      if (!titleMatch && !bodyMatch) continue;
       included.add(node.id);
       let parentId = node.parentId;
       while (parentId) {
@@ -136,7 +179,7 @@ export function useMemoManage(active: boolean) {
       }
     }
     return rows.filter((row) => included.has(row.node.id));
-  }, [filterText, nodes, rows]);
+  }, [filterText, nodes, rows, bodies]);
 
   // 固定行「メモ」を撤去したため、resolveSelected の resetKey は「先頭の実データ行」
   // （無ければ空センチネル）に変える（App.tsx 側の旧 memoSelection と同じ考え方）。
@@ -223,6 +266,29 @@ export function useMemoManage(active: boolean) {
       showMoveError(String(error));
     }
   }, [reload, selectedNode, selection, showMoveError]);
+
+  // issue 0026 補足仕様：ゴミ箱行のアイコン（「ゴミ箱を空にする」）。ゴミ箱配下の
+  // 全ノードを完全削除する。確認ダイアログは表示しない（ゴミ箱に入っている時点で
+  // 既に論理削除の意思確認を経ているため。03-data-model.md「メモのゴミ箱（論理削除）」
+  // 節の「完全削除は確認ダイアログを経由しない」方針を、複数件の一括操作に
+  // そのまま適用する）。`delete_memo_node`はゴミ箱配下のノードに対しては完全削除
+  // として動作し、子孫ノード・子孫メモ本文も同一操作でまとめて削除するため、
+  // ゴミ箱直下（直接の子）だけを対象に1件ずつ呼べば、配下すべてが削除される。
+  // 新規のRustコマンドは追加せず既存コマンドの直列呼び出しで実現する
+  // （Rust側はfavorites/memoDocumentsをMutexで直列化済みのため、並列発火はしない）。
+  const emptyTrash = useCallback(async () => {
+    const directChildren = nodes.filter((node) => node.parentId === MEMO_TRASH_ID);
+    if (directChildren.length === 0) return;
+    try {
+      for (const child of directChildren) {
+        await invoke("delete_memo_node", { id: child.id });
+      }
+      selection.resetToTop();
+      await reload();
+    } catch (error) {
+      showMoveError(String(error));
+    }
+  }, [nodes, reload, selection, showMoveError]);
 
   const toggleFolder = useCallback(
     async (node: FavoriteNode) => {
@@ -350,8 +416,11 @@ export function useMemoManage(active: boolean) {
   );
 
   // 本文（下書き・確定版）の管理。ツリー側の選択が指すメモIDと同期する。
-  const notes = useMemoNotes(active);
-  const selectedMemoId = selectedRow?.kind === "memo" && !selectedRow.trashed ? selectedNode?.id ?? null : null;
+  // issue 0026 補足仕様：ゴミ箱配下のメモも選択時に本文・世代番号・保存日時等を
+  // 通常と同じ情報量で表示する（読み取りは許可済み。本文編集・下書き破棄・保存の
+  // 非活性化はMemoManageView.tsx側でselectedRow.trashedを見て行う）。
+  const notes = useMemoNotes();
+  const selectedMemoId = selectedRow?.kind === "memo" ? selectedNode?.id ?? null : null;
   useEffect(() => {
     if (selectedMemoId !== notes.selectedId) {
       notes.setSelectedId(selectedMemoId);
@@ -383,6 +452,7 @@ export function useMemoManage(active: boolean) {
     createMemo,
     createFolder,
     remove,
+    emptyTrash,
     toggleFolder,
     startCreate,
     startCreateAtRoot,

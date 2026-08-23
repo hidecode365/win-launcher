@@ -1,26 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FavoriteNode, MemoDocument } from "../types";
+import { MemoDocument } from "../types";
 
 const DRAFT_DELAY_MS = 500;
 
-export function useMemoNotes(active: boolean) {
-  const [nodes, setNodes] = useState<FavoriteNode[]>([]);
-  const [documents, setDocuments] = useState<Record<string, MemoDocument>>({});
+// 選択中1件のメモ本文（下書き・確定版）の管理に専念する。ゴミ箱配下のメモも
+// 読み取りは可能（`get_memo_document` はissue 0026補足仕様でトラッシュ配下の
+// 読み取りを許可済み）。ツリー構造・一覧行・フィルタリングは呼び出し元
+// （useMemoManage.ts）の責務であり、ここでは持たない（かつてこのフックが
+// 独自に `get_memo_nodes` で一覧を取得していたが、呼び出し元は一度も
+// 参照しておらず、実質的な無駄なIPC往復だったため撤去した）。
+export function useMemoNotes() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [document, setDocument] = useState<MemoDocument | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef<{ id: string; content: string; revision: number } | null>(null);
 
-  const refresh = useCallback(async () => {
-    const next = await invoke<FavoriteNode[]>("get_memo_nodes");
-    setNodes(next);
-    const loaded = await Promise.all(next.filter((node) => node.type === "memo").map(async (node) => [node.id, await invoke<MemoDocument>("get_memo_document", { id: node.id })] as const));
-    setDocuments(Object.fromEntries(loaded));
-    setSelectedId((current) => current && next.some((node) => node.type === "memo" && node.id === current) ? current : null);
-  }, []);
-
-  useEffect(() => { if (active) refresh().catch(console.error); }, [active, refresh]);
   useEffect(() => {
     if (!selectedId) { setDocument(null); latestRef.current = null; return; }
     let cancelled = false;
@@ -73,5 +68,5 @@ export function useMemoNotes(active: boolean) {
   }, [document]);
 
   useEffect(() => () => { flushDraft().catch(console.error); }, [flushDraft]);
-  return { nodes, documents, selectedId, setSelectedId, document, updateContent, saveFinal, discardDraft, flushDraft, refresh };
+  return { selectedId, setSelectedId, document, updateContent, saveFinal, discardDraft, flushDraft };
 }

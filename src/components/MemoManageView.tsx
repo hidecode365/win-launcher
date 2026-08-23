@@ -105,11 +105,6 @@ export function MemoManageView({
     setSaveFeedback(false);
   }, [hasDraft, manage.discardDraft]);
 
-  const startEditing = useCallback((id: string) => {
-    manage.selection.selectByKey(id);
-    setEditorFocusRequested(true);
-  }, [manage.selection]);
-
   useEffect(() => {
     if (!editorFocusRequested) return;
     if (!manage.renaming) textareaRef.current?.focus();
@@ -151,6 +146,12 @@ export function MemoManageView({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.target === textareaRef.current) return;
       if (event.target instanceof HTMLInputElement && event.target !== filterInputRef.current) return;
+      // 400_テスト・バグ修正：行内・ヘッダーのボタン（フォルダ作成・メモ作成・
+      // 削除等、実在の<button>）にTabでフォーカスしている間にEnterを押すと、
+      // ブラウザ標準のクリック発火に加えてこのwindowリスナーもEnterを「行操作」
+      // として二重処理してしまう（App.tsxのお気に入り画面側にも同じガードを
+      // 置いている。詳細はApp.tsx側のコメントを参照）。
+      if (event.key === "Enter" && event.target instanceof HTMLButtonElement) return;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         if (event.ctrlKey && event.shiftKey) manage.moveSelectedWithinParent(event.key === "ArrowDown" ? 1 : -1).catch(console.error);
@@ -177,8 +178,23 @@ export function MemoManageView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [content, document, manage, onCopyAndClose, selectedNode, selectedRow, selection]);
 
+  // issue 0026 補足仕様：行内アイコンはフォルダ行にのみ作成アイコン（ここに
+  // フォルダ／メモを作成）を表示する。メモ行には本文編集・作成いずれの行内
+  // アイコンも表示しない（本文表示は行の選択自体で即座に行われるため、
+  // 専用の「編集」アイコンは不要。作成アイコンは最上部の作成行とフォルダ行に限る）。
+  // 削除（ゴミ箱へ移動）アイコンはフォルダ行・メモ行のいずれにも残す。
+  // ゴミ箱固定行には「ゴミ箱を空にする」アイコンを表示する。
   const renderActionIcons = (row: MemoManageRow, selected: boolean) => {
-    if (!selected || row.kind === "trash") return null;
+    if (!selected) return null;
+    if (row.kind === "trash") {
+      return (
+        <div className="ml-2 flex items-center gap-2">
+          <IconSlot interactive selected tooltip="ゴミ箱を空にする" onClick={() => manage.emptyTrash().catch(console.error)}>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg>
+          </IconSlot>
+        </div>
+      );
+    }
     if (row.trashed) {
       return (
         <div className="ml-2 flex items-center gap-2">
@@ -190,12 +206,11 @@ export function MemoManageView({
     }
     return (
       <div className="ml-2 flex items-center gap-2">
-        <IconSlot interactive selected tooltip="ここにフォルダを作成" onClick={() => manage.startCreate("folder")}><CreateFolderIcon className="h-4 w-4" /></IconSlot>
-        <IconSlot interactive selected tooltip="ここにメモを作成" onClick={() => manage.startCreate("memo")}><MemoIcon /></IconSlot>
-        {row.node.type === "memo" && (
-          <IconSlot interactive selected tooltip="本文を編集" onClick={() => startEditing(row.node.id)}>
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-          </IconSlot>
+        {row.node.type === "folder" && (
+          <>
+            <IconSlot interactive selected tooltip="ここにフォルダを作成" onClick={() => manage.startCreate("folder")}><CreateFolderIcon className="h-4 w-4" /></IconSlot>
+            <IconSlot interactive selected tooltip="ここにメモを作成" onClick={() => manage.startCreate("memo")}><MemoIcon /></IconSlot>
+          </>
         )}
         <IconSlot interactive selected tooltip={row.node.type === "folder" ? "このフォルダをゴミ箱へ移動" : "このメモをゴミ箱へ移動"} onClick={() => manage.remove().catch(console.error)}>
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg>
@@ -295,6 +310,24 @@ export function MemoManageView({
                     ) : (
                       <span className={`${rowVariant === "item" ? "flex-1 " : ""}${MANAGE_TREE_ROW_LABEL[rowVariant]}`}>{memoNodeDisplayName(node)}</span>
                     )}
+                    {/* issue 0026 補足仕様：メモのフォルダ行にも、お気に入り画面と
+                        同じ配下の項目数アイコンを表示する（FavoriteEditTree.tsxの
+                        件数バッジと同一パターン。常時表示・クリック不可）。 */}
+                    {node.type === "folder" && row.directChildCount !== undefined && (
+                      <div className="ml-2 flex items-center gap-2">
+                        <IconSlot interactive={false} selected={selected}>
+                          <span
+                            className={`absolute inset-0 flex items-center justify-center rounded-full border text-[11px] ${
+                              selected
+                                ? "border-white/30 bg-white/20 text-white"
+                                : "border-black/10 bg-gray-100 text-gray-500"
+                            }`}
+                          >
+                            {row.directChildCount}
+                          </span>
+                        </IconSlot>
+                      </div>
+                    )}
                     {!renamingThis && renderActionIcons(row, selected)}
                   </div>
                   {anchorAfter && manage.creating === "folder" && (
@@ -330,13 +363,18 @@ export function MemoManageView({
                 )}
               </span>
               <div className="flex flex-shrink-0 items-center gap-2">
-                <ActionButton variant="secondary" className="whitespace-nowrap" disabled={!hasDraft} onClick={() => discardDraft().catch(console.error)}>下書きを破棄</ActionButton>
-                <ActionButton disabled={!hasDraft} onClick={() => saveWithFeedback().catch(console.error)}>保存</ActionButton>
+                <ActionButton variant="secondary" className="whitespace-nowrap" disabled={!hasDraft || selectedRow?.trashed} onClick={() => discardDraft().catch(console.error)}>下書きを破棄</ActionButton>
+                <ActionButton disabled={!hasDraft || selectedRow?.trashed} onClick={() => saveWithFeedback().catch(console.error)}>保存</ActionButton>
               </div>
             </div>
+            {/* issue 0026 補足仕様：ゴミ箱配下のメモは本文・世代番号・保存日時等を
+                通常と同じ情報量で表示するが、編集・下書き破棄・保存は非活性とする
+                （03-data-model.md「メモのゴミ箱（論理削除）」節を参照）。バックエンド
+                （save_memo_draft/save_memo_final）も引き続きトラッシュ配下の編集を
+                拒否するため、ここでのdisabledはUI上の二重防御。 */}
             <textarea
               ref={textareaRef}
-              disabled={!document}
+              disabled={!document || selectedRow?.trashed}
               value={content}
               onFocus={() => setEditorFocused(true)}
               onBlur={() => setEditorFocused(false)}

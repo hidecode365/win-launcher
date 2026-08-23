@@ -65,6 +65,8 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 
 上記7のようなモード別の `expiresAt` 付き intent を扱うため、8のタイムアウト判定は「見つからない」を判定する対象一覧をモードに応じて `rows`／`clipboardSelectionItems`／`favoriteTree` の3つに切り替える。実装は `rowsRef`／`clipboardSelectionItemsRef`／`favoriteTreeRef` という3つの `useRef` ミラーをモードごとに用意し、`useEffect` 内で最新値を都度書き込むことで、タイムアウト判定effect自体の依存配列に `rows` 等の頻繁に変化する値を含めずに済ませている（依存配列に含めると、変化のたびにタイマーの期限が延長され「`expiresAt` の時点で強制的に諦める」というタイムアウトの意味が失われるため）。
 
+**この原則は `useTreeEditSelection.ts`（お気に入り画面・メモ画面が使う共有の選択基盤）にも同様に適用する。** 具体的な失敗パターンと修正は [tree-edit-selection-reset-key-identity-bug](#tree-edit-selection-reset-key-identity-bug) を参照。値を直接依存配列に含める場合だけでなく、**その値を閉じ込めた `useCallback` の戻り値（関数）を依存配列に含める場合も、間接的に同じ違反になりうる**点に注意すること（関数の中身が同じロジックでも、依存する値が変わればフックとしての「アイデンティティ」が変わり、それ自体が意図しないトリガーになる）。
+
 **経緯（段階3・軸1のAD実装批評で指摘・実装前に解消）**：お気に入り編集ビュー実装当初の設計案では、この分岐に `favoriteMode`（`favoriteTree`）が無く、`favoriteMode` 中に発行された `expiresAt` 付き intent（`toggleFavorite` の★解除等）が常に `rowsRef`（`favoriteMode` 中は空配列）を参照して「見つからない」と誤判定し、正しく選択解決された直後でも約1秒後に `{type:'top'}` へ強制的にリセットされる潜在バグとして指摘された。`clipboardSelectionItemsRef` と同じ鏡写しパターンで `favoriteTreeRef` を追加して解消した。**新しい選択ドメインを追加する場合、この分岐（タイムアウト判定effect内の `items` 算出）にも対応するモードの鏡refを追加すること**（追加を忘れると、そのドメインの `expiresAt` 付き intent がすべて誤ってタイムアウト扱いになる）。
 
 <a id="sync-vs-async-restore"></a>
@@ -268,12 +270,52 @@ v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlC
 
 **結論**：1（共通ラッパー）は新規ツール導入を伴わずに実現でき、実装した。2・3（ESLint／CI）はどちらも「ESLint自体の導入」「CIパイプライン自体の新設」という、このチケットの範囲を超える別判断が前提になるため見送った。ESLint・CIの導入自体を検討する場合は、この一覧行規約のためだけでなく、プロジェクト全体の静的解析方針として別途（200_設計相当で）判断すること。
 
+<a id="window-level-enter-vs-focused-button-bug"></a>
+
+### window レベルEnterハンドラが行内ボタンのフォーカス中に二重発火する（issue 0026 補足修正）
+
+**症状**：メモ画面でフォルダ作成アイコン（実在の `<button>`）へ Tab でフォーカスし Enter を押すと、ボタン自身の作成処理に加えて、選択中フォルダの開閉トグルも同時に発火した。
+
+**直接原因**：`MemoManageView.tsx`・`App.tsx`（お気に入り画面）はいずれも、一覧の行操作（フォルダ開閉・リネーム開始・並び替え等）を window レベルの `keydown` リスナーで処理する設計（[modal-keydown-window-level](window-lifecycle.md#modal-keydown-window-level)と同じ「フォーカス位置に依存しない」思想の応用）を採る。一方、行内の操作アイコン（`IconSlot` が描画するフォルダ作成・削除等）は外部設計書 `external-design/01-screen-transitions.md#modal-key-policy`（Modal・ダイアログのキー操作原則）の「確定はブラウザ標準のフォーカス経路に委ねる」に従い、実在の `<button>` として実装済みで、Tab でフォーカスできる。ボタンにフォーカスがある状態で Enter を押すと、ブラウザは標準動作としてそのボタン自身に `click` を発火させるが、**Enter キーダウン自体はそのまま DOM を伝播して window の `keydown` リスナーにも届く**。この window レベルリスナーは `event.target`（フォーカス位置）を見ずに Enter を「行操作」として一律処理していたため、ボタン自身の処理と行操作の二重発火が起きた。
+
+**横並び調査**：window レベルで Enter を「行操作」として処理する箇所は `App.tsx`（お気に入り画面。フォルダ開閉トグル）と `MemoManageView.tsx`（メモ画面。フォルダ開閉トグル・クリップボードへのセット）の2箇所。いずれも行内に `IconSlot` 経由の実在の `<button>`（フォルダ作成・削除・ゴミ箱を空にする等）とヘッダーの操作ボタン（新規フォルダ・新規メモ・戻る）を持ち、Tab で到達可能なため、両画面・両者のボタンすべてで同種の二重発火が起こりうる構造だった。[row-focus-retention-bug](#row-focus-retention-bug) が扱った「クリックで行の `<button>` にフォーカスが残留する」問題とは発火経路が異なる（今回はTabによる意図的なフォーカス移動）が、根はどちらも「window レベルリスナーがフォーカス位置を見ずに独自のキー処理をする」という同じ設計上の弱さに行き着く。
+
+**リファクタリング要否の判断**：原因は特定のボタン固有の実装ミスではなく、window レベルで行操作を処理する設計パターン自体が、行内に実在の `<button>` を持つようになった時点で共通して抱える構造的な弱さと判定した。個々のボタンへ`stopPropagation`を仕込む対症療法ではなく（新しい行内ボタンを追加するたびに同じ対応を漏らさず行う必要が生じるため）、window レベルリスナー側に「フォーカスがボタン上にある間はEnterによる行操作を行わない」という共通ガードを1箇所ずつ（お気に入り画面用・メモ画面用の各リスナーに1行）追加する形で解消した。
+
+**対応**：両画面の window レベル `keydown` リスナーの先頭付近に、`event.target instanceof HTMLButtonElement` の間は Enter による行操作を行わず早期 return するガードを追加した。ボタン自身の `onClick`（`IconSlot` 経由）が既にクリックを処理するため、二重処理にはならない。矢印キー・F2・Ctrl+Shift+N 等の他のキーは対象外とした（ブラウザがボタンへ副作用のあるデフォルト動作を割り当てていないため、二重発火の実害が無い）。
+
+**再発防止の検証項目**：お気に入り画面・メモ画面それぞれで、行内の操作アイコン（フォルダ作成・削除・ゴミ箱を空にする等）およびヘッダーのボタン（新規フォルダ・新規メモ・戻る）へ Tab でフォーカスした状態で Enter を押し、ボタン自身の処理のみが実行され、選択中の行に対する操作（開閉トグル・クリップボードへのセット等）が同時に発火しないことを確認する。新しい行内ボタン・ヘッダーボタンを追加する場合も、この2箇所のガードで自動的にカバーされる（追加のガードは不要）。
+
+<a id="tree-edit-selection-reset-key-identity-bug"></a>
+
+### `useTreeEditSelection` の resetKey 変化による reset 誤発火（issue 0026 補足修正）
+
+**症状**：お気に入り画面でフォルダ行を選択し `Ctrl+Shift+↓`（同一親内での並び替え）を行うと、操作直後に選択が移動先の行と一覧の先頭行の間を短時間だけ往復して見えた。
+
+**直接原因**：`useTreeEditSelection(tree, resetKey, resetWhen)` は、`resetWhen`（呼び出し元がお気に入り画面では `favoriteEditFilterText`、メモ画面では `filterText` として渡す絞り込み文字列）が変化した時だけ選択を `resetKey`（多くの呼び出し元で「現在の一覧の先頭行の key」）へ戻す設計だった。ところが実装は次の形になっていた。
+
+```ts
+const reset = useCallback(() => setIntent({ type: "key", key: resetKey }), [resetKey]);
+useEffect(() => { if (resetWhen !== undefined) reset(); }, [resetWhen, reset]);
+```
+
+`reset` の `useCallback` 依存に `resetKey` を直接含めているため、`resetKey` の値が変わるたびに `reset` 自身の関数アイデンティティが変わる。`useEffect` の依存配列は `[resetWhen, reset]` であり、`reset` もその一部であるため、**`resetWhen`（絞り込み文字列）が変化していなくても、`reset` のアイデンティティが変わっただけでこの effect が再実行され、`reset()` が呼ばれてしまっていた**。並び替えの結果、一覧の先頭行（`tree[0]`）に別のノードが来ると `resetKey` の値が変わり、この誤発火が起きる。誤発火した `reset()` は intent を「新しい先頭行」へ上書きするため、並び替え直後に一瞬正しい選択（移動先）が描画された直後、先頭行へ選択が飛ぶ、という症状になっていた。
+
+**横並び調査**：`useTreeEditSelection` は `useFavoriteEditSelection.ts`（お気に入り画面）と `useMemoManage.ts`（メモ画面）の両方から共有される唯一の選択基盤であり、両呼び出し元とも `resetKey` に「現在の一覧の先頭行の key」を渡している。そのため本バグは特定の操作（Ctrl+Shift+↓によるキーボード並び替え）に限らず、**一覧の先頭要素が入れ替わりうるあらゆる操作**（キーボードによる同一親内の並び替え・階層変更（インデント/アウトデント）・ドラッグ&ドロップによる並び替え・再親化・作成・削除等）と、**お気に入り画面・メモ画面の両方**で再現しうる構造的な欠陥と判定した。個別の操作・個別の画面ごとに再現確認して回るのではなく、原因（`useTreeEditSelection` 自身の実装）を直せば全操作・両画面に一括で及ぶと判断した。
+
+**リファクタリング要否の判断**：原因は特定のアクション固有の実装ミスではなく、`useTreeEditSelection` という共有フック自体が持つ構造的な弱さ（「操作の副作用として変化する値」である `resetKey` を、`useCallback` の依存経由で間接的にリセットトリガーへ混入させていた）と判定した。[reset-triggers](#reset-triggers) で既に文書化されていた原則（reset トリガーの依存配列にはユーザーが新しい文脈に入ったことを示す値だけを含める）と同じ違反であり、対症療法（例：お気に入り画面の並び替えハンドラにだけ選択保持用のフラグを追加する）は同種の不具合を他の操作・メモ画面に温存するため見送り、共有フック1箇所の修正で解消した。
+
+**対応**：`resetKey` を `useRef`（`resetKeyRef`）に持たせ、`reset` はこの ref から最新値を読むだけにして `useCallback` の依存配列を空にした。これにより `reset` のアイデンティティは `resetWhen` が変化しない限り安定し、`useEffect` は本来の意図通り `resetWhen` の変化のみをトリガーとする。`resetToTop()`（明示的な呼び出し）は従来通り呼び出し時点の最新 `resetKey` を使う（ref経由のため）。
+
+**再発防止の検証項目**：お気に入り画面・メモ画面の双方で、キーボードによる並び替え（Ctrl+Shift+↑↓）・階層変更（Ctrl+Shift+←→）・マウスのドラッグ&ドロップによる並び替え・再親化のいずれについても、操作直後に選択が移動先の行に留まり続け、先頭行へ飛ばないことを確認する。
+
 ## 今後の指針
 
 - `selected` に相当する値を新設する場合、書き込み可能な state にしない。「意図」と「現在の候補一覧」から導出する設計を優先する
 - 「次の1回だけ何かを抑止する」という時間依存の一度きりフラグを新設しない。抑止したい理由は常に「復元したい対象の識別子（intent）を保持しているかどうか」だけで判定できる
-- reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"その文脈内での操作の副作用として変化する値"を含めない
+- reset トリガーの依存配列には"ユーザーが新しい文脈に入ったことを示す値"だけを含め、"その文脈内での操作の副作用として変化する値"を含めない。値そのものを直接含める場合だけでなく、その値に依存する `useCallback`/`useMemo` の戻り値（関数・オブジェクト）を間接的に含める場合も同じ違反になりうる（[tree-edit-selection-reset-key-identity-bug](#tree-edit-selection-reset-key-identity-bug)を参照）。値が変化しても関数のアイデンティティを変えたくない場合は、値を `useRef` に持たせて関数側は依存配列に含めない
 - 新機能・新モードを追加する際、そのモード専用の強制リセットeffectを新設しない。選択のリセットは常に汎用トリガーだけに一本化し、それ以外のデータ変化は `resolveSelected` の fallback 挙動に委ねる
 - 選択中の行の種類の判定は常に `rows[selected].kind` で行い、個別のオフセット変数を新設しない。新しい行の種類を追加する場合も、まず `ResultRow` に新しい `kind` を追加して `rows` の構築ロジック（`useSearch.ts` の1箇所）に組み込み、`App.tsx`/`ResultList.tsx` 側は switch に case を1つ追加するだけで対応できる状態を維持する
 - 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない。新しい操作ボタンを行に追加する場合はこの構造の上に乗せる。**この規約は `ResultList.tsx` の `rows.map` 由来の行に限らず、選択可能な一覧行を描画するコンポーネント全て（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する**（[row-focus-retention-bug](#row-focus-retention-bug) を参照）。新しい一覧・候補リストを追加する場合、行が複数の内部操作ボタンやドラッグ&ドロップ等の個別事情を持たないなら、まず共通ラッパー `SelectableRow`（[selectable-row-wrapper](#selectable-row-wrapper)）が使えないか検討し、使えない場合のみ `<div role="button">` を直接書く
 - 結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要になった場合は背景色差のみで表現する
+- 一覧・ツリーの行操作（開閉トグル・リネーム開始等）を window レベルの `keydown` リスナーでEnterを処理する画面を新設する場合、`event.target instanceof HTMLButtonElement` の間はガードして行操作を発火させない。行内・ヘッダーの操作ボタン（`IconSlot` 等）へTabでフォーカスした状態のEnterは、ボタン自身の `click`（ブラウザ標準の確定経路）に一本化し、window レベル側と二重発火させない（[window-level-enter-vs-focused-button-bug](#window-level-enter-vs-focused-button-bug)を参照）

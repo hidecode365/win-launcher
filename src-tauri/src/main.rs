@@ -1331,15 +1331,15 @@ fn is_memo_node(favorites: &[FavoriteNode], node: &FavoriteNode) -> bool {
         && !is_descendant_of(favorites, &node.parent_id, MEMO_TRASH_ID)
 }
 
-#[tauri::command]
-fn get_memo_nodes(app: AppHandle) -> Vec<FavoriteNode> {
-    let favorites = load_favorites(&app);
-    let mut nodes: Vec<_> = favorites.iter()
-        .filter(|node| is_descendant_of(&favorites, &node.parent_id, MEMO_FOLDER_ID)
-            && !is_descendant_of(&favorites, &node.parent_id, MEMO_TRASH_ID))
-        .cloned().collect();
-    nodes.sort_by_key(|node| node.order);
-    nodes
+// issue 0026 補足仕様：ゴミ箱配下のメモは本文を読み取り専用で表示する（編集は不可）。
+// `is_memo_node` は編集可否の判定（トラッシュ配下を除外）を兼ねているため、
+// 読み取り専用の表示のためだけに緩めることはできない。読み取り可否の判定として
+// 別に定義し、`get_memo_document` はこちらを使う。編集系コマンド
+// （`save_memo_draft`/`save_memo_final`）は引き続き `is_memo_node` を使う。
+fn is_readable_memo_node(favorites: &[FavoriteNode], node: &FavoriteNode) -> bool {
+    node.node_type == FavoriteNodeType::Memo
+        && (is_descendant_of(favorites, &node.parent_id, MEMO_FOLDER_ID)
+            || is_descendant_of(favorites, &node.parent_id, MEMO_TRASH_ID))
 }
 
 #[tauri::command]
@@ -1357,7 +1357,7 @@ fn get_memo_document(app: AppHandle, id: String) -> Result<MemoDocument, String>
     let favorites = load_favorites(&app);
     let node = favorites.iter().find(|node| node.id == id)
         .ok_or_else(|| "指定したメモが見つかりません".to_string())?;
-    if !is_memo_node(&favorites, node) { return Err("指定したメモは編集できません".to_string()); }
+    if !is_readable_memo_node(&favorites, node) { return Err("指定したメモは見つかりません".to_string()); }
     let documents = load_memo_documents(&app);
     Ok(documents.get(&id).cloned().unwrap_or(MemoDocument {
         revision: 1, content: String::new(), saved_at: now_ms(), draft: None,
@@ -1623,6 +1623,31 @@ mod memo_delete_tests {
         documents.retain(|memo_id, _| !deleted.contains(memo_id));
         assert!(!documents.contains_key("nested-memo"));
         assert!(documents.contains_key("trash-memo"));
+    }
+
+    // issue 0026 補足仕様：ゴミ箱配下のメモは読み取り専用で表示できる（編集は不可）。
+    // `is_memo_node`（編集可否）と `is_readable_memo_node`（読み取り可否）の判定が
+    // トラッシュ配下でのみ異なることを固定する。
+    #[test]
+    fn trashed_memo_is_readable_but_not_editable() {
+        let favorites = memo_tree();
+        let active = favorites.iter().find(|item| item.id == "active-memo").unwrap();
+        let trashed = favorites.iter().find(|item| item.id == "trash-memo").unwrap();
+        let nested = favorites.iter().find(|item| item.id == "nested-memo").unwrap();
+        let folder = favorites.iter().find(|item| item.id == "active-folder").unwrap();
+
+        assert!(is_memo_node(&favorites, active));
+        assert!(is_readable_memo_node(&favorites, active));
+
+        assert!(!is_memo_node(&favorites, trashed));
+        assert!(is_readable_memo_node(&favorites, trashed));
+
+        assert!(!is_memo_node(&favorites, nested));
+        assert!(is_readable_memo_node(&favorites, nested));
+
+        // フォルダはメモ種別ではないため、読み取り・編集いずれも対象外。
+        assert!(!is_memo_node(&favorites, folder));
+        assert!(!is_readable_memo_node(&favorites, folder));
     }
 }
 
@@ -3136,7 +3161,6 @@ fn main() {
             set_favorite_keyword,
             set_memo_enabled,
             set_memo_keyword,
-            get_memo_nodes,
             get_memo_manage_nodes,
             get_memo_document,
             add_memo,

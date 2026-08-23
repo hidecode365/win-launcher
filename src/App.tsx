@@ -648,14 +648,16 @@ export default function App() {
         e.preventDefault();
         if (!settingsEscapeHandlerRef.current?.()) closeSettings();
       } else if (e.key === "Escape" && memoEditOpen) {
-        // issue 0026 軸C：お気に入り画面・メモ画面は検索画面と同格のL1画面。
-        // 一覧側のEscapeはウィンドウを隠す（06-keyboard-interactions.md
-        // 「メモ画面」表10「一覧側 Esc ウィンドウを隠す」を参照。検索画面へ戻る
-        // 操作はヘッダーの「戻る」ボタン（マウス専用）のみ）。本文編集エリア
-        // フォーカス中のEscapeはMemoManageView.tsx自身のcapture listenerが
-        // 先に処理し一覧側へフォーカスを戻すため、ここへは到達しない。
+        // issue 0026 補足仕様：お気に入り画面はウィンドウを隠すが、メモ画面の
+        // Escapeは通常の検索画面へ戻る（メモ画面を閉じる）という非対称な仕様に
+        // 変更された（06-keyboard-interactions.md表10「一覧側 Esc 通常の検索画面へ
+        // 戻る（メモ画面を閉じる）」・external-design/01-screen-transitions.md
+        // 「メモ画面」行を参照）。ヘッダーの「戻る」ボタンと同じ closeMemoEdit を
+        // 呼ぶ。本文編集エリアフォーカス中のEscapeはMemoManageView.tsx自身の
+        // capture listenerが先に処理し一覧側へフォーカスを戻すため、ここへは
+        // 到達しない。
         e.preventDefault();
-        memoFlushRef.current().catch(console.error).finally(() => hideWindow());
+        closeMemoEdit();
       } else if (favoriteEditOpen && search.pendingDeleteFavoriteFolder) {
         // 削除確認モーダル表示中は Escape のみキャンセル扱いにする（下の
         // favoriteEditOpen 単体の分岐より先に判定し、Escape でモーダルではなく
@@ -682,6 +684,21 @@ export default function App() {
         if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
           e.preventDefault();
           startCreateFolder();
+          return;
+        }
+        // 400_テスト・バグ修正：行内のIconSlotボタン（フォルダ作成・削除等）や
+        // ヘッダーのボタン（新規フォルダ・戻る）は実在の<button>であり、Tabで
+        // フォーカスできる。フォーカス中にEnterを押すと、ブラウザ標準の
+        // 「フォーカス中の要素上のEnterでclickを発火させる」動作（モーダル・
+        // ダイアログのキー操作原則で確定操作の正規経路としているもの）に加えて、
+        // この window レベルの switch もフォーカス位置を見ずにEnterを「行操作」
+        // として二重処理してしまう。ボタン自身のonClickが既に処理するため、
+        // ボタンにフォーカスがある間はここでは何もしない
+        // （docs/internal-design/result-list-and-selection.md
+        // 「行ルート要素のフォーカス残留によるシステムコマンド誤実行」と同種の、
+        // window レベルリスナーがフォーカス位置を考慮しないことに起因する構造的な
+        // 弱さ。同じ理由でMemoManageView.tsxのwindowリスナーにも同じガードを置く）。
+        if (e.key === "Enter" && e.target instanceof HTMLButtonElement) {
           return;
         }
         switch (e.key) {
@@ -852,6 +869,7 @@ export default function App() {
   }, [
     showSettings,
     memoEditOpen,
+    closeMemoEdit,
     favoriteEditOpen,
     search.pendingCommand,
     search.cancelSystemCommand,
