@@ -1,16 +1,6 @@
 import { useMemo } from "react";
 import { useTreeEditSelection } from "./useTreeEditSelection";
-import {
-  FAVORITE_TOP_ROW_KEY,
-  type FavoriteEditTreeRow,
-  type FavoriteTreeRow,
-} from "../types";
-
-// 仮想行「Top」（00-requirements.md「お気に入り編集ビュー」節）。実体を持たないため
-// `node` フィールドを持たない専用の kind として types.ts の FavoriteEditTreeRow で
-// 定義している。他の行と同様 `key` を持つことで、選択状態（intent）・↑↓移動・
-// resolveSelected の対象に一切の特別扱いなしで組み込める。
-const TOP_ROW: FavoriteEditTreeRow = { kind: "top", key: FAVORITE_TOP_ROW_KEY };
+import { type FavoriteEditTreeRow, type FavoriteTreeRow } from "../types";
 
 // お気に入り編集ビュー専用の選択状態。/favorite ブラウジング側（useSearch.ts）の
 // 選択状態とは独立したドメインとして持つ（00-requirements.md「お気に入り編集ビュー」
@@ -29,17 +19,18 @@ const TOP_ROW: FavoriteEditTreeRow = { kind: "top", key: FAVORITE_TOP_ROW_KEY };
 // 解決される）、削除後の選択復元は resetToTop（複数階層・複数件をまたぐ削除のため
 // 「次の1件」を一意に定義できず、先頭へのフォールバックでよい）で対応しており、
 // いずれも expiresAt 付き intent を必要としなかった。
+//
+// issue 0026（メモ・お気に入り画面を管理画面ベースへ統合）軸B：200_設計工程で
+// 決定した通り、仮想固定行「Top」（external-design/03-data-model.md
+// #favorite-edit-virtual-root-row）は撤去した。ルート直下への新規フォルダ作成は
+// 常にヘッダーのアイコン（FavoriteEditView.tsx）から行い、選択の初期値・
+// リセット先は「先頭の実データ行」（無ければ空センチネル）にする。
 export function useFavoriteEditSelection(
   rawTree: FavoriteTreeRow[],
   filterText: string
 ) {
-  // 仮想行「Top」を先頭に合成した、編集ビューの選択ドメインが実際に扱う一覧。
-  // /favorite ブラウジング側の favoriteTree（rawTree）自体は変更しない
-  // （Top は編集ビュー専用の概念のため、共有データソースを汚染しない）。
-  const tree = useMemo<FavoriteEditTreeRow[]>(() => [TOP_ROW, ...rawTree], [rawTree]);
-  // intent.type === "top" は常にインデックス0（＝仮想行「Top」自身）を指す。
-  // 初期選択・削除後のフォールバック（resetToTop）が「Topを選択する」という
-  // 意味に一致するため、既存の resolveSelected の実装を変更せず自然に組み込める。
-  const selection = useTreeEditSelection(tree, FAVORITE_TOP_ROW_KEY, filterText);
+  const tree = useMemo<FavoriteEditTreeRow[]>(() => rawTree, [rawTree]);
+  const resetKey = tree[0]?.key ?? "__favorite_empty__";
+  const selection = useTreeEditSelection(tree, resetKey, filterText);
   return { tree, ...selection };
 }

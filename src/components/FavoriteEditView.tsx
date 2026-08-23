@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { Tooltip } from "./Tooltip";
 import { FavoriteEditTree } from "./FavoriteEditTree";
+import { CreateFolderIcon } from "./FavoriteTreeVisuals";
 import { FavoriteFolderDeleteModal } from "./FavoriteFolderDeleteModal";
 import { FavoriteEditFooter } from "./FavoriteEditFooter";
 import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
@@ -59,6 +60,8 @@ export function FavoriteEditView({
   onStartRename,
   onCancelRename,
   onConfirmRename,
+  onLaunchFile,
+  onStartCreateFolderAtRoot,
   onClose,
   version,
 }: {
@@ -94,6 +97,8 @@ export function FavoriteEditView({
   onStartRename: (id: string) => void;
   onCancelRename: () => void;
   onConfirmRename: (id: string, newName: string) => Promise<string | null>;
+  onLaunchFile: (path: string) => void;
+  onStartCreateFolderAtRoot: () => void;
   onClose: () => void;
   version: string;
 }) {
@@ -182,6 +187,17 @@ export function FavoriteEditView({
           autoComplete="off"
           spellCheck={false}
         />
+        {/* issue 0026 軸B：固定行「お気に入り」を撤去した代わりに、常にお気に入り
+            ルート直下へ作成する新規フォルダアイコンをヘッダーへ常設する。 */}
+        <Tooltip label="新規フォルダ" className="ml-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onStartCreateFolderAtRoot}
+            className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+          >
+            <CreateFolderIcon className="w-5 h-5" />
+          </button>
+        </Tooltip>
       </div>
 
       {pendingDeleteFolder && (
@@ -211,6 +227,7 @@ export function FavoriteEditView({
         creatingFolderAnchorKey={creatingFolderAnchorKey}
         onStartCreateFolder={onStartCreateFolder}
         onCancelCreateFolder={onCancelCreateFolder}
+        onLaunchFile={onLaunchFile}
       />
 
       <FavoriteEditFooter

@@ -26,22 +26,13 @@
 
 token名は色相や画面名ではなく役割で付ける。新しい色を追加する前に、既存の`ui-*`が同じ意味を表していないか確認する。
 
-<a id="browse-tree-row-variants"></a>
-
-## 閲覧ツリー行のvariant
-
-`src/ui/sharedStyles.ts`の`browseTreeRowClass`が、お気に入り画面・メモ画面の閲覧ツリー行の共通定義である。
-
-- `folder`: フォルダ見出し行。お気に入り側の件数`IconSlot`（24px）を含む実高40pxを、子要素の有無に左右されない最小高として持つ
-- `item`: ファイル・メモ等の内容行。お気に入り側の名前＋パスの2行表示を含む実高56pxを、子要素の行数に左右されない最小高として持つ
-
-両variantは左右・縦余白、通常／hover／selectedの色を共有する。お気に入りとメモでは行のDOM構造や表示情報が異なるためコンポーネント自体は統合せず、行の外形と状態表現だけを共有する。片方の子要素が増減しても行高が再びずれないよう、余白の数値だけでなく最小高もvariantの契約に含める。
-
 <a id="manage-tree-row-variants"></a>
 
 ## 管理ツリー行のvariant
 
-`src/ui/sharedStyles.ts`の`manageTreeRowClass`と`MANAGE_TREE_ROW_LABEL`が、お気に入り管理・メモ管理の共通定義である。
+`src/ui/sharedStyles.ts`の`manageTreeRowClass`と`MANAGE_TREE_ROW_LABEL`が、お気に入り画面・メモ画面（いずれも管理画面ベースの単一画面。issue 0026で統合）の共通定義である。
+
+issue 0026で「閲覧専用パネル」（旧`FavoriteListPanel.tsx`／`MemoPanel.tsx`）を撤去し、`/favorite`・`/memo`とも管理画面へ統合したことに伴い、閲覧ツリー行専用だった`browseTreeRowClass`（旧`folder`/`item`の2variant）は削除した。現在は閲覧・管理の両方をこの`manageTreeRowClass`（`fixed`/`folder`/`item`の3variant）1本で表現する。
 
 - `fixed`: 「お気に入り」「メモ」「ゴミ箱」のような管理用固定行。固定の行高と補助文字階層を持つ
 - `folder`: 開閉可能なフォルダ行。標準縦余白と補助文字階層を持つ

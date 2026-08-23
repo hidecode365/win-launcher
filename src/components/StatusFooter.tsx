@@ -14,19 +14,12 @@ export function StatusFooter({
   clipboardMode,
   pathPasteWizardStep,
   prefixCommandMode,
-  memoMode,
-  memoDocumentSelected,
-  memoSelectedKind,
-  memoEditorFocused,
-  memoRenaming,
-  memoSaveAvailable,
   settingsShortcutAvailable,
   selectionAvailable,
   registerDialogOpen,
   updateDialogOpen,
   updateInstalling,
   selectedRowKind,
-  favoriteSelectedKind,
   version,
 }: {
   pendingCommand: boolean;
@@ -35,12 +28,6 @@ export function StatusFooter({
   clipboardMode: boolean;
   pathPasteWizardStep: PathPasteWizardStep | null;
   prefixCommandMode: boolean;
-  memoMode: boolean;
-  memoDocumentSelected: boolean;
-  memoSelectedKind: "folder" | "memo" | null;
-  memoEditorFocused: boolean;
-  memoRenaming: boolean;
-  memoSaveAvailable: boolean;
   settingsShortcutAvailable: boolean;
   selectionAvailable: boolean;
   registerDialogOpen: boolean;
@@ -50,12 +37,6 @@ export function StatusFooter({
   // ない場合（clipboardMode・prefixCommandMode・Web検索行選択中・範囲外等）は
   // null。並び順・rows の詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照。
   selectedRowKind: ResultRow["kind"] | null;
-  // /favorite モードで現在選択中の行の種類（フォルダ見出し行/アイテム行）。
-  // /favorite モードは rows を使わない専用一覧のため selectedRowKind では
-  // 判定できず、別途渡す（Enter ヒントの文言・Shift+Enter フォルダを開くヒントの
-  // 表示条件に使う。軸1でフォルダ見出し行も選択対象になったため、真偽値から
-  // 種別を表す型へ拡張した）。/favorite モード以外では null。
-  favoriteSelectedKind: "folder" | "item" | null;
   version: string;
 }) {
   const settingsHint = settingsShortcutAvailable ? (
@@ -112,66 +93,26 @@ export function StatusFooter({
     );
   }
 
-  if (memoMode) {
-    if (memoRenaming) {
-      return (
-        <FooterBar version={version}>
-          <KeyHint keys="Enter" label="確定" />
-          <KeyHint keys="Ctrl+D" label="クリア" />
-          {settingsHint}
-          <KeyHint keys="Esc" label="キャンセル" />
-        </FooterBar>
-      );
-    }
-    return (
-      <FooterBar version={version}>
-        {!memoEditorFocused && memoSelectedKind !== null && (
-          <KeyHint keys="↑↓" label="選択" />
-        )}
-        {!memoEditorFocused && memoSelectedKind === "memo" && (
-          <KeyHint keys="Enter" label="クリップボードにセット" />
-        )}
-        {!memoEditorFocused && memoSelectedKind === "folder" && (
-          <KeyHint keys="Enter" label="開閉" />
-        )}
-        {!memoEditorFocused && memoSelectedKind !== null && (
-          <KeyHint keys="F2" label="リネーム" />
-        )}
-        {!memoEditorFocused && memoDocumentSelected && (
-          <KeyHint keys="Ctrl+E" label="本文を編集" />
-        )}
-        {memoEditorFocused && memoSaveAvailable && <KeyHint keys="Ctrl+S" label="保存" />}
-        <KeyHint keys="Ctrl+D" label="クリア" />
-        {settingsHint}
-        <KeyHint keys="Esc" label={memoEditorFocused ? "一覧へ戻る" : "閉じる"} />
-      </FooterBar>
-    );
-  }
-
   const enterLabel = webSearchVisible && isWebSearchSelected
     ? "ブラウザで開く"
     : clipboardMode
       ? "クリップボードにセット"
       : prefixCommandMode
         ? "実行"
-        : favoriteSelectedKind === "folder"
-          ? "開閉"
-          : selectedRowKind === "pathPasteShortcut" ||
-              selectedRowKind === "pathPasteAddFolder" ||
-              selectedRowKind === "pathPastePin" ||
-              selectedRowKind === "pathPasteFavorite"
-            ? "選択"
-            : selectedRowKind === "calc" || selectedRowKind === "urlConvert"
-              ? "コピー"
-              : "起動";
+        : selectedRowKind === "pathPasteShortcut" ||
+            selectedRowKind === "pathPasteAddFolder" ||
+            selectedRowKind === "pathPastePin" ||
+            selectedRowKind === "pathPasteFavorite"
+          ? "選択"
+          : selectedRowKind === "calc" || selectedRowKind === "urlConvert"
+            ? "コピー"
+            : "起動";
 
   return (
     <FooterBar version={version}>
       {selectionAvailable && <KeyHint keys="↑↓" label="選択" />}
       {selectionAvailable && <KeyHint keys="Enter" label={enterLabel} />}
-      {(selectedRowKind === "pinned" ||
-        selectedRowKind === "file" ||
-        favoriteSelectedKind === "item") && (
+      {(selectedRowKind === "pinned" || selectedRowKind === "file") && (
         <KeyHint keys="Shift+Enter" label="フォルダを開く" />
       )}
       <KeyHint keys="Ctrl+D" label="クリア" />

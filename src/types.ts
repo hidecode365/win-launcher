@@ -333,13 +333,9 @@ export function favoriteItemRowKey(id: string): string {
   return `favoriteItem:${id}`;
 }
 
-// お気に入り編集ビュー専用の仮想固定行「Top」。お気に入りのルート階層
-// （`FAVORITES_FOLDER_ID` そのもの）を表す選択可能な行だが、実体の `FavoriteNode`
-// を持たない（リネーム・削除・★解除の対象外）。`/favorite` ブラウジング側の
-// `favoriteTree`（useSearch.ts）には含めず、編集ビュー専用の選択ドメイン
-// （useFavoriteEditSelection.ts）が `FavoriteTreeRow[]` の先頭に合成する。
-// フォルダ作成・ドラッグ&ドロップでの再親化先としては、既存のルートセンチネル
-// `FAVORITES_FOLDER_ID` をそのまま使う（専用の仮想IDを新設しない）。
-export const FAVORITE_TOP_ROW_KEY = "favoriteTop";
-
-export type FavoriteEditTreeRow = { kind: "top"; key: string } | FavoriteTreeRow;
+// お気に入り編集ビューが扱う行の型。かつては仮想固定行「Top」（実体を持たない
+// 選択可能な行）を含む Union だったが、issue 0026 軸Bで撤去済み（200_設計工程の
+// 決定。external-design/03-data-model.md#favorite-edit-virtual-root-row 参照）。
+// 現在は `FavoriteTreeRow` と同一だが、編集ビュー専用の選択ドメインで扱う行を
+// 表す名前として型エイリアスのまま残している。
+export type FavoriteEditTreeRow = FavoriteTreeRow;

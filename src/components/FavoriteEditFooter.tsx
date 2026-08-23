@@ -21,7 +21,9 @@ import { KeyHint } from "./KeyHint";
 //   Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
 // - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／F2 リネーム／
 //   Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
-// Esc 戻る はどの状態でも共通（ヘッダーの「戻る」ボタンと同じ操作）。
+// Esc 閉じる（ウィンドウを隠す）はどの状態でも共通。検索画面へ戻る操作は
+// ヘッダーの「戻る」ボタン（マウス専用）のみで、フッターには表示しない
+// （issue 0026 軸C：フッター表示規約はキーボード操作のみを示すため）。
 //
 // 軸4j：並び替え・再親化のキー割当は最終的に Ctrl+Shift+↑↓←→ に統一した
 // （上下＝並び替え、左右＝再親化）。当初のAlt+↑↓←→のうち、Alt+←/→はWebView2
@@ -84,7 +86,7 @@ export function FavoriteEditFooter({
         </>
       )}
       <KeyHint keys="Ctrl+D" label="クリア" />
-      <KeyHint keys="Esc" label="戻る" />
+      <KeyHint keys="Esc" label="閉じる" />
     </FooterBar>
   );
 }

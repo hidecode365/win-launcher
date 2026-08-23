@@ -226,8 +226,6 @@ export function CreateFolderInlineRow({
 // は、編集ビュー内の全行に常時表示する（ピン止めブロックのドラッグハンドルと同じ
 // 扱い）」を参照）。実際の `draggable` 属性は行全体に付与しており、このハンドルは
 // 視覚的な目印（掴める場所を示す）の役割のみを持つ（ピン止めブロックと同じ設計）。
-// 仮想行「Top」はドラッグ元にならないため、呼び出し元（Top行の描画）では
-// このコンポーネント自体を使わず、同じ横幅の空スペースを描く。
 //
 // 軸4j：絞り込み中（filtering）はD&Dによる並び替え・再親化自体が無効化される
 // ため、「操作できないことが見た目からも分かるように」ハンドルを視覚的に消す。
@@ -273,8 +271,7 @@ function DragHandle({
 }
 
 // ドロップ位置。"before"/"after" はドロップ先の行と同じ親の下で前後どちらに
-// 挿入するか、"into" はドロップ先のフォルダ行の配下（末尾）への再親化を表す
-// （"into" はフォルダ見出し行・仮想行「Top」のみが対象になりうる）。
+// 挿入するか、"into" はドロップ先のフォルダ行の配下（末尾）への再親化を表す。
 // フォルダを自分自身、または自分の子孫の中へドロップしようとした場合のエラー文言。
 // Rust側 move_favorite_node_to の同一チェックが返すメッセージと文言を揃えている
 // （このチェックはドラッグ中の事前判定・onDrop時の即時判定の両方で使うため、
@@ -292,8 +289,6 @@ const CIRCULAR_MOVE_ERROR = "フォルダを自分自身の中に移動するこ
 //   Rust側でしか正確に判定できない（同名判定はトリム・大文字小文字を無視する等の
 //   詳細ロジックを持つ）ため、ここでは事前チェックせず、実際のドロップ時に
 //   Rust側のエラーをそのまま表示する方式でカバーする
-// - 仮想行「Top」（ルート）へのドロップは、ルートより上位の祖先が存在しない以上
-//   循環参照になり得ないため、常に有効とする
 function isValidDropTarget(
   tree: FavoriteEditTreeRow[],
   draggedId: string,
@@ -304,20 +299,12 @@ function isValidDropTarget(
   const target = favoriteDropTarget(targetRow);
   if (target.id === draggedId) return false;
   if (!draggedIsFolder) return true;
-  const rawNodes = tree.filter((r) => r.kind !== "top").map((r) => r.node);
+  const rawNodes = tree.map((r) => r.node);
   const newParentId = resolveTreeDropParent(target, position);
   return !isCircularTreeMove(rawNodes, draggedId, newParentId);
 }
 
 function favoriteDropTarget(row: FavoriteEditTreeRow): TreeDropTarget {
-  if (row.kind === "top") {
-    return {
-      id: FAVORITES_FOLDER_ID,
-      parentId: "",
-      isFolder: true,
-      fixedParentId: FAVORITES_FOLDER_ID,
-    };
-  }
   return {
     id: row.node.id,
     parentId: row.node.parentId,
@@ -327,30 +314,42 @@ function favoriteDropTarget(row: FavoriteEditTreeRow): TreeDropTarget {
   };
 }
 
-// お気に入り編集ビューのツリー表示。走査結果（tree）自体は /favorite ブラウジング
-// （FavoriteListPanel.tsx）と同じ favoriteTree に、編集ビュー専用の仮想行「Top」を
-// 先頭に合成したもの（useFavoriteEditSelection.ts が合成する。詳細は同ファイルの
-// コメントを参照）。折りたたみ状態も /favorite ブラウジングと共有する（新規の
-// ツリー走査・折りたたみロジックは持たない。CLAUDE.md「同じ走査ロジックを2箇所に
-// 持たない」原則を参照）。行の見た目（チェブロン・フォルダアイコン・インデント幅・
-// ファイルアイコン・削除アイコン）は FavoriteTreeVisuals.tsx を共有する。
+// アイテム行の単一クリックによる起動（02-saved-items.md「お気に入り画面」節）。
+// ダブルクリックでのリネームと区別するため、約200〜250ms待ってから起動し、
+// その間に2回目のクリックが来た場合（＝ダブルクリック）は起動をキャンセルする。
+// Enterによる起動は待たずに直ちに実行する（呼び出し元は本コンポーネントの外、
+// App.tsx のキーボードハンドラのまま変更しない）。
+const CLICK_LAUNCH_DELAY_MS = 220;
+
+// ヘッダーの「新規フォルダ」アイコン（FavoriteEditView.tsx）用の作成アンカー。
+// 行に紐付かない（常にお気に入りルート直下へ作成する）ため、行の key とは別の
+// 固定センチネル値で表す（useMemoManage.ts の MEMO_HEADER_CREATE_ANCHOR と同じ考え方）。
+export const FAVORITE_HEADER_CREATE_ANCHOR = "__favorite_header__";
+
+// issue 0026 軸B（統合後の /favorite 画面。以前は「お気に入り編集ビュー」専用
+// だった）のツリー表示。走査結果（tree）は search.favoriteTree（useSearch.ts）を
+// そのまま使う（新規のツリー走査・折りたたみロジックは持たない。CLAUDE.md
+// 「同じ走査ロジックを2箇所に持たない」原則を参照）。行の見た目（チェブロン・
+// フォルダアイコン・インデント幅・ファイルアイコン・削除アイコン）は
+// FavoriteTreeVisuals.tsx を共有する。
 //
-// FavoriteListPanel.tsx との違い：「上へ/下へ移動」ボタンは表示しない（4eでD&Dに
-// 置き換わったため。00-requirements.md「お気に入り編集ビュー」節を参照）。削除アイコン・
-// フォルダ作成アイコンは選択中の行にのみ表示する。★解除アイコンはアイテム行のみに
-// 表示する（フォルダ見出し行・Top行には持たせない）。
-// アイテム行はクリック／Enterのいずれでもファイルを起動しない（このビューは
-// ファイルを起動する画面ではなく、構造を閲覧・整理する画面のため）。
+// 「上へ/下へ移動」ボタンは表示しない（D&Dに統合済み。00-requirements.md
+// 「お気に入り画面」節を参照）。削除アイコン・フォルダ作成アイコンは選択中の行に
+// のみ表示する。★解除アイコンはアイテム行のみに表示する（フォルダ見出し行には
+// 持たせない）。アイテム行は単一クリックまたはEnterでファイルを起動する
+// （02-saved-items.md「お気に入り画面」節。ダブルクリックとの判別は
+// scheduleLaunch/CLICK_LAUNCH_DELAY_MS を参照）。
 //
 // リネーム（4d）：F2キー（選択中の行が対象。App.tsx の window レベルリスナー経由）・
 // ダブルクリック（クリックした行が対象）のいずれでもインライン編集モードに入る。
-// Top行はリネームの対象にならない（実体を持たないため）。
 //
-// フォルダ作成（軸4f）：Ctrl+Shift+N、または選択中の行に表示するフォルダ作成
-// アイコンのクリックで、選択中の行の直下（フォルダ・Top選択時）またはその親フォルダ
-// 直下（アイテム選択時）にインライン入力欄を表示する。作成を開始した時点の選択行
-// （アンカー）を creatingFolderAnchorKey として親（App.tsx）が保持し、この
-// コンポーネントはそのキーに一致する行の直後に CreateFolderInlineRow を描画する。
+// フォルダ作成（軸4f、軸B）：Ctrl+Shift+N、行内のフォルダ作成アイコン（選択中の
+// 行の直下、アイテム選択時はその親フォルダ直下）、またはヘッダーの新規フォルダ
+// アイコン（常にお気に入りルート直下。FAVORITE_HEADER_CREATE_ANCHOR）のいずれかで
+// インライン入力欄を表示する。作成を開始した時点のアンカー（行の key、またはヘッダー
+// センチネル）を creatingFolderAnchorKey として親（App.tsx）が保持し、この
+// コンポーネントはそのキーに一致する行の直後（ヘッダーアンカーの場合は最上部）に
+// CreateFolderInlineRow を描画する。
 //
 // 並び替え・再親化（Ctrl+Shift+↑↓←→、軸4f・軸4jでキー割当を最終確定）：
 // App.tsx の window レベルリスナーが move_favorite_node_to を直接呼ぶ
@@ -359,9 +358,9 @@ function favoriteDropTarget(row: FavoriteEditTreeRow): TreeDropTarget {
 //
 // D&D（4e）：HTML5 Drag and Drop API を使う（tauri.conf.json の dragDropEnabled は
 // false のまま。既存のピン止めブロック並び替え（ResultList.tsx）と同じ技術選択）。
-// 行全体に draggable を付与し（Top行を除く）、DragHandle（⋮⋮）は掴める場所を示す
-// 視覚的な目印としてのみ機能する（実装上はどこを掴んでもドラッグできる。ピン止め
-// ブロックと同じ設計）。Top行へのドロップは常に「ルート直下の末尾へ再親化」を表す。
+// 行全体に draggable を付与し、DragHandle（⋮⋮）は掴める場所を示す視覚的な目印
+// としてのみ機能する（実装上はどこを掴んでもドラッグできる。ピン止めブロックと
+// 同じ設計）。
 export function FavoriteEditTree({
   tree,
   selected,
@@ -381,10 +380,11 @@ export function FavoriteEditTree({
   creatingFolderAnchorKey,
   onStartCreateFolder,
   onCancelCreateFolder,
+  onLaunchFile,
 }: {
   tree: FavoriteEditTreeRow[];
-  // tree（Top行込みの合成ツリー）上の選択インデックス。フォルダ見出し行・
-  // アイテム行・Top行のいずれも対象（useFavoriteEditSelection.ts を参照）。
+  // tree 上の選択インデックス。フォルダ見出し行・アイテム行のいずれも対象
+  // （useFavoriteEditSelection.ts を参照）。
   selected: number;
   onSelectRowByHover: (key: string, clientX: number, clientY: number) => void;
   onRecordMouseMove: (clientX: number, clientY: number) => void;
@@ -423,8 +423,32 @@ export function FavoriteEditTree({
   creatingFolderAnchorKey: string | null;
   onStartCreateFolder: () => void;
   onCancelCreateFolder: () => void;
+  // 02-saved-items.md「お気に入り画面」節：アイテム行は単一クリックでファイルを
+  // 起動する（ダブルクリック＝リネームと約200〜250msで判別する。下記
+  // CLICK_LAUNCH_DELAY_MS・pendingClickTimerRef を参照）。
+  onLaunchFile: (path: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // シングルクリックでの起動予約タイマー（ダブルクリックで取り消す）。
+  const pendingClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (pendingClickTimerRef.current) clearTimeout(pendingClickTimerRef.current);
+    };
+  }, []);
+  const scheduleLaunch = (path: string) => {
+    if (pendingClickTimerRef.current) clearTimeout(pendingClickTimerRef.current);
+    pendingClickTimerRef.current = setTimeout(() => {
+      pendingClickTimerRef.current = null;
+      onLaunchFile(path);
+    }, CLICK_LAUNCH_DELAY_MS);
+  };
+  const cancelScheduledLaunch = () => {
+    if (pendingClickTimerRef.current) {
+      clearTimeout(pendingClickTimerRef.current);
+      pendingClickTimerRef.current = null;
+    }
+  };
   useScrollSelectedIntoView(containerRef, selected);
 
   // ドラッグ中のノードの id・種別。表示の再計算を必要としないため ref で保持する
@@ -461,15 +485,14 @@ export function FavoriteEditTree({
   ) => {
     e.preventDefault();
     const dragged = dragInfoRef.current;
-    if (dragged === null || (row.kind !== "top" && dragged.id === row.node.id)) {
+    if (dragged === null || dragged.id === row.node.id) {
       e.dataTransfer.dropEffect = "none";
       setDropTarget(null);
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
-    const position: DropPosition =
-      row.kind === "top" ? "into" : dropPositionFromRatio(ratio, row.kind === "folder");
+    const position: DropPosition = dropPositionFromRatio(ratio, row.kind === "folder");
     // 循環参照になる移動先は、Rust側の応答を待たずにここで弾く（4e追加：
     // 事前フィードバック）。preventDefault は既に呼んでいるため drop イベント
     // 自体は発火しうるが（dropEffect はカーソル表示のみに影響し、イベント発火を
@@ -491,14 +514,13 @@ export function FavoriteEditTree({
     const dragged = dragInfoRef.current;
     dragInfoRef.current = null;
     setDropTarget(null);
-    if (!dragged || (row.kind !== "top" && dragged.id === row.node.id)) return;
+    if (!dragged || dragged.id === row.node.id) return;
     // dropTarget state（表示専用）には頼らず、ドロップ時点の e.clientY から
     // 位置を再計算する（onDragOver の最終更新が反映される前に drop が発火する
     // 競合を避けるため）。
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientY - rect.top) / rect.height;
-    const position: DropPosition =
-      row.kind === "top" ? "into" : dropPositionFromRatio(ratio, row.kind === "folder");
+    const position: DropPosition = dropPositionFromRatio(ratio, row.kind === "folder");
     // 循環参照は Rust側を呼ぶまでもなく分かるため、ここでも即座に弾く
     // （dragover で禁止カーソルを見た上でなお離した場合の保険）。同名重複は
     // ここでは判定できないため、Rust側の応答（onMoveNode の戻り値）に委ねる。
@@ -506,9 +528,7 @@ export function FavoriteEditTree({
       showDragError(CIRCULAR_MOVE_ERROR);
       return;
     }
-    const rawNodes = tree
-      .filter((treeRow) => treeRow.kind !== "top")
-      .map((treeRow) => treeRow.node);
+    const rawNodes = tree.map((treeRow) => treeRow.node);
     const { newParentId, targetIndex } = computeTreeMoveTarget(
       rawNodes,
       dragged.id,
@@ -520,7 +540,7 @@ export function FavoriteEditTree({
     });
   };
 
-  // フォルダ作成アイコン。選択中の行（フォルダ・アイテム・Topのいずれも）にのみ
+  // フォルダ作成アイコン。選択中の行（フォルダ・アイテムのいずれも）にのみ
   // 表示する（ピン・★アイコンの「選択時のみ表示」と同じ考え方）。サイズ・
   // ホバー表現・stopPropagationは共通ラッパー IconSlot に委譲し、他の行内
   // アイコン（★・件数バッジ・削除アイコン）と同一の「箱」を持つ。この関数は
@@ -540,7 +560,8 @@ export function FavoriteEditTree({
     </IconSlot>
   );
 
-  const isEmpty = tree.every((r) => r.kind === "top");
+  const isEmpty = tree.length === 0;
+  const isCreatingAtHeader = creatingFolderAnchorKey === FAVORITE_HEADER_CREATE_ANCHOR;
 
   return (
     <>
@@ -558,10 +579,21 @@ export function FavoriteEditTree({
         className="flex-1 overflow-y-auto"
         onMouseMove={(event) => onRecordMouseMove(event.clientX, event.clientY)}
       >
-        {isEmpty && (
+        {isEmpty && !isCreatingAtHeader && (
           <div className="flex items-center justify-center text-gray-400 text-sm py-6">
-            ★ボタンでファイルを登録すると、ここに表示されます
+            ★ボタンでファイルを登録するか、上部の新規フォルダアイコンでフォルダを作成すると、ここに表示されます
           </div>
+        )}
+        {/* issue 0026 軸B：ヘッダーの「新規フォルダ」アイコン（FavoriteEditView.tsx）
+            から開始した作成は、行に紐付かないためリスト最上部に描画する。 */}
+        {isCreatingAtHeader && (
+          <CreateFolderInlineRow
+            depth={0}
+            targetParentId={FAVORITES_FOLDER_ID}
+            onCreateFolder={onCreateFolder}
+            onFolderCreated={onFolderCreated}
+            onCancel={onCancelCreateFolder}
+          />
         )}
         {tree.map((row, index) => {
           const isSelected = index === selected;
@@ -575,60 +607,6 @@ export function FavoriteEditTree({
             .join(" ");
           const isCreatingHere = creatingFolderAnchorKey === row.key;
 
-          if (row.kind === "top") {
-            return (
-              <Fragment key={row.key}>
-                <div
-                  role="button"
-                  data-index={index}
-                  style={{ paddingLeft: `${INDENT_BASE_REM}rem` }}
-                  className={`${manageTreeRowClass("fixed", { selected: isSelected })} ${dropClasses}`}
-                  onMouseEnter={(event) =>
-                    onSelectRowByHover(row.key, event.clientX, event.clientY)
-                  }
-                  onDragOver={(e) => handleDragOver(e, row)}
-                  onDragLeave={() =>
-                    setDropTarget((prev) => (prev?.key === row.key ? null : prev))
-                  }
-                  onDrop={(e) => handleDrop(e, row)}
-                >
-                  {/* 軸4h：Topはドラッグハンドル・チェブロン・件数バッジのいずれも
-                      持たない特別な行のため、それらの列位置を再現しようとする
-                      プレースホルダー方式（旧実装）は撤去した。フォルダアイコン＋
-                      ラベルを行の左端に直接寄せるだけの、他の行とは独立した見た目
-                      に簡略化する。行の高さは可変コンテンツ（バッジ等）に依存させず
-                      h-10（通常のフォルダ行の実測高さと同じ固定値）で明示的に揃える。 */}
-                  <svg
-                    className="w-4 h-4 mr-2 flex-shrink-0"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d={FOLDER_ICON_PATH} />
-                  </svg>
-                  <span className={MANAGE_TREE_ROW_LABEL.fixed}>
-                    お気に入り
-                  </span>
-                  {/* 行末アイコン群はまとめて1つのflexコンテナに包み、間隔を
-                      `gap-2` に一本化する（詳細は
-                      docs/internal-design/favorites-ui-iconography.md
-                      「行内アイコンの共通ラッパー化（IconSlot）」節を参照）。 */}
-                  <div className="flex items-center gap-2 ml-2">
-                    {isSelected && renderCreateFolderIcon(isSelected)}
-                  </div>
-                </div>
-                {isCreatingHere && (
-                  <CreateFolderInlineRow
-                    depth={0}
-                    targetParentId={FAVORITES_FOLDER_ID}
-                    onCreateFolder={onCreateFolder}
-                    onFolderCreated={onFolderCreated}
-                    onCancel={onCancelCreateFolder}
-                  />
-                )}
-              </Fragment>
-            );
-          }
-
           const indentStyle = {
             paddingLeft: `${row.depth * INDENT_STEP_REM + INDENT_BASE_REM}rem`,
           };
@@ -637,14 +615,14 @@ export function FavoriteEditTree({
           if (row.kind === "folder") {
             return (
               <Fragment key={row.key}>
-                {/* 軸4m：行右端の余白（pr-4）は、アイテム行・Top行と統一する。
-                    以前はフォルダ行のみ pr-2（8px）で、アイテム行・Top行は
+                {/* 軸4m：行右端の余白（pr-4）は、アイテム行と統一する。
+                    以前はフォルダ行のみ pr-2（8px）で、アイテム行は
                     pr-4（16px）だったため、行末アイコン（削除アイコンが最後に
                     来るフォルダ行 vs ★アイコンが最後に来るアイテム行）で
                     実測のright-gapが8px/16pxとずれて見える原因になっていた
                     （アイコン自身の個別マージンではなく、行のpadding-right
-                    自体の不一致が原因。ResultList.tsx・FavoriteListPanel.tsx
-                    も含め、全ての行はpr-4に統一する）。 */}
+                    自体の不一致が原因。ResultList.tsx も含め、全ての行は
+                    pr-4に統一する）。 */}
                 <div
                   role="button"
                   data-index={index}
@@ -778,7 +756,14 @@ export function FavoriteEditTree({
                 draggable={!isRenaming && !filtering}
                 style={indentStyle}
                 className={`${manageTreeRowClass("item", { selected: isSelected })} ${dropClasses}`}
-                onDoubleClick={() => onStartRename(row.node.id)}
+                onClick={() => {
+                  if (isRenaming) return;
+                  scheduleLaunch(item.path);
+                }}
+                onDoubleClick={() => {
+                  cancelScheduledLaunch();
+                  onStartRename(row.node.id);
+                }}
                 onMouseEnter={(event) =>
                   onSelectRowByHover(row.key, event.clientX, event.clientY)
                 }

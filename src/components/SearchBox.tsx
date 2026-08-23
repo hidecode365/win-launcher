@@ -1,14 +1,6 @@
 import type { ClipboardEvent, RefObject } from "react";
 import { Tooltip } from "./Tooltip";
 
-export function ManageViewIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-    </svg>
-  );
-}
-
 export function SearchBox({
   inputRef,
   query,
@@ -16,10 +8,6 @@ export function SearchBox({
   onKeyDown,
   disabled,
   onOpenSettings,
-  favoriteEditVisible,
-  onOpenFavoriteEdit,
-  memoEditVisible = false,
-  onOpenMemoEdit,
   onImagePaste,
   onPathPaste,
 }: {
@@ -29,12 +17,6 @@ export function SearchBox({
   onKeyDown: (e: React.KeyboardEvent) => void;
   disabled: boolean;
   onOpenSettings: () => void;
-  // /favorite モード表示中のみ、設定アイコンの隣に編集アイコンを表示する
-  // （お気に入り管理画面への入口。02-saved-items.md「お気に入り管理画面」節を参照）。
-  favoriteEditVisible: boolean;
-  onOpenFavoriteEdit: () => void;
-  memoEditVisible?: boolean;
-  onOpenMemoEdit?: () => void;
   onImagePaste?: (file: File) => void;
   onPathPaste?: () => void;
 }) {
@@ -91,26 +73,6 @@ export function SearchBox({
         spellCheck={false}
         readOnly={disabled}
       />
-      {/* /favorite モード表示中のみ表示する編集アイコン。設定アイコンの左隣に置く
-          （02-saved-items.md「お気に入り管理画面」節を参照）。 */}
-      {favoriteEditVisible && (
-        <Tooltip label="お気に入りを管理" className="ml-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={onOpenFavoriteEdit}
-            className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-          >
-            <ManageViewIcon />
-          </button>
-        </Tooltip>
-      )}
-      {memoEditVisible && onOpenMemoEdit && (
-        <Tooltip label="メモを管理" className="ml-2 flex-shrink-0">
-          <button type="button" onClick={onOpenMemoEdit} className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-            <ManageViewIcon />
-          </button>
-        </Tooltip>
-      )}
       {/* 検索ボックスの右端に位置し左側に十分な余白があるため、Tooltip の
           既定（左側表示）のままでよい。 */}
       <Tooltip label="設定" className="ml-2 flex-shrink-0">

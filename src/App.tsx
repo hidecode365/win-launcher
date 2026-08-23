@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,8 +12,7 @@ import { useFavoriteEditSelection } from "./hooks/useFavoriteEditSelection";
 import { useClipboard } from "./hooks/useClipboard";
 import { useOcr } from "./hooks/useOcr";
 import { useUpdater } from "./hooks/useUpdater";
-import { useMemoNotes } from "./hooks/useMemoNotes";
-import { useTreeEditSelection } from "./hooks/useTreeEditSelection";
+import { useMemoManage } from "./hooks/useMemoManage";
 import { SearchBox } from "./components/SearchBox";
 import { OcrPreview } from "./components/OcrPreview";
 import { ResultList } from "./components/ResultList";
@@ -22,33 +21,18 @@ import { ClipboardPanel } from "./components/ClipboardPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
 import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
-import { FavoriteListPanel } from "./components/FavoriteListPanel";
 import { FavoriteEditView } from "./components/FavoriteEditView";
+import { FAVORITE_HEADER_CREATE_ANCHOR } from "./components/FavoriteEditTree";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
-import { MemoPanel } from "./components/MemoPanel";
 import { MemoManageView } from "./components/MemoManageView";
 import { hideWindow } from "./lib/window";
-import { buildMemoVisibleRows } from "./lib/memoTree";
 import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
 import type {
   ClipboardTextEntry,
-  FavoriteEditTreeRow,
   FileEntry,
   FrecencyMap,
 } from "./types";
-
-// 仮想行「Top」（kind: "top"）を除いた、実体（FavoriteNode）を持つ行かどうかの
-// 判定。Array.prototype.filter に渡すコールバックが単なる真偽値を返すだけだと
-// TypeScript は要素型を絞り込めない（"top" を含む型のまま残る）ため、型述語
-// （type predicate）としてここに1箇所だけ定義し、Ctrl+Shift+矢印による
-// 並び替え・再親化（moveFavoriteNodeWithinParent/indentFavoriteNode/
-// outdentFavoriteNode）が共通で使う。
-function hasFavoriteNode(
-  row: FavoriteEditTreeRow
-): row is Exclude<FavoriteEditTreeRow, { kind: "top" }> {
-  return row.kind !== "top";
-}
 
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 const DEFAULT_MEMO_PANE_WIDTH = 280;
@@ -64,8 +48,6 @@ export default function App() {
   // 既存コードとの互換のため、設定パネル表示中かどうかは派生値として残す
   // （useSettings への引数・多数の分岐で使われている）。
   const showSettings = view === "settings";
-  const favoriteEditOpen = view === "favoriteEdit";
-  const memoEditOpen = view === "memoEdit";
   const [settingsVersion, setSettingsVersion] = useState(0);
   // 軸4k：全画面のフッター右端に統一表示するアプリのバージョン番号。以前は
   // SettingsPanel.tsx が自身のフッター専用に個別取得していたが、フッターが
@@ -94,54 +76,47 @@ export default function App() {
   // フォーカスアウト時自動非表示の判定用（後述のフォーカス監視 useEffect は依存配列が
   // 空で一度しかマウントされないため、view state を直接参照すると初回値の古い
   // クロージャのままになる。毎レンダーで最新値を書き込むこの ref を代わりに参照する）。
-  // 検索UI自体が表示されていないビュー（設定・お気に入り管理・メモ管理）では
-  // 自動非表示を適用しない（元は showSettings 専用の例外だったが、管理画面の
-  // ビュー追加に伴い「検索ビュー以外では適用しない」という条件へ一般化した）。
-  const viewRef = useRef(view);
-  viewRef.current = view;
+  // issue 0026 軸C：設定画面だけがこの自動非表示の適用除外対象であり、検索・お気に入り・
+  // メモの3画面はいずれもフォーカスアウトで非表示にする（同格のL1画面として扱う）。
+  // favoriteEditOpen/memoEditOpen（後述）による実効ビューを書き込む（コミット用の
+  // view state 自体が1レンダー遅れる可能性があるため、実効ビューを直接ミラーする）。
+  const viewRef = useRef<MainView>(view);
+  // 設定を開いた元のL1画面を1段だけ記録する（履歴スタックにはしない。issue 0026
+  // 軸C-2）。openSettings が呼ばれた時点の viewRef.current を書き込む。
+  const previousViewRef = useRef<MainView>("search");
 
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
   const search = useSearch(settings.appSettings, settingsVersion, storeRef);
-  const memoMode = settings.appSettings.memoEnabled && search.query.toLowerCase().startsWith(`/${settings.appSettings.memoKeyword.toLowerCase()}`);
-  const memoModeRef = useRef(memoMode);
-  memoModeRef.current = memoMode;
-  const memoFilterText = memoMode ? search.query.slice(settings.appSettings.memoKeyword.length + 1) : "";
-  const memo = useMemoNotes(memoMode);
-  // メモ画面もお気に入り画面と同様、フォルダ見出し行を含む表示行全体を選択対象にする。
-  // 描画と選択が別々の平坦化結果を持つと行番号がずれるため、共通の純粋関数から導出する。
-  const memoVisibleRows = useMemo(
-    () => buildMemoVisibleRows(memo.nodes, memo.documents, memoFilterText),
-    [memo.nodes, memo.documents, memoFilterText]
-  );
-  const memoSelection = useTreeEditSelection(
-    memoVisibleRows.map(({ node }) => ({ key: node.id })),
-    memoVisibleRows[0]?.node.id ?? "__memo_empty__",
-    memoFilterText
-  );
-  const selectedMemoRow = memoVisibleRows[memoSelection.selected]?.node ?? null;
-  const selectedMemoRowId = selectedMemoRow?.id ?? null;
-  const selectedMemoDocumentId = selectedMemoRow?.type === "memo" ? selectedMemoRow.id : null;
+
+  // issue 0026 軸C：検索・お気に入り・メモは同格のL1 UI State。`/favorite`・`/memo`
+  // を入力した時点（検索画面の子状態としての判定はそれぞれ search.favoriteMode・
+  // 下記 memoQueryMatch）で、閲覧専用パネルを経由せず直接この統合画面へ遷移する。
+  // レンダー中に同期的に OR 判定することで、`setView` が反映されるまでの1フレームに
+  // 誤って旧・検索結果一覧が一瞬表示される隙間を作らない。実際の view state への
+  // コミットは後述の useEffect が行う（Escape・戻るボタン等、他の経路からの
+  // 遷移判定は committed な view を見るだけでよいため）。
+  const memoQueryMatch =
+    settings.appSettings.memoEnabled &&
+    search.query.toLowerCase().startsWith(`/${settings.appSettings.memoKeyword.toLowerCase()}`);
+  const favoriteEditOpen = view === "favoriteEdit" || (view === "search" && search.favoriteMode);
+  const memoEditOpen = view === "memoEdit" || (view === "search" && memoQueryMatch);
+  viewRef.current = favoriteEditOpen ? "favoriteEdit" : memoEditOpen ? "memoEdit" : view;
+
   useEffect(() => {
-    if (selectedMemoDocumentId !== memo.selectedId) {
-      memo.setSelectedId(selectedMemoDocumentId);
-    }
-  }, [selectedMemoDocumentId, memo.selectedId, memo.setSelectedId]);
-  const memoFlushRef = useRef(memo.flushDraft);
-  memoFlushRef.current = memo.flushDraft;
+    if (view === "search" && search.favoriteMode) setView("favoriteEdit");
+  }, [view, search.favoriteMode]);
+  useEffect(() => {
+    if (view === "search" && memoQueryMatch) setView("memoEdit");
+  }, [view, memoQueryMatch]);
+
+  // メモ画面のツリー編集state・本文（下書き・確定版）管理。App.tsx側でフックとして
+  // 保持することで、設定画面往復（MemoManageView自体のアンマウント・再マウント）を
+  // 挟んでもこのstateは消えない（issue 0026 横断整理C-3）。
+  const memoManage = useMemoManage(memoEditOpen);
+  const memoFlushRef = useRef(memoManage.flushDraft);
+  memoFlushRef.current = memoManage.flushDraft;
   const [memoPaneWidth, setMemoPaneWidth] = useState(DEFAULT_MEMO_PANE_WIDTH);
-  const [memoEditorFocusRequested, setMemoEditorFocusRequested] = useState(false);
-  const [memoEditorFocused, setMemoEditorFocused] = useState(false);
-  const [memoRenamingNodeId, setMemoRenamingNodeId] = useState<string | null>(null);
-  const memoHasDraft = Boolean(
-    memo.document?.draft && memo.document.draft.content !== memo.document.content
-  );
-  useEffect(() => {
-    if (!memoMode) {
-      setMemoEditorFocused(false);
-      setMemoRenamingNodeId(null);
-    }
-  }, [memoMode]);
   // お気に入り編集ビュー専用の選択状態（/favorite ブラウジング側の選択とは独立した
   // ドメイン。00-requirements.md「お気に入り編集ビュー」節を参照）。データソースは
   // search.favoriteTree をそのまま共有する。
@@ -151,8 +126,10 @@ export default function App() {
   );
   const ocr = useOcr();
   const updater = useUpdater();
+  // issue 0026 軸C：Ctrl+, は検索画面に加え、お気に入り画面・メモ画面表示中も有効
+  // （06-keyboard-interactions.md 表1「共通操作」を参照）。
   const settingsShortcutAvailable =
-    view === "search" &&
+    (view === "search" || favoriteEditOpen || memoEditOpen) &&
     !search.pendingCommand &&
     !search.favoriteDialogTarget &&
     !search.pendingDeleteFavoriteFolder;
@@ -285,7 +262,7 @@ export default function App() {
           const win = getCurrentWindow();
           const scaleFactor = await win.scaleFactor().catch(() => 1);
           const logical = size.toLogical(scaleFactor);
-          const key = viewRef.current === "favoriteEdit" ? "favoriteEditWindowSize" : memoModeRef.current ? "memoWindowSize" : "windowSize";
+          const key = viewRef.current === "favoriteEdit" ? "favoriteEditWindowSize" : viewRef.current === "memoEdit" ? "memoWindowSize" : "windowSize";
           await store.set(key, {
             width: Math.round(logical.width),
             height: Math.round(logical.height),
@@ -304,11 +281,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!memoMode || !storeRef.current) return;
+    if (!memoEditOpen || !storeRef.current) return;
     storeRef.current.get<{ width: number; height: number }>("memoWindowSize").then((size) => {
       if (size) getCurrentWindow().setSize(new LogicalSize(size.width, size.height)).catch(console.error);
     }).catch(console.error);
-  }, [memoMode]);
+  }, [memoEditOpen]);
 
   const handlePaneWidthChange = useCallback(async (width: number) => {
     clipboardPaneWidthRef.current = width;
@@ -329,33 +306,39 @@ export default function App() {
   const addMemoFromClipboard = useCallback((content: string) => {
     const title = content.trim().slice(0, 40) || "無題のメモ";
     invoke("add_memo", { name: title, content, parentId: "__memo__" })
-      .then(() => memo.refresh())
+      .then(() => memoManage.reload())
       .catch(console.error);
-  }, [memo.refresh]);
+  }, [memoManage.reload]);
   const copyMemoAndClose = useCallback(async (content: string) => {
-    await memo.flushDraft();
+    await memoManage.flushDraft();
     invoke("copy_to_clipboard", { text: content }).catch(console.error);
     await search.closeWindow({
       clearQuery: "prefixOnly",
       prefix: PREFIX_CHAR + settings.appSettings.memoKeyword,
     });
-  }, [memo.flushDraft, search.closeWindow, settings.appSettings.memoKeyword]);
-  const openMemoEdit = useCallback(() => {
-    memo.flushDraft().then(() => setView("memoEdit")).catch(console.error);
-  }, [memo.flushDraft]);
+  }, [memoManage.flushDraft, search.closeWindow, settings.appSettings.memoKeyword]);
+  // issue 0026 軸C：/memo を閉じて検索画面へ戻る際は検索クエリを空にする
+  // （02-saved-items.md「メモ画面」節）。空にしないと memoQueryMatch が
+  // 直ちに再び真になり、検索画面へ戻れず同じ画面に留まってしまう。
+  // リネーム・作成中のインライン入力・絞り込み文字列も、戻るボタンでの
+  // 明示的な離脱時にはリセットする（FavoriteEditView の closeFavoriteEdit と
+  // 同じ考え方。設定画面往復（アンマウントを伴わない一時退避）では逆に
+  // このstateを保持し続ける必要があるため、ここでのリセットは「戻る」操作
+  // 経由の場合のみ行う）。
   const closeMemoEdit = useCallback(() => {
     setView("search");
-    memo.refresh().catch(console.error);
-  }, [memo.refresh]);
-  const editMemoFromManage = useCallback((id: string) => {
-    setMemoEditorFocusRequested(true);
-    memoSelection.selectByKey(id, Date.now() + 1000);
-    memo.setSelectedId(id);
-    setView("search");
-    memo.refresh().catch(console.error);
-  }, [memo.refresh, memo.setSelectedId, memoSelection.selectByKey]);
+    memoManage.setRenaming(null);
+    memoManage.cancelCreate();
+    memoManage.setFilterText("");
+    search.setQuery("");
+  }, [memoManage.setRenaming, memoManage.cancelCreate, memoManage.setFilterText, search.setQuery]);
 
+  // issue 0026 軸C-2：設定を開いた元のL1画面（検索/お気に入り/メモ）を1段だけ記録し、
+  // 設定を閉じるとその画面へ戻す（履歴スタックにはしない）。viewRef.current は
+  // favoriteEditOpen/memoEditOpen による実効ビューを反映済みのため、遷移直後の
+  // 1フレームに「search」のまま記録してしまう心配はない。
   const openSettings = useCallback(() => {
+    previousViewRef.current = viewRef.current;
     setView("settings");
   }, []);
 
@@ -366,7 +349,7 @@ export default function App() {
   // （タブ切り替え時に各タブが unmount される際も同じ理由で自動的に破棄される。詳細は
   // CLAUDE.md「設定画面」節の「エラー状態の保持場所」を参照）。
   const closeSettings = useCallback(() => {
-    setView("search");
+    setView(previousViewRef.current);
     setSettingsVersion((v) => v + 1);
   }, []);
 
@@ -394,14 +377,6 @@ export default function App() {
     [search.renameFavoriteNode]
   );
 
-  // お気に入り編集ビューの開閉。設定パネルとは異なりバリデーションエラー等の
-  // 状態を持たないため、view の切り替えのみでよい。/favorite ブラウジング側の
-  // 絞り込み文字列・選択位置・フォルダ展開状態は useSearch 側の state であり、
-  // このビューを開いてもアンマウントされないため自動的に保持される
-  // （FavoriteEditView.tsx のコメントを参照）。
-  const openFavoriteEdit = useCallback(() => {
-    setView("favoriteEdit");
-  }, []);
   // 軸4f：編集ビューでのフォルダ作成中の入力欄の描画位置（アンカー行の key）。
   // null なら作成中の入力欄なし。作成を開始した時点の選択行を凍結して保持する
   // （マウスホバーによる選択移動が入力中の対象をずらさないようにするため。
@@ -415,10 +390,18 @@ export default function App() {
       setCreatingFolderAnchorKey(row.key);
     }
   }, [favoriteEdit.tree, favoriteEdit.selected]);
+  // issue 0026 軸B：ヘッダーの「新規フォルダ」アイコン用。行の選択状態に関わらず、
+  // 常にお気に入りルート直下への作成を開始する（固定行「お気に入り」撤去の代替）。
+  const startCreateFolderAtRoot = useCallback(() => {
+    setCreatingFolderAnchorKey(FAVORITE_HEADER_CREATE_ANCHOR);
+  }, []);
   const cancelCreateFolder = useCallback(() => {
     setCreatingFolderAnchorKey(null);
   }, []);
 
+  // issue 0026 軸C：/favorite を閉じて検索画面へ戻る際は検索クエリを空にする
+  // （02-saved-items.md「お気に入り画面」節）。空にしないと search.favoriteMode が
+  // 直ちに再び真になり、検索画面へ戻れず同じ画面に留まってしまう。
   const closeFavoriteEdit = useCallback(() => {
     setView("search");
     // リネーム中・フォルダ作成中に「戻る」ボタン等で編集ビューを閉じた場合、
@@ -439,7 +422,8 @@ export default function App() {
     // 再親化が動作しない」の実際の原因の一つ）。編集ビューを開き直すたびに
     // 空の状態から始める方が事故が少ないと判断し、閉じる際に必ず空文字へ戻す。
     search.setFavoriteEditFilterText("");
-  }, [search.setFavoriteEditFilterText]);
+    search.setQuery("");
+  }, [search.setFavoriteEditFilterText, search.setQuery]);
 
   // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移し、作成中の
   // 入力欄を閉じる（識別子ベースの intent。useFavoriteEditSelection の既存の
@@ -513,11 +497,11 @@ export default function App() {
       // ビュー」節を参照）。
       if (search.favoriteEditFilterText.length > 0) return;
       const row = favoriteEdit.tree[favoriteEdit.selected];
-      if (!row || row.kind === "top") return;
+      if (!row) return;
       const parentId = row.node.parentId;
-      const siblings = favoriteEdit.tree
-        .filter(hasFavoriteNode)
-        .filter((r) => r.node.parentId === parentId);
+      const siblings = favoriteEdit.tree.filter(
+        (r) => r.node.parentId === parentId
+      );
       const pos = siblings.findIndex((r) => r.node.id === row.node.id);
       const swapPos = pos + direction;
       if (pos === -1 || swapPos < 0 || swapPos >= siblings.length) return;
@@ -539,23 +523,22 @@ export default function App() {
   // 軸4f：Ctrl+Shift+→（軸4hでAlt+→から変更）による再親化（インデント）。
   // 選択中の行を、同一親内の直前の兄弟（フォルダである場合のみ）の配下・末尾へ
   // 移動する。直前の兄弟が無い、またはフォルダでない場合は無効（何もしない）。
-  // Topは対象にならない。
   const indentFavoriteNode = useCallback(() => {
     // 軸4g：絞り込み中は再親化を無効化する。
     if (search.favoriteEditFilterText.length > 0) return;
     const row = favoriteEdit.tree[favoriteEdit.selected];
-    if (!row || row.kind === "top") return;
+    if (!row) return;
     const parentId = row.node.parentId;
-    const siblings = favoriteEdit.tree
-      .filter(hasFavoriteNode)
-      .filter((r) => r.node.parentId === parentId);
+    const siblings = favoriteEdit.tree.filter(
+      (r) => r.node.parentId === parentId
+    );
     const pos = siblings.findIndex((r) => r.node.id === row.node.id);
     if (pos <= 0) return;
     const prevSibling = siblings[pos - 1];
     if (prevSibling.kind !== "folder") return;
-    const newParentChildren = favoriteEdit.tree
-      .filter(hasFavoriteNode)
-      .filter((r) => r.node.parentId === prevSibling.node.id);
+    const newParentChildren = favoriteEdit.tree.filter(
+      (r) => r.node.parentId === prevSibling.node.id
+    );
     favoriteEdit.selectByKeyboard(row.key);
     search
       .moveFavoriteNodeTo(row.node.id, prevSibling.node.id, newParentChildren.length)
@@ -573,12 +556,12 @@ export default function App() {
   // 軸4f：Ctrl+Shift+←（軸4hでAlt+←から変更）による再親化（アウトデント）。
   // 選択中の行を、現在の親のさらに親（祖父母フォルダ）の直下へ、元の親のすぐ
   // 後ろの位置に移動する。現在の親が既にルート（FAVORITES_FOLDER_ID）の場合は
-  // これ以上outdentできないため無効。Topは対象にならない。
+  // これ以上outdentできないため無効。
   const outdentFavoriteNode = useCallback(() => {
     // 軸4g：絞り込み中は再親化を無効化する。
     if (search.favoriteEditFilterText.length > 0) return;
     const row = favoriteEdit.tree[favoriteEdit.selected];
-    if (!row || row.kind === "top") return;
+    if (!row) return;
     const parentId = row.node.parentId;
     if (parentId === FAVORITES_FOLDER_ID) return;
     const parentRow = favoriteEdit.tree.find(
@@ -586,11 +569,9 @@ export default function App() {
     );
     if (!parentRow || parentRow.kind !== "folder") return;
     const grandparentId = parentRow.node.parentId;
-    const grandparentChildren = favoriteEdit.tree
-      .filter(hasFavoriteNode)
-      .filter(
-        (r) => r.node.parentId === grandparentId && r.node.id !== row.node.id
-      );
+    const grandparentChildren = favoriteEdit.tree.filter(
+      (r) => r.node.parentId === grandparentId && r.node.id !== row.node.id
+    );
     const parentPos = grandparentChildren.findIndex(
       (r) => r.node.id === parentId
     );
@@ -639,12 +620,12 @@ export default function App() {
         return;
       }
       if (e.ctrlKey && e.key.toLowerCase() === "s") {
-        // Ctrl+Sはメモ本文編集エリアの確定保存専用。MemoPanelのcapture listenerが
-        // 本文フォーカス中だけ先に処理し、それ以外では何も実行しない。ここでは
-        // WebView2既定の「ページを保存」ダイアログだけを全画面で抑止する。
+        // Ctrl+Sはメモ本文編集エリアの確定保存専用。MemoManageView.tsxのcapture
+        // listenerが本文フォーカス中だけ先に処理し、それ以外では何も実行しない。
+        // ここではWebView2既定の「ページを保存」ダイアログだけを全画面で抑止する。
         e.preventDefault();
         e.stopPropagation();
-        // /memo の保存は、保存フィードバックも同時に更新する MemoPanel の
+        // /memo の保存は、保存フィードバックも同時に更新する MemoManageView.tsx の
         // capture listenerへ一本化する。
       } else if (e.ctrlKey && e.key === ",") {
         e.preventDefault();
@@ -667,8 +648,14 @@ export default function App() {
         e.preventDefault();
         if (!settingsEscapeHandlerRef.current?.()) closeSettings();
       } else if (e.key === "Escape" && memoEditOpen) {
+        // issue 0026 軸C：お気に入り画面・メモ画面は検索画面と同格のL1画面。
+        // 一覧側のEscapeはウィンドウを隠す（06-keyboard-interactions.md
+        // 「メモ画面」表10「一覧側 Esc ウィンドウを隠す」を参照。検索画面へ戻る
+        // 操作はヘッダーの「戻る」ボタン（マウス専用）のみ）。本文編集エリア
+        // フォーカス中のEscapeはMemoManageView.tsx自身のcapture listenerが
+        // 先に処理し一覧側へフォーカスを戻すため、ここへは到達しない。
         e.preventDefault();
-        closeMemoEdit();
+        memoFlushRef.current().catch(console.error).finally(() => hideWindow());
       } else if (favoriteEditOpen && search.pendingDeleteFavoriteFolder) {
         // 削除確認モーダル表示中は Escape のみキャンセル扱いにする（下の
         // favoriteEditOpen 単体の分岐より先に判定し、Escape でモーダルではなく
@@ -699,9 +686,12 @@ export default function App() {
         }
         switch (e.key) {
           case "Escape":
-            // 設定パネルと同様、Esc で検索ビューへ戻る（ヘッダーの「戻る」
-            // ボタンと同じ操作）。
-            closeFavoriteEdit();
+            // issue 0026 軸C：お気に入り画面は検索画面と同格のL1画面。Escapeは
+            // ウィンドウを隠す（06-keyboard-interactions.md「お気に入り画面」
+            // 表9「Esc(通常状態) ウィンドウを隠す」を参照）。検索画面へ戻る操作は
+            // ヘッダーの「戻る」ボタン（マウス専用、closeFavoriteEdit）のみ。
+            e.preventDefault();
+            hideWindow().catch(console.error);
             break;
           case "ArrowDown":
             e.preventDefault();
@@ -760,12 +750,10 @@ export default function App() {
             // window リスナー自体が favoriteEditOpen の間だけ生きているため、
             // 「編集ビューにフォーカスがある間のみ有効」という制約は自動的に
             // 満たされる（グローバルショートカットにはしない。00-requirements.md
-            // 「お気に入り編集ビュー」節を参照）。Top行は実体を持たないため
-            // リネーム対象外（row.kind === "top" のときは node を持たないため
-            // 何もしない）。
+            // 「お気に入り編集ビュー」節を参照）。
             e.preventDefault();
             const row = favoriteEdit.tree[favoriteEdit.selected];
-            if (row && row.kind !== "top") {
+            if (row) {
               setRenamingFavoriteNodeId(row.node.id);
             }
             break;
@@ -864,7 +852,6 @@ export default function App() {
   }, [
     showSettings,
     memoEditOpen,
-    closeMemoEdit,
     favoriteEditOpen,
     search.pendingCommand,
     search.cancelSystemCommand,
@@ -873,7 +860,6 @@ export default function App() {
     search.pendingDeleteFavoriteFolder,
     openSettings,
     closeSettings,
-    closeFavoriteEdit,
     favoriteEdit.tree,
     favoriteEdit.selected,
     favoriteEdit.moveSelection,
@@ -919,6 +905,11 @@ export default function App() {
   // prefixCommandMode・pathPasteWizardMode は rows を使わない別系統の一覧のため、
   // 従来通りそれぞれの件数をそのまま使う（ResultList.tsx は今回変更していないため、
   // baseLength という名前・意味は props としてそのまま渡し続ける必要がある）。
+  // issue 0026 軸C：/favorite・/memo は入力された時点で検索画面から離脱し、
+  // 別の全画面ビュー（favoriteEditOpen/memoEditOpen）へ即座に遷移するため、
+  // 検索画面のResultList・SearchBoxのキー操作は search.favoriteMode が真の
+  // 状態では描画・実行されない（旧・検索画面内の閲覧専用パネルは撤去済み）。
+  // そのため以下の各値・分岐から search.favoriteMode 依存の枝は取り除いている。
   const baseLength = search.clipboardMode
     ? clipboard.clipboardEntries.length
     : search.prefixCommandMode
@@ -927,15 +918,12 @@ export default function App() {
         ? search.wizardStep === "folderSelect"
           ? search.wizardFolders.length
           : 0
-        : search.favoriteMode
-          ? search.favoriteTree.length
-          : search.rows.length;
+        : search.rows.length;
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
     !search.clipboardMode &&
-    !search.pathPasteWizardMode &&
-    !search.favoriteMode;
+    !search.pathPasteWizardMode;
   const listLength = baseLength + (webSearchVisible ? 1 : 0);
 
   // 通常モードで現在選択中の行（rows[selected]）。rows に該当する行がない場合
@@ -943,12 +931,6 @@ export default function App() {
   // キーヒント表示・handleKeyDown の Enter/Shift+Enter 分岐の両方で、この行の
   // kind を見て判定する（詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を参照）。
   const selectedRow = search.rows[search.selected] ?? null;
-  // /favorite モード専用の選択中の行（フォルダ見出し行・アイテム行のどちらも
-  // ありうる。軸1で favoriteTree が選択ドメインになったため、search.selected を
-  // そのまま favoriteTree の添字として使える）。kind で分岐して扱う。
-  const selectedFavoriteRow = search.favoriteMode
-    ? (search.favoriteTree[search.selected] ?? null)
-    : null;
 
   // R-1 フェーズD-2: ↑↓キーによる選択は、通常モード（rows）・clipboardMode
   // （clipboard.clipboardEntries）については intent の更新のみで表現する
@@ -961,11 +943,6 @@ export default function App() {
   // （選択管理そのものは今回変更していない）。
   const moveSelection = useCallback(
     (direction: 1 | -1) => {
-      if (memoMode) {
-        // 本文切替前に下書きを確実に退避し、textareaへフォーカスを移さずに選択だけを動かす。
-        memo.flushDraft().then(() => memoSelection.moveSelection(direction)).catch(console.error);
-        return;
-      }
       const nextIndex =
         direction === 1
           ? Math.min(search.selected + 1, listLength - 1)
@@ -979,15 +956,6 @@ export default function App() {
         const entry = clipboard.clipboardEntries[nextIndex];
         if (entry) {
           search.selectRowByKeyboard(entry.id);
-        }
-        return;
-      }
-      if (search.favoriteMode) {
-        // 軸1：フォルダ見出し行・アイテム行の両方を対象に移動する
-        // （00-requirements.md「/favorite モード」節を参照）。
-        const row = search.favoriteTree[nextIndex];
-        if (row) {
-          search.selectRowByKeyboard(row.key);
         }
         return;
       }
@@ -1009,15 +977,10 @@ export default function App() {
       search.setSelected,
       search.clipboardMode,
       clipboard.clipboardEntries,
-      search.favoriteMode,
-      search.favoriteTree,
       search.selectRowByKeyboard,
       webSearchVisible,
       baseLength,
       search.rows,
-      memoMode,
-      memo.flushDraft,
-      memoSelection.moveSelection,
     ]
   );
 
@@ -1037,10 +1000,6 @@ export default function App() {
         // 「複数ステップのウィザード形式インタラクション」節を参照）。
         return;
       }
-      if (memoMode && e.key === "Enter") {
-        e.preventDefault();
-        return;
-      }
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -1053,18 +1012,13 @@ export default function App() {
         case "Enter": {
           if (e.shiftKey) {
             // Shift+Enter は格納フォルダを開く操作専用。ピン止めブロック・
-            // ファイル検索結果（rows の kind "pinned"/"file"）・/favorite モードの
-            // アイテム行以外（パス貼り付け候補・計算結果・URLエンコード/デコード
-            // 結果・システムコマンド候補・クリップボード履歴・プレフィックスコマンド
-            // 候補・Web検索行）はファイルパスを持たないため、該当する場合のみ実行する
+            // ファイル検索結果（rows の kind "pinned"/"file"）以外（パス貼り付け
+            // 候補・計算結果・URLエンコード/デコード結果・システムコマンド候補・
+            // クリップボード履歴・プレフィックスコマンド候補・Web検索行）は
+            // ファイルパスを持たないため、該当する場合のみ実行する
             // （00-requirements.md「ピン止め・お気に入り・メモ機能」節・
-            // 「格納フォルダを開く（Shift+Enter）」節を参照）。フォルダ見出し行では
-            // 無効（何もしない。00-requirements.md「/favorite モード」節を参照）。
-            if (search.favoriteMode) {
-              if (selectedFavoriteRow?.kind === "item") {
-                search.openContainingFolder(selectedFavoriteRow.file.path);
-              }
-            } else if (
+            // 「格納フォルダを開く（Shift+Enter）」節を参照）。
+            if (
               selectedRow &&
               (selectedRow.kind === "pinned" || selectedRow.kind === "file")
             ) {
@@ -1085,15 +1039,6 @@ export default function App() {
               search.selectPrefixCommand(
                 search.prefixCommandCandidates[search.selected]
               );
-            }
-          } else if (search.favoriteMode) {
-            // フォルダ見出し行では開閉をトグルする（▼クリックのイベント発火を
-            // 疑似的に模倣せず、onToggleCollapse を直接呼ぶ。00-requirements.md
-            // 「/favorite モード」節を参照）。アイテム行では従来通り起動する。
-            if (selectedFavoriteRow?.kind === "item") {
-              search.launchFile(selectedFavoriteRow.file.path);
-            } else if (selectedFavoriteRow?.kind === "folder") {
-              search.toggleFavoriteFolderCollapsed(selectedFavoriteRow.node.id);
             }
           } else if (selectedRow) {
             switch (selectedRow.kind) {
@@ -1146,10 +1091,6 @@ export default function App() {
       search.openContainingFolder,
       search.startShortcutWizard,
       search.addSearchFolderFromPaste,
-      search.favoriteMode,
-      search.toggleFavoriteFolderCollapsed,
-      selectedFavoriteRow,
-      memoMode,
     ]
   );
 
@@ -1162,13 +1103,14 @@ export default function App() {
   // 即時に hide() せず、一定時間後も本当にフォーカスが戻っていない場合のみ非表示にする。
   //
   // 設定画面表示中はこの自動非表示自体を適用しない（00-requirements.md「キー操作」＞
-  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。管理画面の
-  // お気に入り管理・メモ管理の表示中も同じ理由（検索UI自体が表示されていない）で適用
-  // しない。判定は viewRef（毎レンダーで最新の view を書き込む ref）で行う。
-  // 各全画面ビューの開閉関数はいずれも単一の
-  // view state を介するため、開閉の経路（歯車・編集アイコン・Ctrl+,・Esc・各ビューの
-  // 戻るボタン）を個別にフックする必要はなく、この ref を見るだけで全経路に
-  // 自動的に追従する。
+  // 「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。issue 0026
+  // 軸C：お気に入り画面・メモ画面は検索画面と同格のL1画面のため、この2画面は
+  // 検索画面と同じくフォーカスアウトで非表示にする（例外は設定画面のみ）。判定は
+  // viewRef（毎レンダーで最新の実効ビューを書き込む ref。favoriteEditOpen/
+  // memoEditOpen による遷移中の1フレームも取りこぼさない）で行う。各全画面ビューの
+  // 開閉関数はいずれも単一の view state を介するため、開閉の経路（歯車・Ctrl+,・
+  // Esc・各ビューの戻るボタン）を個別にフックする必要はなく、この ref を見るだけで
+  // 全経路に自動的に追従する。
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let blurTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1191,7 +1133,7 @@ export default function App() {
             const stillFocused = await getCurrentWindow()
               .isFocused()
               .catch(() => false);
-            if (stillFocused || viewRef.current !== "search") return;
+            if (stillFocused || viewRef.current === "settings") return;
             const store = storeRef.current;
             if (store) {
               await store.set(
@@ -1286,6 +1228,8 @@ export default function App() {
           onStartRename={setRenamingFavoriteNodeId}
           onCancelRename={cancelRenameFavoriteNode}
           onConfirmRename={confirmRenameFavoriteNode}
+          onLaunchFile={search.launchFile}
+          onStartCreateFolderAtRoot={startCreateFolderAtRoot}
           onClose={closeFavoriteEdit}
           version={appVersion}
         />
@@ -1294,7 +1238,17 @@ export default function App() {
   }
 
   if (memoEditOpen) {
-    return <MemoManageView onClose={closeMemoEdit} onEdit={editMemoFromManage} onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler} version={appVersion} />;
+    return (
+      <MemoManageView
+        manage={memoManage}
+        onClose={closeMemoEdit}
+        onCopyAndClose={copyMemoAndClose}
+        onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler}
+        initialLeftWidth={memoPaneWidth}
+        onPaneResizeEnd={handleMemoPaneWidthChange}
+        version={appVersion}
+      />
+    );
   }
 
   return (
@@ -1328,10 +1282,6 @@ export default function App() {
         onKeyDown={handleKeyDown}
         disabled={search.searchOverlayActive}
         onOpenSettings={openSettings}
-        favoriteEditVisible={search.favoriteMode}
-        onOpenFavoriteEdit={openFavoriteEdit}
-        memoEditVisible={memoMode}
-        onOpenMemoEdit={openMemoEdit}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
         }
@@ -1414,39 +1364,6 @@ export default function App() {
             name={search.wizardName}
             onNameChange={search.setWizardName}
           />
-        ) : memoMode ? (
-          <MemoPanel
-            nodes={memo.nodes}
-            documents={memo.documents}
-            filterText={memoFilterText}
-            selectedId={selectedMemoRowId}
-            document={memo.document}
-            onSelect={(id, focusEditor) => { memo.flushDraft().then(() => { if (focusEditor) setMemoEditorFocusRequested(true); memoSelection.selectByKey(id); }).catch(console.error); }}
-            onContentChange={memo.updateContent}
-            onSave={memo.saveFinal}
-            onDiscardDraft={memo.discardDraft}
-            onCopyAndClose={copyMemoAndClose}
-            onNodesChanged={memo.refresh}
-            initialLeftWidth={memoPaneWidth}
-            onResizeEnd={handleMemoPaneWidthChange}
-            onToggleFolder={(id, collapsed) => { invoke("set_favorite_folder_collapsed", { id, collapsed }).then(() => memo.refresh()).catch(console.error); }}
-            onMoveSelection={moveSelection}
-            focusEditor={memoEditorFocusRequested}
-            onEditorFocused={() => setMemoEditorFocusRequested(false)}
-            onEditorFocusChange={setMemoEditorFocused}
-            onExitEditor={() => inputRef.current?.focus()}
-            renamingNodeId={memoRenamingNodeId}
-            onRenamingNodeIdChange={setMemoRenamingNodeId}
-          />
-        ) : search.favoriteMode ? (
-          <FavoriteListPanel
-            tree={search.favoriteTree}
-            selected={search.selected}
-            onSelectRowByKey={search.selectRowFromHover}
-            onToggleCollapse={search.toggleFavoriteFolderCollapsed}
-            onToggleFavorite={search.toggleFavorite}
-            onLaunchFile={search.launchFile}
-          />
         ) : (
           <ResultList
             rows={search.rows}
@@ -1487,25 +1404,12 @@ export default function App() {
             search.pathPasteWizardMode ? search.wizardStep : null
           }
           prefixCommandMode={search.prefixCommandMode}
-          memoMode={memoMode}
-          memoDocumentSelected={selectedMemoRow?.type === "memo"}
-          memoSelectedKind={
-            selectedMemoRow?.type === "folder"
-              ? "folder"
-              : selectedMemoRow?.type === "memo"
-                ? "memo"
-                : null
-          }
-          memoEditorFocused={memoEditorFocused}
-          memoRenaming={memoRenamingNodeId !== null}
-          memoSaveAvailable={memoHasDraft}
           settingsShortcutAvailable={settingsShortcutAvailable}
           selectionAvailable={listLength > 0}
           registerDialogOpen={search.favoriteDialogTarget !== null}
           updateDialogOpen={updater.dialog !== null}
           updateInstalling={updater.dialog?.kind === "installing"}
           selectedRowKind={selectedRow?.kind ?? null}
-          favoriteSelectedKind={selectedFavoriteRow?.kind ?? null}
           version={appVersion}
         />
       )}
