@@ -267,8 +267,9 @@ win-launcher/
 
 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md)
 
+- 設定画面はどのL1画面（検索／お気に入り／メモ）からでも開け、閉じると開いた元の画面へ戻る（戻り先は他のL1画面と異なり固定ではない）。設定は多重に開けないため、記憶は履歴スタックではなく1段（`previousViewRef`）で足りる。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#settings-return-view)
 - Ctrl+DはAppのwindowハンドラ1箇所で処理する。全画面ビューが独自の可視クエリを持つ場合は、画面固有のkeydownを追加せず`localQueryClearHandlerRef`へ消去処理を登録する。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)
-- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。検索以外の全画面ビューでは `viewRef` を見て自動非表示を適用しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
+- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。**設定画面表示中のみ**この自動非表示を適用しない（お気に入り・メモ画面は検索画面と同じく自動非表示の対象）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
 - モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **`external-design/01-screen-transitions.md#modal-key-policy`**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
 - 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#search-overlay-active-consolidation)
@@ -320,12 +321,14 @@ win-launcher/
 - メモ本文は`MemoDocument`としてツリーとは別に保存し、フロントエンドからstoreへ直接書き込まない。保存はRustコマンドへ一本化し、`expectedRevision`で競合を検出する。お気に入り配列と本文マップを同時に扱う場合のロック順はFavoriteNodes → MemoDocumentsに固定する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-document-persistence)
 - メモ削除は通常ルートではゴミ箱への論理削除、ゴミ箱内では子孫本文を含む完全削除とする。予約ルート自身は移動・リネーム・削除・ドラッグ対象にしない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-trash-lifecycle)
 - お気に入り管理とメモ管理は`nodeTree`／`useTreeEditSelection`／入力部品に加え、キー伝播・drop位置・循環移動・移動先計算を`treeEditUtils`で共有する。固定行モデルと更新契約が異なるため、行描画・D&Dイベント・更新コマンドは専用実装を保ち、共有層へ機能固有条件を持ち込まない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-edit-tree-boundary)
+- 設定画面と往復してもコンポーネントがアンマウントされる管理画面では、絞り込み文字列・選択・作成/リネーム中状態を、その管理画面を呼び出す側（`App.tsx` レベルのstate、または `App.tsx` から呼ぶフック）で保持する。管理画面コンポーネント自身のローカルstateにすると、設定往復のたびに失われる。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#screen-scoped-state-persistence)
 - 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#search-exclusion)
 - `dragDropEnabled: false` によりOSネイティブD&Dは無効化済み。HTML5 D&Dによる並び替えとOSからのファイルドロップ受け入れは現状の実装では二者択一の関係にある。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#dnd-reordering)
 - `/recent` 等の一覧に新しい行アクション（★・メモ等）を追加する場合、`recentMode` を理由にした除外分岐を新設しない。表示可否を切り替える必要がある場合は既存の合成フラグ（`pinnedVisible` のような「複数モードを包含した1つの真実」）を再利用する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#pinning-from-recent)
 - ツリー構造を持つ一覧（お気に入り・メモ等）で「順序がおかしい」「意図した項目と違うものが選ばれる」報告を受けた場合、まずアルゴリズム（平坦化・ソート）自体を疑う前に、同名・同一表示内容のノードが複数存在してユーザーが取り違えていないかを確認する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#duplicate-folder-name-validation)
 - `/favorite` モードに前倒し実装していた上下移動ボタン・フォルダ削除アイコンは、お気に入り管理画面の完成時に撤去済みである。一覧閲覧とツリー管理の責務を再び混在させない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-mode-provisional-features)
 - 複数の予約ルートを1つのコマンドで扱う場合、単一ルートへの所属を先に要求しない。許可するルート集合への所属を検証してから、所属ルート別の処理を選ぶ。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#multi-root-command-validation)
+- 一覧の先頭に「ルート自体を表す」表示専用の仮想行を追加する設計は避ける。ルートに対する操作（新規フォルダ作成等）は、絞り込みバー常設アイコン＋行内アイコンの2系統に一本化し、実体を持たない特別な行を選択状態・intentの対象に含めない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-edit-virtual-root-row-removed)
 
 ### ピン止め・お気に入りアイコンとツールチップ
 
@@ -382,6 +385,7 @@ win-launcher/
 - OSのクリップボードから実ファイルパス（CF_HDROP）を読む必要が生じた場合、WebView2の `clipboardData` 経由では取得できないことを前提に、Rust側で直接クリップボードを読み直す設計にする。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-detection)
 - パス貼り付け候補に新しい操作を追加する場合は、通常モードの `ResultRow` に行種別として統合し、独立した選択state・オフセット計算・別のアイコンアセットを新設しない。候補の状態アイコンは既存の `PinIcon`／`FavoriteIcon` 等を再利用し、輪郭／塗りつぶしで状態を表す。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-action-rows)
 - パス貼り付け候補で1操作を確定する経路は、`closeWindow()` の `cleanup` 内で非同期書き込みを開始する。候補表示とは別ドメインの `pathPasteWizardMode` は、表示中に非同期一覧差し替えを行わない限り生インデックス選択を維持する。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#paste-action-close-order)
+- 1つの共有コマンドを、完了フィードバック（トースト通知等）の要否が異なる複数の呼び出し元から使う場合、作成・実行処理そのものを呼び出し元ごとに複製せず、コマンドへ `notify: bool` のような1パラメータを追加して入口側で使い分ける。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#entry-point-notify-flag)
 - 複数ステップのウィザード形式インタラクションを追加する場合、キー操作は window レベルのリスナーに一本化し、個別ステップのローカル `onKeyDown` を併存させない（二重ハンドラによるリグレッションの再発を防ぐため）。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#wizard-keydown-unification-history)
 - Windowsのファイルシステム／シェル関連の機能でサードパーティクレートに不具合が疑われた場合、まず本プロジェクトが一貫して採る「Windows標準API直接呼び出し」への切り替えを検討する。 → 詳細: [path-paste.md](docs/internal-design/path-paste.md#mslnk-to-shell-link-history)
 
@@ -441,7 +445,7 @@ win-launcher/
 | `add_favorite(path, name, folderId)` | 指定したパス・表示名で `file` 型ノードを `folderId` 配下に1件追加する。同一パス文字列が「お気に入り」ツリー配下に既に登録済みの場合は何もせず現在の配列をそのまま返す |
 | `add_favorite_folder(name, parentId)` | `parentId` 配下に `folder` 型ノードを1件追加する。空文字列、または同一親配下に同名フォルダが既に存在する場合はエラーを返して保存しない |
 | `rename_favorite_node(id, newName)` | 指定ノード（フォルダ・アイテムいずれも可）の `name` を変更する。空文字列、または同一親・同一種別内に同名ノードが既に存在する場合はエラーを返して保存しない。予約フォルダ（ピン止め／お気に入り／メモ）はリネームできない |
-| `set_favorite_folder_collapsed(id, collapsed)` | 指定ノードの開閉状態（`collapsed`）を設定する。`/favorite` ブラウジングとお気に入り編集ビューで共有される |
+| `set_favorite_folder_collapsed(id, collapsed)` | 指定ノードの開閉状態（`collapsed`）を設定する。お気に入り編集ビュー・メモ管理画面（フォルダノード）で共有される |
 | `remove_favorite(id)` | 指定ノードIDのエントリを1件削除する（子孫を持つ `folder` 型ノードのカスケード削除は非対応） |
 | `remove_favorite_folder(id)` | 指定フォルダノード自身と、その配下（再帰）を丸ごと削除する。実ファイル自体は操作しない。予約フォルダ（ピン止め／お気に入り／メモ）は削除できない |
 | `move_favorite_node_to(id, newParentId, targetIndex)` | 指定ノードを `newParentId` 配下の `targetIndex` の位置へ移動する（並び替え・再親化を同一ロジックで扱う）。予約フォルダ自体は移動できず、移動先は「お気に入り」ツリー配下の `folder` 型ノードに限られ、循環参照・同名重複が生じる場合はエラーを返して保存しない |
@@ -469,7 +473,7 @@ win-launcher/
     - 検索一覧で選択操作を「キーボード操作」と「マウスホバー」に分離しているロジック（ホバー抑制）は [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
     - 非同期呼び出しの世代 ID 管理とフォーカス回復時の再取得は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture) を、ウィンドウを閉じる処理は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design) を参照。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれのポインタ先の規約に従うこと
     - ファイル起動やコピー等でウィンドウを閉じる直前の空クエリへの変化でも `search_files("")` を抑止しない設計の経緯は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#suppress-next-search-ref-removed) を参照
-  - `useTreeEditSelection(tree, resetKey, resetWhen)`：お気に入り管理画面・メモ画面・メモ管理画面の選択intentを共有管理する。管理画面ツリーのキーボード／ホバー入口分離とホバー抑制も [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
+  - `useTreeEditSelection(tree, resetKey, resetWhen)`：お気に入り編集ビュー（`useFavoriteEditSelection.ts` 経由）・メモ管理画面（`useMemoManage.ts` 経由）の選択intentを共有管理する。管理画面ツリーのキーボード／ホバー入口分離とホバー抑制も [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
   - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う
   - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md#auto-update) を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ

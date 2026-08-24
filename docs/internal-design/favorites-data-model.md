@@ -63,11 +63,17 @@ Rust 側はお気に入り配列とメモ本文マップを別々の `Mutex` で
 
 ### お気に入り管理とメモ管理の共通化境界
 
-お気に入り管理とメモ管理は操作パターンを揃えるが、行コンポーネント全体は共通化しない。共有するのは、ツリー平坦化の `nodeTree.ts`、選択intent・ホバー・通常矢印移動を扱う `useTreeEditSelection`、入力部品の `RenameInput`／`CreateFolderInlineRow`、純粋計算の `treeEditUtils.ts` など、機能固有の分岐を持たない薄い契約に限定する。`useFavoriteEditSelection` はお気に入りの仮想先頭行を与える薄いラッパーである。
+お気に入り管理とメモ管理は操作パターンを揃えるが、行コンポーネント全体は共通化しない。共有するのは、ツリー平坦化の `nodeTree.ts`、選択intent・ホバー・通常矢印移動を扱う `useTreeEditSelection`、入力部品の `RenameInput`／`CreateFolderInlineRow`、純粋計算の `treeEditUtils.ts` など、機能固有の分岐を持たない薄い契約に限定する。`useFavoriteEditSelection` は `useTreeEditSelection` を呼ぶ薄いラッパーであり、issue 0026での仮想固定行廃止（[favorite-edit-virtual-root-row-removed](#favorite-edit-virtual-root-row-removed)）後は行を合成せず、選択の初期値・リセット先は「先頭の実データ行」（無ければ空センチネル）になる。
 
 `treeEditUtils.ts` は、入力中にwindowショートカットへ伝播させないキー判定、相対Y位置からのdrop位置判定、循環移動判定、drop先から親ID・挿入位置を求める計算を共有する。画面側は固定行を `TreeDropTarget.fixedParentId`、折りたたみ中も保持すべき実子数を `directChildCount` へ変換するだけにし、同じ計算を再実装しない。
 
-`FavoriteEditTree` と `MemoManageView` の行描画・HTML5 D&Dイベント処理・更新コマンドは専用実装のまま保つ。お気に入りは仮想 `top` 行、メモは永続化された通常ルートとゴミ箱ルートという異なる固定行モデルを持ち、メモ側には移動・復元・完全削除・本文確定もあるためである。共有層は純粋計算の最小契約に留め、機能別の操作可否や副作用を持ち込まない。
+`FavoriteEditTree` と `MemoManageView` の行描画・HTML5 D&Dイベント処理・更新コマンドは専用実装のまま保つ。メモは永続化された通常ルートとゴミ箱ルートという固定行モデルを持ち、移動・復元・完全削除・本文確定もあるため、お気に入り（仮想行を持たず通常ルート1つのみ）とは固定行の扱いが異なる。共有層は純粋計算の最小契約に留め、機能固有の操作可否や副作用を持ち込まない。
+
+<a id="screen-scoped-state-persistence"></a>
+
+### 設定画面との往復をまたぐ画面スコープでの状態保持
+
+絞り込み文字列・選択・（メモは）作成中／リネーム中状態は、いずれも設定画面との往復でコンポーネントがアンマウントされても保持されるよう、画面のスコープ（`FavoriteEditView.tsx` の呼び出し元である `App.tsx` レベル／メモは `useMemoManage.ts` フック）で管理する（issue 0026「画面スコープでの状態保持」、PO承認済み）。フォルダの開閉状態（`FavoriteNode.collapsed`）は永続化されたサーバー側データのためこの対象に含まれない。
 
 <a id="search-exclusion"></a>
 
@@ -151,19 +157,6 @@ Rust 側はお気に入り配列とメモ本文マップを別々の `Mutex` で
 
 `remove_favorite_folder`（削除確認モーダル `FavoriteFolderDeleteModal.tsx` 含む）は編集ビュー側の削除機能がそのまま再利用しているため存続する。一方 `move_favorite_node`（隣接スワップ専用の up/down 方式）は、編集ビューが D&D 専用の新規コマンド `move_favorite_node_to` を使うようになったことで呼び出し元が無くなったため、Rust コマンド自体も削除した（他に呼び出し箇所が無いことを確認済み）。
 
-<a id="favorite-edit-virtual-root-row"></a>
-
-### お気に入り編集ビューの仮想固定行（実装。内部識別子は `top`）
-
-**仮想固定行の定義・目的・制約**（実体を持たない／リネーム・削除・★解除の対象外／絞り込み中も表示を維持／既存センチネル値 `FAVORITES_FOLDER_ID` を流用する方針／共有データを汚染しない方針）は、外部設計書 `external-design/03-data-model.md#favorite-edit-virtual-root-row` へ移設した。本節には実装上の対応と注意点のみを記す。
-
-実装箇所は `FavoriteEditTree.tsx`／`useFavoriteEditSelection.ts`。
-
-**⚠️ 表示名と内部識別子が一致していない**：実装時点（段階3・軸4f）では英語表記「Top」で仮実装し、`kind: "top"`／`FAVORITE_TOP_ROW_KEY`（`"favoriteTop"`）という内部識別子で管理していた。その後の手動GUIテストの指摘を受け、**表示文言のみ**を「お気に入り」へ変更した（コミット `65db645`）。**内部識別子（`kind: "top"`／`FAVORITE_TOP_ROW_KEY`／`useFavoriteEditSelection.ts` 内の `TOP_ROW` 変数名）はコード全体で変更していない。** この行に関わるコードを読む際は、表示上「お気に入り」でも内部的には `top` という名前で扱われている点に注意すること。表示名の変更に合わせてコード上の識別子名まで機械的に追従させる必要はない、という前例でもある。
-
-**`resolveSelected` の `{type:"top"}` と自然に一致**：編集ビューの選択状態は [result-list-and-selection.md](result-list-and-selection.md#selection-is-derived) と同じ `resolveSelected` の実装をそのまま再利用している。`{type:"top"}` intent が常にインデックス0を返す既存仕様と、仮想固定行をツリー配列の先頭に合成する設計が一致したため、`resolveSelected` 自体の実装変更は不要だった。
-
-**合成の実装**：`useFavoriteEditSelection.ts` が `FavoriteEditTreeRow[]` として `[仮想固定行, ...favoriteTree]` を都度合成する（`useSearch.ts` の共有 `favoriteTree` 自体は変更しない）。
 
 ## 経緯
 
@@ -219,6 +212,14 @@ Rust 側はお気に入り配列とメモ本文マップを別々の `Mutex` で
 
 修正後は、対象がメモルートまたはゴミ箱ルートのどちらかに属することを検証したうえで、所属ルートに応じて論理削除／完全削除を選ぶ。完全削除時は対象フォルダの子孫IDも収集し、対応する`MemoDocument`を同時に削除する。通常ツリーのメモ・フォルダ、ゴミ箱のメモ単体、ゴミ箱のフォルダと子孫メモの3経路をRust単体テストで固定した。
 
+<a id="favorite-edit-virtual-root-row-removed"></a>
+
+### お気に入り編集ビューの仮想固定行（issue 0026で廃止）
+
+段階3・軸4fで、編集ビューのツリー先頭に表示専用の仮想固定行（内部識別子 `kind: "top"`／`FAVORITE_TOP_ROW_KEY`、`useFavoriteEditSelection.ts` が `[仮想固定行, ...favoriteTree]` を都度合成）を実装していたが、issue 0026（メモ・お気に入り画面統合）でPO承認のうえ廃止した（`FAVORITE_TOP_ROW_KEY` 定数・`kind: "top"` 型・関連する合成ロジックはコードから完全に削除済み）。
+
+新規フォルダ作成の導線は、画面最上部のローカル絞り込み入力欄の右側に常設する「新規フォルダ」アイコン（お気に入りルート直下へ作成）と、行内の作成アイコン（選択中のフォルダ配下、またはアイテム選択時はその親フォルダ直下）の2系統に一本化した。内部のお気に入りルート（予約フォルダ）自体は [reserved-folders](#reserved-folders) の通り維持している。仮想固定行が担っていた「ルート参照に予約フォルダの既存IDをそのまま使う」という技術判断も、[reserved-folders](#reserved-folders) の一般原則にそのまま含まれるため、廃止に伴う技術的な穴は生じていない。外部設計書側の対応する節（`external-design/03-data-model.md#favorite-edit-virtual-root-row`）も削除済み。
+
 ## 今後の指針
 
 > 外部設計相当の指針（予約フォルダの固定ID・Rust 側での二重バリデーション・同名フォルダ禁止の理由・メモ機能実装時の再利用判断）は、外部設計書 `external-design/03-data-model.md` へ移設した。以下には実装上の指針のみを残す。
@@ -228,3 +229,4 @@ Rust 側はお気に入り配列とメモ本文マップを別々の `Mutex` で
 - 新しい行の種類（★お気に入り・メモ等）を追加する場合、個別のオフセット変数は新設しない（詳細は [result-list-and-selection.md](result-list-and-selection.md#adding-a-row-kind) を参照）
 - メモ機能でフォルダ分類（ツリー構造）を持たせる場合、再利用する実装は `is_descendant_of`／`groupNodesByParent`+`walkGroupedTree`／配置先選択 UI の3点（判断基準は外部設計書側を参照）
 - 複数の予約ルートを1つのコマンドで扱う場合、単一ルートへの所属を先に要求しない。許可するルート集合への所属を検証してから、所属ルート別の処理を選ぶ
+- 一覧の先頭に「ルート自体を表す」表示専用の仮想行を追加する設計は避ける（[favorite-edit-virtual-root-row-removed](#favorite-edit-virtual-root-row-removed) で撤去済み）。ルートに対する操作（新規フォルダ作成等）は、絞り込みバー常設アイコン＋行内アイコンの2系統に一本化し、実体を持たない特別な行を選択状態・intentの対象に含めない

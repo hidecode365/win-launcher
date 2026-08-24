@@ -83,6 +83,10 @@ Windows のトースト通知には `tauri-plugin-notification`（Tauri 公式�
 
 `show_toast(app, message)` が `app.notification().builder().title("WinLauncher").body(message).show()` を呼ぶだけの薄いヘルパー。検索フォルダ追加・ショートカット作成は各Rustコマンドから、ピン止め・お気に入りは保存成功後にフロントエンドが `show_path_paste_toast` コマンドを呼んで通知する。失敗（通知権限なし等）は無視する（トーストはあくまで補助的なフィードバックであり、失敗しても操作自体は成功しているため）。`capabilities/default.json` に `notification:default` permission が必要。
 
+<a id="entry-point-notify-flag"></a>
+
+**入口別の通知要否分離（`notify: bool` パラメータ）**：1つの共有コマンドを、完了フィードバックの要否が異なる複数の呼び出し元から使う場合（例：`add_memo` は検索ボックスの `/memo` クイック作成——ウィンドウが閉じてフィードバックが必要——と、メモ管理画面内の作成アイコン——ツリーへの反映と選択移動自体がフィードバックを兼ね、トーストは冗長——の両方から呼ばれる）、作成処理そのものを呼び出し元ごとに複製せず、コマンドへ `notify: bool` パラメータを1つ追加し、内部で `show_toast` の呼び出しを条件分岐する。呼び出し元は自分の文脈に応じて `true`/`false` を渡すだけでよい。この設計は `add_memo`（`main.rs`）が最初の適用例。同様の非対称（一部の呼び出し元だけウィンドウを閉じる／画面が切り替わる）を持つ共有コマンドを新設する場合、個別のフラグ乱立ではなく、この1パラメータへの集約を優先する。
+
 <a id="path-paste-candidate-and-recent-mode"></a>
 
 ### `pathPasteCandidate` と `recentMode` の関係（検証済み・追加対応不要）

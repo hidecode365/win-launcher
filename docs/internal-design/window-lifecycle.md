@@ -14,9 +14,17 @@
 
 **導入経緯**：お気に入り編集ビュー（段階3・軸4a）を追加する以前は、検索画面と設定画面の二択を単一の `boolean`（`showSettings`）で管理していた。3枚目のビューは `boolean` の二値では表現できないため、文字列リテラルの Union 型（enum 相当）へ変更した。
 
-**既存分岐との後方互換**：`showSettings` という名前で `boolean` を直接参照する既存分岐が多数あったため、`view` の導入後も `const showSettings = view === "settings"` という派生値をそのまま残し、呼び出し側の書き換えを最小限にとどめた。同様に、管理画面判定用の `favoriteEditOpen = view === "favoriteEdit"`／`memoEditOpen = view === "memoEdit"` も派生値として用意している。フォーカスアウト自動非表示の適用除外条件（[focus-out-auto-hide](#focus-out-auto-hide) 参照）も、旧来「`showSettings` のときだけ除外」だったものを「検索ビュー（`view === "search"`）以外では除外」という条件へ一般化した。
+**既存分岐との後方互換**：`showSettings` という名前で `boolean` を直接参照する既存分岐が多数あったため、`view` の導入後も `const showSettings = view === "settings"` という派生値をそのまま残し、呼び出し側の書き換えを最小限にとどめた。同様に、管理画面判定用の `favoriteEditOpen = view === "favoriteEdit"`／`memoEditOpen = view === "memoEdit"` も派生値として用意している。フォーカスアウト自動非表示の適用除外条件は現在「設定画面のみ除外」（[focus-out-auto-hide](#focus-out-auto-hide) 参照）。issue 0026（お気に入り・メモ画面のUI State昇格）に伴い、旧来の「検索ビュー以外では除外」という条件から反転している。
 
 **今後の指針**：5枚目以降の全画面ビューを追加する場合は、`MainView` の Union 型へ新しい文字列リテラルを1つ追加するだけにすること。独立した `boolean` state（かつての `showSettings` のような形）を新設しない。3画面化のときに二値では表現しきれず enum 化した経緯を繰り返さないため。
+
+<a id="settings-return-view"></a>
+
+### 設定画面からの復帰先（`previousViewRef`）
+
+設定画面はどのL1画面（検索／お気に入り／メモ）からでも開けるが、戻り先は固定（常に検索画面）ではなく、開いた時点の画面を記憶して戻す（issue 0026 軸C-2、PO承認済み）。
+
+実装は `App.tsx` の `previousViewRef`（`useRef<MainView>("search")`）1つのみ。`openSettings()` が呼ばれた時点の `viewRef.current`（実効ビュー。[main-view-enum](#main-view-enum) 参照）を書き込み、`closeSettings()` は `setView(previousViewRef.current)` で書き戻す。設定画面は多重に開けない（同時に開ける設定画面は常に1つ）ため、履歴スタックのような多段構造は不要で、1段の記憶で足りる。
 
 <a id="local-query-clear-dispatch"></a>
 
@@ -24,7 +32,9 @@
 
 Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwindow `keydown`ハンドラ1箇所で処理する。メイン検索の`search.query`は常に`search.setQuery("")`で消去し、全画面の管理ビューが独自の可視クエリを持つ場合は、表示中のビューが`localQueryClearHandlerRef`へ消去処理を登録する。同じキーのwindowリスナーを画面側へ追加しない。
 
-お気に入り管理画面は`favoriteEditFilterText`、メモ管理画面はコンポーネントローカルの`filterText`を使う。両画面とも`useLayoutEffect`で同じ登録口へ`setFilterText("")`相当を登録し、アンマウント時に解除する。layout effectを使うのは、ビューのDOMが表示されてから通常effectが実行されるまでの間に登録が空となる時間窓を作らないためである。
+お気に入り管理画面は`favoriteEditFilterText`（`App.tsx`が保持）、メモ管理画面は`useMemoManage`フック（`App.tsx`が`useMemoManage(memoEditOpen)`として呼び出す）が返す`filterText`を使う。issue 0026（画面スコープでの状態保持、PO承認済み）により、メモ側もお気に入り側と同じく設定画面との往復でコンポーネントがアンマウントされても値を保持する`App.tsx`レベルへ引き上げ済み（以前はメモ管理ビュー自身のコンポーネントローカルstateだった）。
+
+⚠️ **登録に使うeffectの種類が両画面で異なる**：お気に入り管理画面（`FavoriteEditView.tsx`）は`useLayoutEffect`で登録するが、メモ管理画面（`MemoManageView.tsx`）は通常の`useEffect`で登録している。layout effectを使う目的（ビューのDOMが表示されてから通常effectが実行されるまでの間に登録が空となる時間窓を作らない）に照らすと、メモ側は理論上この時間窓を持ったままであり、両画面を同一パターンとして揃えるかどうかは未検討。新たな不具合ではなく、500_リリース前作業でのドキュメント突き合わせ中に発見した既存の実装差分であるため、この節ではその存在のみを記録する。
 
 導入前は共通ハンドラが`search.setQuery("")`だけを呼び、管理画面の絞り込みstateへ経路が無かった。そのためフッターにはCtrl+Dが表示される一方、メモ管理・お気に入り管理のどちらでも可視の絞り込み文字列が残っていた。複数のクエリstateを持つ画面を今後追加する場合も、共通ハンドラへ画面名の分岐とsetterを直接列挙せず、この登録口を使う。
 
@@ -36,7 +46,7 @@ Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwi
 
 - WebView2 はウィンドウ内操作（設定パネルへの切替による DOM 入れ替え、ドラッグ開始など）でも一時的にフォーカス喪失を通知することがあるため、即時 `hide()` はしない
 - フォーカス喪失通知後 150ms 待ち、`isFocused()` で再確認してなお非フォーカスの場合のみ `hide()` する（誤って隠れるのを防ぐデバウンス処理）
-- **設定画面・お気に入り管理・メモ管理ではこの自動非表示を適用しない**（設定画面の要件詳細は 00-requirements.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカス喪失の検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結し、`viewRef.current !== "search"` なら非表示処理を中止する
+- **設定画面表示中のみこの自動非表示を適用しない**（要件詳細は 00-requirements.md「キー操作」＞「フォーカスアウト時自動非表示の例外（設定画面表示中）」節を参照）。フォーカス喪失の検知・`hide()` の呼び出しはいずれも Rust 側を経由せず `App.tsx` の `onFocusChanged` 内で完結し、`viewRef.current === "settings"` なら非表示処理を中止する。**お気に入り画面・メモ画面は例外対象に含まれず、検索画面と同じ自動非表示が適用される**（issue 0026「フォーカスアウト時自動非表示の例外範囲」、PO承認済み）。旧来は「検索ビュー以外では除外」（設定画面・お気に入り・メモの3画面すべてが例外）だった条件を、「設定画面のみ除外」へ反転させた
   - `App.tsx` のフォーカス監視 `useEffect` は依存配列が空（マウント時に一度だけ登録）のため、`view` state を直接クロージャで参照すると初回値（`"search"`）に固定される。これを避けるため、毎レンダーで最新の `view` を書き込む `viewRef`（`useRef`）を用意し、150ms後の再確認に使う
   - 各全画面ビューの開閉は単一の `view` state を更新する関数へ一本化されているため、`viewRef` を見るだけで歯車・編集アイコン・`Ctrl+,`・`Esc`・戻るボタンの全経路へ追従する
   - 管理画面から検索画面へ戻った直後の最初のフォーカスアウトから、通常の非表示挙動に戻る。追加のリセット処理は不要
@@ -180,6 +190,12 @@ const closeWindow = useCallback(
 ファイル起動やコピー等でウィンドウを閉じる直前の `setQuery("")` による空クエリへの変化でも、`fileSearchEnabled` が `true` なら通常通り `search_files("")` を呼ぶ（抑止しない）。この呼び出しは `hideWindow()` でウィンドウが非表示になった後（ユーザーからは見えない状態）に解決するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、常に最新の frecency 順一覧（通常表示）が即座に見える状態になる。
 
 かつてはこの空クエリへの変化を「ウィンドウを閉じるだけなら不要な処理」として `suppressNextSearchRef` で1回分だけ抑止していたが、抑止した分を再取得するタイミングがどこにも存在せず、次にウィンドウを再表示した時に検索結果エリアが空のまま固まって見える不具合（クエリを何か入力するまで復旧しない）を引き起こしていたため、このフラグ自体を廃止した。
+
+<a id="focus-out-exception-range-reversal"></a>
+
+### フォーカスアウト自動非表示の例外範囲の反転（issue 0026）
+
+お気に入り編集ビュー・メモ管理画面が検索画面の子状態（`/favorite`・`/memo`ブラウジング）だった段階では、フォーカスアウト時の自動非表示は「検索ビュー（`view === "search"`）以外では除外」、すなわち設定画面・お気に入り・メモの3画面すべてが例外対象だった。issue 0026でお気に入り・メモ画面を検索・設定画面と同格のL1 UI Stateへ昇格させたことに伴い、PO承認のうえ例外条件を「設定画面のみ除外」へ反転させた。お気に入り・メモ画面は検索画面と同じくフォーカスアウトで自動的に隠れるようになった（[focus-out-auto-hide](#focus-out-auto-hide) が現在の実装）。
 
 ## 今後の指針
 
