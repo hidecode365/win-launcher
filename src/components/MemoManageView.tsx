@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { UseMemoManageResult, MemoManageRow } from "../hooks/useMemoManage";
 import { MEMO_HEADER_CREATE_ANCHOR } from "../hooks/useMemoManage";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
@@ -73,7 +73,7 @@ export function MemoManageView({
   const [saveFeedback, setSaveFeedback] = useState(false);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onRegisterLocalQueryClearHandler(() => manage.setFilterText(""));
     return () => onRegisterLocalQueryClearHandler(null);
   }, [manage.setFilterText, onRegisterLocalQueryClearHandler]);
