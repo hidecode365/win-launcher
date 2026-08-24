@@ -127,6 +127,15 @@ export function MemoManageView({
         event.preventDefault();
         event.stopImmediatePropagation();
         if (hasDraft) saveWithFeedback().catch(console.error);
+      } else if (event.ctrlKey && event.key.toLowerCase() === "d") {
+        // issue 0026 補足修正：本文編集エリアにフォーカス中はCtrl+Dを無効化し、
+        // 本文・ローカル絞り込みのいずれも変更しない
+        // （06-keyboard-interactions.md表9「本文編集エリア｜Ctrl+D｜無効」）。
+        // stopImmediatePropagationにより、App.tsx側のbubbleフェーズCtrl+D
+        // ハンドラ（クエリ全クリア）へ到達させない。preventDefaultはCtrl+Sと
+        // 同様、ブラウザ既定動作の抑止のため。
+        event.preventDefault();
+        event.stopImmediatePropagation();
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();

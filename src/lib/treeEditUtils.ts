@@ -19,7 +19,17 @@ export function shouldStopEditInputKeyPropagation(
   ) {
     return true;
   }
-  return event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "n";
+  if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "n") {
+    return true;
+  }
+  // issue 0026 補足修正：リネーム・フォルダ作成・メモ作成のインライン入力中は
+  // Ctrl+Dを画面のクエリ／ローカル絞り込みクリアへ到達させない
+  // （06-keyboard-interactions.md表1「Ctrl+D｜...本文編集・インライン入力中は
+  // 無効」）。この関数はお気に入り・メモ両画面のインライン入力欄5箇所
+  // （FavoriteEditTree.tsxのリネーム欄・フォルダ作成欄、MemoManageView.tsxの
+  // フォルダ作成欄・メモ作成欄）から共有されるため、ここを1箇所直すだけで
+  // 全箇所に一括適用される。
+  return event.ctrlKey && event.key.toLowerCase() === "d";
 }
 
 export type TreeDropPosition = "before" | "after" | "into";

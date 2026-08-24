@@ -40,10 +40,16 @@ export function MemoManageFooter({
     );
   }
   if (editorFocused) {
+    // issue 0026 補足修正：本文編集エリアにフォーカス中はCtrl+Dが無効
+    // （06-keyboard-interactions.md表9「本文編集エリア｜Ctrl+D｜無効」）のため
+    // ヒント自体を表示しない。Ctrl+Sは下書きの有無に関わらず常に表示し、
+    // 下書きが無い間はヒントを非活性表示する（02-saved-items.md「保存（下書きと
+    // 確定版）」節「フッターにはCtrl+Sを常に表示し、下書きが無い間は非活性として
+    // 示す」を参照。非表示ではなく非活性表示にすることで、フッターが常に
+    // 「この画面で意味を持つキー」を示し続ける）。
     return (
       <FooterBar version={version}>
-        {saveAvailable && <KeyHint keys="Ctrl+S" label="保存" />}
-        <KeyHint keys="Ctrl+D" label="クリア" />
+        <KeyHint keys="Ctrl+S" label="保存" disabled={!saveAvailable} />
         <KeyHint keys="Esc" label="一覧へ戻る" />
       </FooterBar>
     );
