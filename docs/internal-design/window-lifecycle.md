@@ -34,9 +34,11 @@ Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwi
 
 お気に入り管理画面は`favoriteEditFilterText`（`App.tsx`が保持）、メモ管理画面は`useMemoManage`フック（`App.tsx`が`useMemoManage(memoEditOpen)`として呼び出す）が返す`filterText`を使う。issue 0026（画面スコープでの状態保持、PO承認済み）により、メモ側もお気に入り側と同じく設定画面との往復でコンポーネントがアンマウントされても値を保持する`App.tsx`レベルへ引き上げ済み（以前はメモ管理ビュー自身のコンポーネントローカルstateだった）。
 
-⚠️ **登録に使うeffectの種類が両画面で異なる**：お気に入り管理画面（`FavoriteEditView.tsx`）は`useLayoutEffect`で登録するが、メモ管理画面（`MemoManageView.tsx`）は通常の`useEffect`で登録している。layout effectを使う目的（ビューのDOMが表示されてから通常effectが実行されるまでの間に登録が空となる時間窓を作らない）に照らすと、メモ側は理論上この時間窓を持ったままであり、両画面を同一パターンとして揃えるかどうかは未検討。新たな不具合ではなく、500_リリース前作業でのドキュメント突き合わせ中に発見した既存の実装差分であるため、この節ではその存在のみを記録する。
+**登録に使うeffectの種類が両画面で異なる**：お気に入り管理画面（`FavoriteEditView.tsx`）は`useLayoutEffect`で登録するが、メモ管理画面（`MemoManageView.tsx`）は通常の`useEffect`で登録している（500_リリース前作業でのドキュメント突き合わせ中に発見した既存の実装差分。動作不良の報告は無い）。揃えるかどうか・実際に体感可能な差を生むかどうかは未検証のため、この節では事実の記録に留める（検証結果はhandoff/ad.mdを参照）。
 
 導入前は共通ハンドラが`search.setQuery("")`だけを呼び、管理画面の絞り込みstateへ経路が無かった。そのためフッターにはCtrl+Dが表示される一方、メモ管理・お気に入り管理のどちらでも可視の絞り込み文字列が残っていた。複数のクエリstateを持つ画面を今後追加する場合も、共通ハンドラへ画面名の分岐とsetterを直接列挙せず、この登録口を使う。
+
+**Ctrl+Dを「消去する対象へリダイレクト」ではなく「無効化」すべき場合**：本文編集用のテキスト入力欄（メモ管理画面の本文textarea等）にフォーカスがある間は、Ctrl+Dは画面の絞り込み文字列を消去する意味を持たず、本文入力中の誤発火でしかない。この場合は`localQueryClearHandlerRef`への登録（何を消去するか）ではなく、Ctrl+D自体を無効化する。実装は2箇所に分かれる：①`MemoManageView.tsx`のcapture-phase `keydown`ハンドラが、本文編集エリアにフォーカスがある間はCtrl+D（およびCtrl+S・Escape・矢印キー）を`stopPropagation`し、`App.tsx`側の共通ハンドラへ到達させない。②リネーム・フォルダ作成・メモ作成のインライン入力欄（`RenameInput`等、5箇所）は、共有関数`shouldStopEditInputKeyPropagation`（`treeEditUtils.ts`）がCtrl+D・矢印キー・F2・Ctrl+Shift+Nの伝播を一括で止める。新しい編集用テキスト入力欄を追加する場合、個別に`stopPropagation`を書く前に、まずこの共有関数の対象に含められないか検討する。
 
 <a id="focus-out-auto-hide"></a>
 

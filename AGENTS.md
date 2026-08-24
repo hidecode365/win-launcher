@@ -268,7 +268,7 @@ win-launcher/
 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md)
 
 - 設定画面はどのL1画面（検索／お気に入り／メモ）からでも開け、閉じると開いた元の画面へ戻る（戻り先は他のL1画面と異なり固定ではない）。設定は多重に開けないため、記憶は履歴スタックではなく1段（`previousViewRef`）で足りる。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#settings-return-view)
-- Ctrl+DはAppのwindowハンドラ1箇所で処理する。全画面ビューが独自の可視クエリを持つ場合は、画面固有のkeydownを追加せず`localQueryClearHandlerRef`へ消去処理を登録する。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)
+- Ctrl+DはAppのwindowハンドラ1箇所で処理する。全画面ビューが独自の可視クエリを持つ場合は、画面固有のkeydownを追加せず`localQueryClearHandlerRef`へ消去処理を登録する。本文編集用テキスト入力欄にフォーカスがある間のように、Ctrl+Dが「消去対象」を持たずただの誤発火でしかない場合は、登録ではなくCtrl+D自体を`stopPropagation`で無効化する（インライン入力欄はまず共有関数`shouldStopEditInputKeyPropagation`の対象に含められないか検討する）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)
 - フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。**設定画面表示中のみ**この自動非表示を適用しない（お気に入り・メモ画面は検索画面と同じく自動非表示の対象）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
 - モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **`external-design/01-screen-transitions.md#modal-key-policy`**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
@@ -319,7 +319,7 @@ win-launcher/
 - `FavoriteNode` は `parentId` を持つフラットな配列（隣接リスト）で管理する。再帰的な木構造にせず、ノードの移動は1フィールドの更新で表現する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#favorite-node-structure)
 - 予約フォルダ（ピン止め／お気に入り／メモ／メモのゴミ箱）は固定IDで参照する。Rust側の定数値を変更する場合、フロントエンド側の定数も必ず同時に更新する（型システムによる自動追従はない）。バリデーションはフロントエンドだけでなくRust側（保存直前）でも必ず行う。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#reserved-folders)
 - メモ本文は`MemoDocument`としてツリーとは別に保存し、フロントエンドからstoreへ直接書き込まない。保存はRustコマンドへ一本化し、`expectedRevision`で競合を検出する。お気に入り配列と本文マップを同時に扱う場合のロック順はFavoriteNodes → MemoDocumentsに固定する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-document-persistence)
-- メモ削除は通常ルートではゴミ箱への論理削除、ゴミ箱内では子孫本文を含む完全削除とする。予約ルート自身は移動・リネーム・削除・ドラッグ対象にしない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-trash-lifecycle)
+- メモ削除は通常ルートではゴミ箱への論理削除、ゴミ箱内では子孫本文を含む完全削除とする。予約ルート自身は移動・リネーム・削除・ドラッグ対象にしない。ゴミ箱内メモは閲覧可・編集不可という非対称要件のため、読み取り用（`is_readable_memo_node`）と書き込み用（`is_memo_node`）の判定関数を分離する。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-trash-lifecycle)
 - お気に入り管理とメモ管理は`nodeTree`／`useTreeEditSelection`／入力部品に加え、キー伝播・drop位置・循環移動・移動先計算を`treeEditUtils`で共有する。固定行モデルと更新契約が異なるため、行描画・D&Dイベント・更新コマンドは専用実装を保ち、共有層へ機能固有条件を持ち込まない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#memo-edit-tree-boundary)
 - 設定画面と往復してもコンポーネントがアンマウントされる管理画面では、絞り込み文字列・選択・作成/リネーム中状態を、その管理画面を呼び出す側（`App.tsx` レベルのstate、または `App.tsx` から呼ぶフック）で保持する。管理画面コンポーネント自身のローカルstateにすると、設定往復のたびに失われる。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#screen-scoped-state-persistence)
 - 可視性判定（「このUI要素は表示されるか」）とバックエンドの除外・フィルタ条件は、同じブール式を1箇所にまとめて両方から参照する。片方だけ個別に再実装しない。 → 詳細: [favorites-data-model.md](docs/internal-design/favorites-data-model.md#search-exclusion)
