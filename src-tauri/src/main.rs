@@ -1364,6 +1364,12 @@ fn get_memo_document(app: AppHandle, id: String) -> Result<MemoDocument, String>
     }))
 }
 
+// issue 0026 補足仕様：メモ作成の完了通知は入口によって要否が異なる
+// （クリップボード履歴〔/cb〕のメモアイコン経由＝トースト表示、メモ画面内の
+// 新規メモ作成アイコン経由＝ツリーへの追加・選択・タイトル編集状態への移行が
+// 完了フィードバックを兼ねるためトーストなし）。作成処理そのもの
+// （ノード追加・本文保存）は入口によらず同一のため重複させず、`notify`引数で
+// 呼び出し元（フロントエンド）が通知の要否だけを指定する。
 #[tauri::command]
 fn add_memo(
     app: AppHandle,
@@ -1372,6 +1378,7 @@ fn add_memo(
     name: String,
     content: String,
     parent_id: String,
+    notify: bool,
 ) -> Result<Vec<FavoriteNode>, String> {
     let _favorite_guard = favorite_lock.0.lock().unwrap();
     let _memo_guard = memo_lock.0.lock().unwrap();
@@ -1387,7 +1394,9 @@ fn add_memo(
     let mut documents = load_memo_documents(&app);
     documents.insert(id, MemoDocument { revision: 1, content, saved_at: now_ms(), draft: None });
     save_memo_documents(&app, &documents)?;
-    show_toast(&app, "メモに登録しました");
+    if notify {
+        show_toast(&app, "メモに登録しました");
+    }
     Ok(favorites)
 }
 

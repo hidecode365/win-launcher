@@ -303,9 +303,15 @@ export default function App() {
     await store.set("memoPaneWidth", width);
     await store.save();
   }, []);
+  // issue 0026 補足仕様：クリップボード履歴（/cb）のメモアイコン経由の作成は
+  // 完了フィードバックがトースト通知のみのため、notify: true で表示する
+  // （メモ画面内の新規メモ作成〔useMemoManage.ts の createMemo〕はツリーへの
+  // 追加・選択・タイトル編集状態への移行自体が完了フィードバックを兼ねるため
+  // notify: false。作成処理〔add_memo〕自体は共通で、通知の要否だけを
+  // 呼び出し元が指定する）。
   const addMemoFromClipboard = useCallback((content: string) => {
     const title = content.trim().slice(0, 40) || "無題のメモ";
-    invoke("add_memo", { name: title, content, parentId: "__memo__" })
+    invoke("add_memo", { name: title, content, parentId: "__memo__", notify: true })
       .then(() => memoManage.reload())
       .catch(console.error);
   }, [memoManage.reload]);

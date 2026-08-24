@@ -222,6 +222,9 @@ export function useMemoManage(active: boolean) {
     [reload, selection, showMoveError]
   );
 
+  // issue 0026 補足仕様：メモ画面内（最上部・フォルダ行の作成アイコン）からの
+  // 作成は、ツリーへの追加・選択・タイトル編集状態への移行自体が完了
+  // フィードバックを兼ねるため、トースト通知は表示しない（notify: false）。
   const createMemo = useCallback(async () => {
     const memoName = name.trim();
     const existingIds = new Set(nodes.map((node) => node.id));
@@ -229,6 +232,7 @@ export function useMemoManage(active: boolean) {
       name: memoName,
       content: memoName,
       parentId: creatingParentId,
+      notify: false,
     });
     setCreating(null);
     setCreatingAnchorId(null);
