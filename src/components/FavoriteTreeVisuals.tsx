@@ -36,6 +36,22 @@ export function FolderChevron({ collapsed }: { collapsed: boolean }) {
 export const FOLDER_ICON_PATH =
   "M3 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z";
 
+// issue 0026 補足修正：行頭アイコンの余白を、行の種別に応じた2パターンへ
+// 共有定数化した。画面固有の生値（ハードコードしたクラス文字列）による
+// 個別調整を避け、お気に入り画面・メモ画面の両方から同じ定数を参照する。
+//
+// - フォルダ見出し行（チェブロン▼/▶の直後にアイコンが続く行）：チェブロンと
+//   ドラッグハンドルの間の余白は既にドラッグハンドル自身の `mr-1.5` が担うため、
+//   アイコン自身は左右に控えめな余白（`ml-1.5 mr-2`）を持つ
+// - アイテム／コンテンツ行（チェブロンを持たず、ドラッグハンドルの直後に
+//   アイコンが来る行）：アイコン自身に左マージンを持たせると、ドラッグハンドル
+//   自身の `mr-1.5` と二重に加算されて間隔が不自然に広がる（実例：メモ画面の
+//   メモ行がお気に入り画面のアイテム行より間隔が広く見えた不具合。詳細は
+//   docs/internal-design/favorites-ui-iconography.md を参照）。左マージンを
+//   持たせず `mr-3` のみとする
+export const HEADING_ROW_ICON_CLASS = "ml-1.5 mr-2 h-4 w-4 flex-shrink-0";
+export const CONTENT_ROW_ICON_CLASS = "mr-3 h-4 w-4 flex-shrink-0";
+
 // アイテム行のファイルアイコン（サムネイルが無い場合のフォールバック）。
 export function FileIcon({ className }: { className: string }) {
   return (

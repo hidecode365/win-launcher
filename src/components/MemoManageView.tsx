@@ -19,7 +19,7 @@ import {
   EDITOR_SURFACE_CLASS,
   type ManageTreeRowVariant,
 } from "../ui/sharedStyles";
-import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, INDENT_BASE_REM, INDENT_STEP_REM, TRASH_ICON_PATH } from "./FavoriteTreeVisuals";
+import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, INDENT_BASE_REM, INDENT_STEP_REM, TRASH_ICON_PATH, HEADING_ROW_ICON_CLASS, CONTENT_ROW_ICON_CLASS } from "./FavoriteTreeVisuals";
 
 function DragHandle({ selected }: { selected: boolean }) {
   return (
@@ -307,12 +307,18 @@ export function MemoManageView({
                   >
                     {!reserved && !manage.filtering ? <DragHandle selected={selected} /> : reserved ? null : <span className="mr-1.5 w-4 flex-shrink-0" />}
                     {node.type === "folder" && <FolderChevron collapsed={node.collapsed} />}
+                    {/* issue 0026 補足修正：フォルダ見出し行相当（ゴミ箱・フォルダ、
+                        いずれもチェブロンの直後に続く）はHEADING_ROW_ICON_CLASS、
+                        メモ行（チェブロンを持たずドラッグハンドルの直後に来る）は
+                        CONTENT_ROW_ICON_CLASSを使う。メモ行はサムネイルを持たない
+                        （＝常にフォールバック表示のため）お気に入りアイテム行の
+                        フォールバックアイコンと同じopacity-60を付け、濃度も揃える。 */}
                     {row.kind === "trash" ? (
-                      <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg>
+                      <svg className={HEADING_ROW_ICON_CLASS} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={TRASH_ICON_PATH} /></svg>
                     ) : node.type === "folder" ? (
-                      <svg className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg>
+                      <svg className={HEADING_ROW_ICON_CLASS} fill="currentColor" viewBox="0 0 24 24"><path d={FOLDER_ICON_PATH} /></svg>
                     ) : (
-                      <FileIcon className="ml-1.5 mr-2 h-4 w-4 flex-shrink-0" />
+                      <FileIcon className={`${CONTENT_ROW_ICON_CLASS} opacity-60`} />
                     )}
                     {renamingThis ? (
                       <MemoNodeRenameInput nodeId={node.id} initialName={node.name} className={rowVariant === "item" ? "text-ui-body" : "text-ui-meta"} onRenamed={async () => { manage.setRenaming(null); await manage.reload(); }} onCancel={() => manage.setRenaming(null)} />

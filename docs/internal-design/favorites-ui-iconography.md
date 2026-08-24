@@ -1,6 +1,6 @@
 # ピン止め・お気に入りアイコンとツールチップ
 
-対象コード: `src/components/IconSlot.tsx`（行末アイコン群の箱サイズ・ホバー円・Tooltipを一括管理する共通ラッパー）、`src/components/ToggleIcons.tsx`（`PinIcon`／`FavoriteIcon`／`WarningIcon`／`PinToggleButton`／`FavoriteToggleButton`）、`src/components/Tooltip.tsx`、`src/components/FavoriteTreeVisuals.tsx`（`CreateFolderIcon`。お気に入り編集ビュー専用のフォルダ作成アイコン）、`src/components/ResultList.tsx`・`src/components/FavoriteEditTree.tsx`・`src/components/FavoriteListPanel.tsx`（各行末アイコン群の呼び出し元。`IconSlot`＋`gap-2`のflexコンテナで束ねる）。
+対象コード: `src/components/IconSlot.tsx`（行末アイコン群の箱サイズ・ホバー円・Tooltipを一括管理する共通ラッパー）、`src/components/ToggleIcons.tsx`（`PinIcon`／`FavoriteIcon`／`WarningIcon`／`PinToggleButton`／`FavoriteToggleButton`）、`src/components/Tooltip.tsx`、`src/components/FavoriteTreeVisuals.tsx`（`CreateFolderIcon`・`FileIcon`・`HEADING_ROW_ICON_CLASS`／`CONTENT_ROW_ICON_CLASS`。お気に入り画面・メモ画面が共有する行頭アイコンの余白定数）、`src/components/ResultList.tsx`・`src/components/FavoriteEditTree.tsx`・`src/components/MemoManageView.tsx`（各行末・行頭アイコン群の呼び出し元。`IconSlot`＋`gap-2`のflexコンテナ、`HEADING_ROW_ICON_CLASS`／`CONTENT_ROW_ICON_CLASS`で束ねる）。
 
 データ構造・機能仕様は [favorites-data-model.md](favorites-data-model.md) を参照。本ファイルはアイコンの意匠・視認性・ツールチップという UI 表現に特化した設計判断を記す。今後アイコンを追加・変更する際は、まず「今後の指針」節の一般原則を確認すること。
 
@@ -80,6 +80,16 @@ UI 上の操作部品にツールチップを付ける場合、`title` 属性は
 - `WarningIcon` は例外的に `IconSlot` に乗せない（`w-5 h-5`・amber系という他のアイコンと異なる独自のサイズ・配色を持つため）。ただし個別マージン（旧 `mr-1`）は撤去済みで、他のアイコンと同じく呼び出し元の `gap-2` コンテナに委ねる
 - 新しい行末アイコンを追加する場合、この2契約（箱のサイズ統一・余白のgap一本化）から外れる独自実装をしないこと。判断に迷った場合はまず既存の呼び出し例（`FavoriteEditTree.tsx` の折りたたみ行）を参照する
 
+<a id="heading-and-content-row-icon-class"></a>
+
+### 行頭アイコンの余白（`HEADING_ROW_ICON_CLASS`／`CONTENT_ROW_ICON_CLASS`）
+
+行末アイコン群（IconSlot）とは別に、行の先頭（ドラッグハンドルの直後）に置くフォルダ／ファイル種別アイコンの余白も、行の種類に応じた2パターンの共有定数（`FavoriteTreeVisuals.tsx`）へ統一している。
+
+- **`HEADING_ROW_ICON_CLASS`**（`ml-1.5 mr-2 h-4 w-4 flex-shrink-0`）：フォルダ見出し行・ゴミ箱固定行など、チェブロン（▼/▶）の直後にアイコンが続く行で使う
+- **`CONTENT_ROW_ICON_CLASS`**（`mr-3 h-4 w-4 flex-shrink-0`）：アイテム行・メモ行など、チェブロンを持たずドラッグハンドルの直後に直接アイコンが来る行で使う。**アイコン自身に左マージンを持たせない**（ドラッグハンドル自身の `mr-1.5` と二重に加算され、間隔が不自然に広がるため）
+- コンテンツ行のフォールバックアイコン（サムネイル・実体画像を持たない行）には `opacity-60` を付与する。お気に入りアイテム行のファイルアイコン（サムネイル無し時）・メモ画面のメモ行アイコン（常にフォールバック）の両方がこの対象
+
 ## 経緯
 
 <a id="filled-outline-icon-design-history"></a>
@@ -155,6 +165,20 @@ UI 上の操作部品にツールチップを付ける場合、`title` 属性は
 
 **教訓（追加2）**：`p-1` 等のパディングだけを指定し、幅・高さを子要素の実寸に依存させて自動計算させる設計は、その子要素の描画方式（in-flow か `absolute`/`fixed` か）が変わった瞬間に暗黙的に壊れる。共通ラッパーのように「複数の異なる描画方式の子要素を受け入れる」コンポーネントでは、箱自体のサイズは子要素に依存させず明示的に固定すること。
 
+<a id="content-row-icon-margin-history"></a>
+
+### メモ行アイコンがドラッグハンドルから離れて濃く見えた不具合（issue 0026 補足修正）
+
+**症状**：PO実機レビューで、メモ画面のメモ行だけアイコンが他の行より濃く見え、ドラッグハンドル（⋮⋮）とアイコンの間隔もお気に入り画面のアイテム行より広く見える、と報告された。
+
+**直接原因**：2つの生値の不一致が重なっていた。(a) メモ画面のメモ行アイコン（`FileIcon`）は、フォルダ見出し行と同じ `ml-1.5 mr-2 h-4 w-4 flex-shrink-0` を流用していたが、フォルダ見出し行はチェブロンの後にアイコンが続くのに対し、メモ行はチェブロンを持たずドラッグハンドルの直後にアイコンが来る。ドラッグハンドル自身の `mr-1.5` とアイコンの `ml-1.5` が隣接要素同士で単純加算され、お気に入りアイテム行（アイコンに左マージンを持たせず `mr-3` のみ）の2倍の間隔になっていた。(b) お気に入りアイテム行はサムネイル無し時のフォールバックアイコンに `opacity-60` を付けているが、メモ行アイコンは常にフォールバック相当（メモはサムネイルを持たない）であるにも関わらず不透明度の指定が無く、フル濃度で表示されていた。
+
+**横並び調査**：行頭アイコンを使う全箇所（お気に入りのフォルダ見出し行・アイテム行、メモのフォルダ行・ゴミ箱行・メモ行）のマージン・不透明度指定を比較した結果、上記2点以外に不一致は無かった（フォルダ見出し行同士・ゴミ箱行はチェブロンの後という同じ構造のため元々一致していた）。
+
+**原因の性質**：特定の1行の実装ミスではなく、「行頭アイコンの余白・不透明度を各呼び出し箇所が生のTailwindクラス文字列として個別に持つ」という設計が、チェブロンの有無という行の構造差を考慮せずに値だけをコピーした結果生じた構造的な不一致と判断した。[icon-slot-wrapper-history](#icon-slot-wrapper-history) が行末アイコン群で辿った「個別マージン → 共有ラッパー化」と同じ教訓が行頭アイコンにも当てはまる。
+
+**対応**：行の構造（チェブロンの有無）に応じた2つの共有定数 `HEADING_ROW_ICON_CLASS`／`CONTENT_ROW_ICON_CLASS`（`FavoriteTreeVisuals.tsx`）を新設し、両画面の該当箇所（お気に入りのフォルダ行・アイテム行、メモのフォルダ行・ゴミ箱行・メモ行の計5箇所）から参照する形に統一した（[heading-and-content-row-icon-class](#heading-and-content-row-icon-class) 参照）。フォルダ行・ゴミ箱行の見た目（既に一致していた）は変更していない。
+
 ## 今後の指針
 
 - 新しいアイコンを追加・変更する際は、まず素材が単色フラットな設計として提供されている場合、その設計のまま（`fill="currentColor"` の単色塗り）使うこと。視認性対応のために独自の配色ルールを機械的に適用するのではなく、素材本来の設計を尊重する
@@ -168,3 +192,4 @@ UI 上の操作部品にツールチップを付ける場合、`title` 属性は
 - 自作の合成アイコン（複数図形の重ね合わせ・穴抜き等）で視認性の問題が2回程度繰り返し発生した場合、座標の微調整を続けず、既製素材への切り替えを検討する（[create-folder-icon-readymade-history](#create-folder-icon-readymade-history) を参照）。特に16px前後の小さな表示サイズでは、複数図形の重ね合わせ自体が構造的に視認性に不利なため、単一の完成されたジオメトリを流用する方が確実性が高い
 - 新しい行末アイコンを追加する場合は必ず共通ラッパー `IconSlot` を使い、個々のコンポーネントが独自の `ml-2`・ホバー円・Tooltipラップを実装しない（[icon-slot-wrapper](#icon-slot-wrapper) 参照）。「サイズ・マージンの数値は揃えたのに見た目が揃わない」という報告を受けた場合は、数値の再調整より先に各要素の実際のDOM構造（パディングの有無・ラッパーの層数）の違いを疑う（[icon-slot-wrapper-history](#icon-slot-wrapper-history) 参照）
 - 表示専用の行内要素（件数バッジ等）の塗りつぶし部分を「箱」いっぱいに広げたい場合、`IconSlot` の `relative` な箱に対して `absolute inset-0` を指定する（箱自身の `p-1` パディングを無視して外形いっぱいに広がる）。行の右端から最後のアイコンまでの間隔は、アイコン自身のマージンではなく行ルート要素の `padding-right` が担うため、新しい行種別を追加する場合は既存の行（`pr-4`）と同じ値に揃える（[icon-slot-wrapper-history](#icon-slot-wrapper-history) の5.を参照）
+- 新しい行頭アイコン（フォルダ／ファイル種別アイコン）を追加する場合は、行の構造（チェブロンの有無）に応じて `HEADING_ROW_ICON_CLASS`／`CONTENT_ROW_ICON_CLASS`（[heading-and-content-row-icon-class](#heading-and-content-row-icon-class) 参照）を使い、生のマージン値を個別にコピーしない。チェブロンを持たない行（ドラッグハンドルの直後にアイコンが来る行）のアイコンには左マージンを付けないこと（ドラッグハンドル自身のマージンと二重に加算される。[content-row-icon-margin-history](#content-row-icon-margin-history) を参照）。サムネイル・実体画像を持たず常にフォールバック表示になる行のアイコンには `opacity-60` を付け、他画面の同種フォールバックアイコンと濃度を揃える

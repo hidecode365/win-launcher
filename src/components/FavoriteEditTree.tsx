@@ -24,6 +24,8 @@ import {
   TRASH_ICON_PATH,
   INDENT_STEP_REM,
   INDENT_BASE_REM,
+  HEADING_ROW_ICON_CLASS,
+  CONTENT_ROW_ICON_CLASS,
 } from "./FavoriteTreeVisuals";
 import {
   CreateFolderResult,
@@ -652,7 +654,7 @@ export function FavoriteEditTree({
                   <DragHandle selected={isSelected} filtering={filtering} />
                   <FolderChevron collapsed={row.collapsed} />
                   <svg
-                    className="w-4 h-4 ml-1.5 mr-2 flex-shrink-0"
+                    className={HEADING_ROW_ICON_CLASS}
                     fill="currentColor"
                     viewBox="0 0 24 24"
                   >
@@ -792,10 +794,10 @@ export function FavoriteEditTree({
                     <img
                       src={item.icon}
                       alt=""
-                      className="w-4 h-4 mr-3 flex-shrink-0"
+                      className={CONTENT_ROW_ICON_CLASS}
                     />
                   ) : (
-                    <FileIcon className="w-4 h-4 mr-3 flex-shrink-0 opacity-60" />
+                    <FileIcon className={`${CONTENT_ROW_ICON_CLASS} opacity-60`} />
                   )}
                   {isRenaming ? (
                     <RenameInput
