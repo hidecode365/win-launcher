@@ -15,15 +15,15 @@ import { KeyHint } from "./KeyHint";
 // ツールチップとホバー反応で示す）。
 //
 // 選択中の行の種別ごとに、その行で実際に使える操作だけを表示する：
-// - Top選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成（Topはリネーム・並び替え・
-//   再親化のいずれの対象にもならないため、それらは表示しない）
 // - フォルダ選択中：↑↓ 選択／Enter 開閉／Ctrl+Shift+N フォルダ作成／F2 リネーム／
 //   Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
-// - アイテム選択中：↑↓ 選択／Ctrl+Shift+N フォルダ作成／F2 リネーム／
-//   Ctrl+Shift+↑↓ 並び替え／Ctrl+Shift+←→ 再親化
-// Esc 閉じる（ウィンドウを隠す）はどの状態でも共通。検索画面へ戻る操作は
-// ヘッダーの「戻る」ボタン（マウス専用）のみで、フッターには表示しない
-// （issue 0026 軸C：フッター表示規約はキーボード操作のみを示すため）。
+// - アイテム選択中：↑↓ 選択／Enter 起動／Shift+Enter フォルダを開く／
+//   Ctrl+Shift+N フォルダ作成／F2 リネーム／Ctrl+Shift+↑↓ 並び替え／
+//   Ctrl+Shift+←→ 再親化（06-keyboard-interactions.md「お気に入り画面」表8の
+//   アイテム行(★)Enter/Shift+Enterに対応。StatusFooter.tsxの通常検索結果行と
+//   同じ「起動」「フォルダを開く」ラベルに揃える）
+// Esc 戻る（通常の検索画面へ戻る。06-keyboard-interactions.md表8「Esc(通常状態)」
+// を参照）はどの状態でも共通。
 //
 // 軸4j：並び替え・再親化のキー割当は最終的に Ctrl+Shift+↑↓←→ に統一した
 // （上下＝並び替え、左右＝再親化）。当初のAlt+↑↓←→のうち、Alt+←/→はWebView2
@@ -46,7 +46,7 @@ export function FavoriteEditFooter({
   renaming,
   version,
 }: {
-  selectedKind: "top" | "folder" | "item" | null;
+  selectedKind: "folder" | "item" | null;
   filtering: boolean;
   deleteModalOpen: boolean;
   renaming: boolean;
@@ -75,6 +75,10 @@ export function FavoriteEditFooter({
       {selectedKind === "folder" && !filtering && (
         <KeyHint keys="Enter" label="開閉" />
       )}
+      {selectedKind === "item" && <KeyHint keys="Enter" label="起動" />}
+      {selectedKind === "item" && (
+        <KeyHint keys="Shift+Enter" label="フォルダを開く" />
+      )}
       <KeyHint keys="Ctrl+Shift+N" label="フォルダ作成" />
       {(selectedKind === "folder" || selectedKind === "item") && (
         <KeyHint keys="F2" label="リネーム" />
@@ -86,7 +90,7 @@ export function FavoriteEditFooter({
         </>
       )}
       <KeyHint keys="Ctrl+D" label="クリア" />
-      <KeyHint keys="Esc" label="閉じる" />
+      <KeyHint keys="Esc" label="戻る" />
     </FooterBar>
   );
 }

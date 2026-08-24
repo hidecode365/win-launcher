@@ -648,10 +648,9 @@ export default function App() {
         e.preventDefault();
         if (!settingsEscapeHandlerRef.current?.()) closeSettings();
       } else if (e.key === "Escape" && memoEditOpen) {
-        // issue 0026 補足仕様：お気に入り画面はウィンドウを隠すが、メモ画面の
-        // Escapeは通常の検索画面へ戻る（メモ画面を閉じる）という非対称な仕様に
-        // 変更された（06-keyboard-interactions.md表10「一覧側 Esc 通常の検索画面へ
-        // 戻る（メモ画面を閉じる）」・external-design/01-screen-transitions.md
+        // メモ画面の通常状態のEscapeは、お気に入り画面と同じく通常の検索画面へ
+        // 戻る（06-keyboard-interactions.md「メモ画面」表9「一覧側 Esc 通常の
+        // 検索画面へ戻る（メモ画面を閉じる）」・external-design/01-screen-transitions.md
         // 「メモ画面」行を参照）。ヘッダーの「戻る」ボタンと同じ closeMemoEdit を
         // 呼ぶ。本文編集エリアフォーカス中のEscapeはMemoManageView.tsx自身の
         // capture listenerが先に処理し一覧側へフォーカスを戻すため、ここへは
@@ -703,12 +702,15 @@ export default function App() {
         }
         switch (e.key) {
           case "Escape":
-            // issue 0026 軸C：お気に入り画面は検索画面と同格のL1画面。Escapeは
-            // ウィンドウを隠す（06-keyboard-interactions.md「お気に入り画面」
-            // 表9「Esc(通常状態) ウィンドウを隠す」を参照）。検索画面へ戻る操作は
-            // ヘッダーの「戻る」ボタン（マウス専用、closeFavoriteEdit）のみ。
+            // issue 0026 補足仕様：お気に入り画面の通常状態のEscapeは、メモ画面と
+            // 同じく通常の検索画面へ戻る（06-keyboard-interactions.md「お気に入り
+            // 画面」表8「Esc(通常状態) 通常の検索画面へ戻る（お気に入り画面を
+            // 閉じる）」を参照）。ヘッダーの「戻る」ボタンと同じ closeFavoriteEdit
+            // を呼ぶ（メモ画面のcloseMemoEdit呼び出しと同じパターン）。リネーム
+            // 入力中・フォルダ削除確認モーダルはこのswitchより手前の分岐で
+            // 個別に処理済みのため、ここへは到達しない。
             e.preventDefault();
-            hideWindow().catch(console.error);
+            closeFavoriteEdit();
             break;
           case "ArrowDown":
             e.preventDefault();
@@ -752,13 +754,29 @@ export default function App() {
             }
             break;
           case "Enter": {
-            // フォルダ見出し行では開閉をトグルする（onToggleCollapse を直接
-            // 呼び出し、▼クリックのイベント発火を疑似的に模倣しない）。アイテム行・
-            // Top行では何もしない（このビューはファイルを起動する画面ではなく、構造を
-            // 閲覧・整理する画面のため。00-requirements.md「お気に入り編集ビュー」節を参照）。
+            // フォルダ行では開閉をトグルする（onToggleCollapse を直接呼び出し、
+            // ▼クリックのイベント発火を疑似的に模倣しない）。Shift+Enterは
+            // フォルダ行では無効（06-keyboard-interactions.md表8「フォルダ行 |
+            // Shift+Enter | 無効(何もしない)」）。
+            //
+            // issue 0026 補足仕様：アイテム行はEnterでファイルを起動、
+            // Shift+Enterで格納フォルダを開く（表8「アイテム行(★)」の該当行）。
+            // いずれもマウスの単一クリック起動（FavoriteEditTree.tsxの
+            // scheduleLaunch）と同じ search.launchFile／既存の
+            // search.openContainingFolder をそのまま呼ぶ（起動処理を画面ごとに
+            // 別実装しない。両関数とも closeWindow() を内部で経由済み）。
+            e.preventDefault();
             const row = favoriteEdit.tree[favoriteEdit.selected];
             if (row?.kind === "folder") {
-              search.toggleFavoriteFolderCollapsedInEdit(row.node.id);
+              if (!e.shiftKey) {
+                search.toggleFavoriteFolderCollapsedInEdit(row.node.id);
+              }
+            } else if (row?.kind === "item") {
+              if (e.shiftKey) {
+                search.openContainingFolder(row.file.path);
+              } else {
+                search.launchFile(row.file.path);
+              }
             }
             break;
           }
@@ -871,6 +889,7 @@ export default function App() {
     memoEditOpen,
     closeMemoEdit,
     favoriteEditOpen,
+    closeFavoriteEdit,
     search.pendingCommand,
     search.cancelSystemCommand,
     search.favoriteDialogTarget,
@@ -882,6 +901,8 @@ export default function App() {
     favoriteEdit.selected,
     favoriteEdit.moveSelection,
     search.toggleFavoriteFolderCollapsedInEdit,
+    search.launchFile,
+    search.openContainingFolder,
     setRenamingFavoriteNodeId,
     startCreateFolder,
     moveFavoriteNodeWithinParent,

@@ -6,11 +6,11 @@ export type MemoManageSelectedKind = "root" | "trash" | "folder" | "memo" | null
 // issue 0026 軸A：/memo を左ツリー＋右本文編集ペインの単一画面へ統合したことに伴い、
 // 旧 MemoPanel.tsx（閲覧専用パネル）が持っていた本文編集関連のヒント
 // （Ctrl+E／Ctrl+S／メモ行Enterでのクリップボードセット）をこのフッターへ統合した。
-// issue 0026 補足仕様：メモ画面のEscapeは、お気に入り画面（ウィンドウを隠す）とは
-// 非対称に「通常の検索画面へ戻る」（06-keyboard-interactions.md「メモ画面」表10・
-// external-design/01-screen-transitions.md「メモ画面」行を参照）。ヘッダーの
-// 「戻る」ボタンと同じ操作のため、ラベルは「戻る」で統一する（編集エリア
-// フォーカス中のみ、本文編集を抜けて一覧側へ戻る意味の「一覧へ戻る」）。
+// メモ画面のEscapeは、お気に入り画面と同じく「通常の検索画面へ戻る」
+// （06-keyboard-interactions.md「メモ画面」表9・external-design/01-screen-transitions.md
+// 「メモ画面」行を参照）。ヘッダーの「戻る」ボタンと同じ操作のため、ラベルは
+// 「戻る」で統一する（編集エリアフォーカス中のみ、本文編集を抜けて一覧側へ
+// 戻る意味の「一覧へ戻る」）。
 export function MemoManageFooter({
   selectedKind,
   trashed,
