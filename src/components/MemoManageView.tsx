@@ -21,6 +21,13 @@ import {
 } from "../ui/sharedStyles";
 import { CreateFolderIcon, FileIcon, FolderChevron, FOLDER_ICON_PATH, INDENT_BASE_REM, INDENT_STEP_REM, TRASH_ICON_PATH, HEADING_ROW_ICON_CLASS, CONTENT_ROW_ICON_CLASS } from "./FavoriteTreeVisuals";
 
+// issue 0027：通常ツリー内のメモ行は単一クリックでも本文をコピーして
+// ウィンドウを閉じる（02-saved-items.md「メモ画面」節）。ダブルクリックでの
+// リネームと区別するため、FavoriteEditTree.tsx の CLICK_LAUNCH_DELAY_MS と
+// 同じ約220ms待ってから実行し、その間にダブルクリックが成立した場合は
+// キャンセルする。
+const MEMO_CLICK_COPY_DELAY_MS = 220;
+
 function DragHandle({ selected }: { selected: boolean }) {
   return (
     <Tooltip label="ドラッグして並び替え" className="mr-1.5 w-4 flex-shrink-0 justify-center">
@@ -91,6 +98,32 @@ export function MemoManageView({
   useEffect(() => { setSaveFeedback(false); }, [selectedNode?.id]);
   useEffect(() => { if (hasDraft) setSaveFeedback(false); }, [hasDraft]);
   useEffect(() => () => { if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current); }, []);
+
+  // 単一クリックによるコピー&クローズの遅延実行（issue 0027）。予約中に選択が
+  // 別のメモへ動いていた場合は本文を誤って取り違えないよう発火時に照合する
+  // （FavoriteEditTree.tsx の scheduleLaunch/pendingClickTimerRef と同じ考え方。
+  // useSettings.ts の appSettingsRef と同様、最新値をrefへ都度反映しておく）。
+  const pendingCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestSelectionRef = useRef<{ nodeId: string | null; content: string }>({ nodeId: null, content: "" });
+  useEffect(() => {
+    latestSelectionRef.current = { nodeId: selectedNode?.id ?? null, content };
+  }, [selectedNode, content]);
+  useEffect(() => () => { if (pendingCopyTimerRef.current) clearTimeout(pendingCopyTimerRef.current); }, []);
+  const scheduleCopyAndClose = useCallback((nodeId: string) => {
+    if (pendingCopyTimerRef.current) clearTimeout(pendingCopyTimerRef.current);
+    pendingCopyTimerRef.current = setTimeout(() => {
+      pendingCopyTimerRef.current = null;
+      if (latestSelectionRef.current.nodeId === nodeId) {
+        onCopyAndClose(latestSelectionRef.current.content).catch(console.error);
+      }
+    }, MEMO_CLICK_COPY_DELAY_MS);
+  }, [onCopyAndClose]);
+  const cancelScheduledCopyAndClose = useCallback(() => {
+    if (pendingCopyTimerRef.current) {
+      clearTimeout(pendingCopyTimerRef.current);
+      pendingCopyTimerRef.current = null;
+    }
+  }, []);
 
   const saveWithFeedback = useCallback(async () => {
     if (!hasDraft) return;
@@ -296,10 +329,11 @@ export function MemoManageView({
                     draggable={!reserved && !renamingThis && !manage.filtering}
                     onDragStart={(event) => { manage.dragInfoRef.current = { id: node.id, isFolder: node.type === "folder" }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", node.id); }}
                     onDragEnd={() => { manage.dragInfoRef.current = null; manage.setDropTarget(null); }}
-                    onDoubleClick={() => { if (!row.trashed && !reserved) manage.setRenaming(node.id); }}
+                    onDoubleClick={() => { if (!row.trashed && !reserved) { cancelScheduledCopyAndClose(); manage.setRenaming(node.id); } }}
                     onClick={() => {
                       selection.selectByKey(node.id);
-                      if (node.type === "folder" && !manage.filtering) manage.toggleFolder(node).catch(console.error);
+                      if (node.type === "folder" && !manage.filtering) { manage.toggleFolder(node).catch(console.error); return; }
+                      if (row.kind === "memo" && !row.trashed) scheduleCopyAndClose(node.id);
                     }}
                     className={rowClass}
                     style={{ paddingLeft: `${depth * INDENT_STEP_REM + INDENT_BASE_REM}rem` }}
