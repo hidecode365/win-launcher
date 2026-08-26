@@ -60,7 +60,7 @@ Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwi
 
 ### ウィンドウを閉じる系アクションの共通設計
 
-ウィンドウを閉じる系のアクション——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`／`addSearchFolderFromPaste`／`confirmShortcut`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）——は、すべて `useSearch.ts` の `closeWindow(options?)` を経由する。**新しくウィンドウを閉じる系アクションを追加する場合も、必ずこの関数を経由すること。** `closeWindow()` を経由しない独自のクローズ処理・個別の `useRef` ガードを新設しない。
+ウィンドウを閉じる系のアクション——`launchFile`／`openContainingFolder`／`copyResult`／`copyUrlConvertResult`／`openWebSearch`／`confirmSystemCommand`／`addSearchFolderFromPaste`／`confirmShortcut`（以上 `useSearch.ts`）／`selectClipboardEntry`（`useClipboard.ts`。`useSearch` の `closeWindow` を引数として受け取って使う）／`copyMemoAndClose`（`App.tsx`。`useMemoManage` の `flushDraft` で下書きを確定してから `closeWindow` を呼ぶ。メモ画面のEnter・通常ツリー内メモ行の単一クリック（issue 0027）のいずれもこの1関数を共通の入口として呼ぶ）——は、すべて `useSearch.ts` の `closeWindow(options?)` を経由する。**新しくウィンドウを閉じる系アクションを追加する場合も、必ずこの関数を経由すること。** `closeWindow()` を経由しない独自のクローズ処理・個別の `useRef` ガードを新設しない。
 
 設計原則：`hideWindow()` を最優先で `await` し、React state の変更は解決後に行う。
 
