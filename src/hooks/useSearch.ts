@@ -243,28 +243,20 @@ function matchSystemCommands(
   });
 }
 
-// クエリが "/" + 呼び出しキーワードに前方一致する場合、続く文字列（履歴のテキストフィルタ）
-// を返す。一致しない場合は null（モード非アクティブ）。
-function clipboardModeFilter(
-  query: string,
-  clipboardPrefix: string
-): string | null {
-  const full = PREFIX_CHAR + clipboardPrefix;
-  if (!query.toLowerCase().startsWith(full.toLowerCase())) return null;
-  return query.slice(full.length).trim();
+// クエリが "/" + 呼び出しキーワードに前方一致するかどうかだけを判定する。
+// issue 0024（クリップボード履歴・最近使ったファイルのL1画面化）以降、続く文字列
+// （かつてはここから抽出してフィルタ文字列として使っていた）は入力時点で破棄し、
+// 画面上部の独立したローカル絞り込みstate（clipboardEditFilterText/
+// recentEditFilterText）を使うため、この関数はモードの発火判定（真偽値）のみを返す。
+function hasPrefixMatch(query: string, keyword: string): boolean {
+  const full = PREFIX_CHAR + keyword;
+  return query.toLowerCase().startsWith(full.toLowerCase());
 }
 
-// クエリが "/" + 呼び出しキーワードに前方一致する場合、続く文字列（最近使ったファイル
-// 一覧のファイル名フィルタ）を返す。判定方式は clipboardModeFilter と同じ。
-function recentModeFilter(query: string, recentKeyword: string): string | null {
-  const full = PREFIX_CHAR + recentKeyword;
-  if (!query.toLowerCase().startsWith(full.toLowerCase())) return null;
-  return query.slice(full.length).trim();
-}
-
-// 判定方式は recentModeFilter と同じ（"/" + appSettings.favoriteKeyword への
-// 前方一致）。続く文字列は /favorite モードのフォルダ横断検索のフィルタ文字列
-// として使う。
+// 判定方式は hasPrefixMatch と同じ（"/" + appSettings.favoriteKeyword への
+// 前方一致）。favoriteModeFilter は issue 0024の対象外（お気に入り画面は既存の
+// 挙動を変更しない）のため、続く文字列を /favorite モードのフォルダ横断検索の
+// フィルタ文字列として返す従来の実装のまま維持する。
 function favoriteModeFilter(query: string, favoriteKeyword: string): string | null {
   const full = PREFIX_CHAR + favoriteKeyword;
   if (!query.toLowerCase().startsWith(full.toLowerCase())) return null;
@@ -275,7 +267,7 @@ const PREFIX_COMMAND_FRECENCY_KEY = "prefixCommandFrecency";
 
 // クエリが "/" から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋
 // クリップボード履歴。それぞれのキーワード判定ロジック自体は matchSystemCommands /
-// clipboardModeFilter と変えず、ここでは「候補として並べて表示する」ための一覧を
+// hasPrefixMatch と変えず、ここでは「候補として並べて表示する」ための一覧を
 // 組み立てるだけ）のうち、クエリに前方一致するものを返す。
 // 例: クエリが "/" 単体なら全件、"/sh" なら "/shutdown" のみに絞り込まれる。
 function buildPrefixCommandCandidates(
@@ -399,7 +391,13 @@ function sortPrefixCommandsByFrecency(
 export function useSearch(
   appSettings: AppSettings,
   settingsVersion: number,
-  storeRef: MutableRefObject<Store | null>
+  storeRef: MutableRefObject<Store | null>,
+  // issue 0024：クリップボード履歴・最近使ったファイルの確定クローズ（Enterでの
+  // コピー／ファイル起動）で、L1画面（App.tsx の view state）を明示的に検索画面へ
+  // 戻すためのコールバック。view は App.tsx側の state のため、useSearch.ts 自身は
+  // 直接変更できず、呼び出し元から受け取る（お気に入り・メモの確定クローズは
+  // 従来通り view を変更しない。詳細は launchFile のコメントを参照）。
+  resetToSearchView: () => void
 ) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FileEntry[]>([]);
@@ -703,14 +701,22 @@ export function useSearch(
   );
 
   const calcMode = appSettings.calcEnabled && isCalcExpression(query);
-  const clipboardFilterText = appSettings.clipboardEnabled
-    ? clipboardModeFilter(query, appSettings.clipboardPrefix)
-    : null;
-  const clipboardMode = clipboardFilterText !== null;
-  const recentFilterText = appSettings.recentFilesEnabled
-    ? recentModeFilter(query, appSettings.recentKeyword)
-    : null;
-  const recentMode = recentFilterText !== null;
+
+  // issue 0024：クリップボード履歴・最近使ったファイルのローカル絞り込み文字列。
+  // お気に入り編集ビューの favoriteEditFilterText と同じく、画面上部の専用入力欄に
+  // 束縛する独立したstateとして持つ（検索ボックスのqueryからは導出しない）。
+  // 呼び出しキーワードに続けて入力した文字列は入力時点で破棄し、空から開始する。
+  const [clipboardEditFilterText, setClipboardEditFilterText] = useState("");
+  const [recentEditFilterText, setRecentEditFilterText] = useState("");
+
+  const clipboardMode =
+    appSettings.clipboardEnabled &&
+    hasPrefixMatch(query, appSettings.clipboardPrefix);
+  const clipboardFilterText = clipboardMode ? clipboardEditFilterText : null;
+  const recentMode =
+    appSettings.recentFilesEnabled &&
+    hasPrefixMatch(query, appSettings.recentKeyword);
+  const recentFilterText = recentMode ? recentEditFilterText : null;
   const favoriteFilterText = appSettings.favoriteEnabled
     ? favoriteModeFilter(query, appSettings.favoriteKeyword)
     : null;
@@ -2074,27 +2080,28 @@ export function useSearch(
   // hideWindow() を最優先で実行する。詳細は「ウィンドウを閉じる系アクションの
   // 共通設計」節を参照）。
 
-  // recentMode（/recent）から起動された場合のみ、クエリをプレフィックス部分
-  // （"/" + 現在の呼び出しキーワード）まで残す。通常のファイル検索結果からの起動は
-  // 従来通り closeWindow() の既定（"full"）でクエリを完全にクリアする。
+  // issue 0024：recentMode（/recent）からの確定クローズは、他のL1画面（クリップボード
+  // 履歴）と同じく次回は通常の検索画面から開始する仕様のため、クエリはプレフィックス
+  // 部分を残さず完全にクリアし（closeWindow() の既定 "full"）、加えて L1状態
+  // （App.tsx の view）自体も明示的に検索画面へ戻す（resetToSearchView）。query の
+  // クリアだけでは view が "recentEdit" のまま残ってしまうため両方が必要
+  // （詳細は docs/internal-design/recent-files.md を参照）。
+  // favoriteMode（/favorite）は既存の挙動を変更しない：クエリはプレフィックス部分
+  // （"/favorite"）のみを残し、view はそのまま維持する（確定後も編集ビューに留まる
+  // 従来の仕様のまま）。
   const launchFile = useCallback(
     async (path: string) => {
       invoke("launch_file", { path }).catch(console.error);
       const cleanup = () => {
         setResults([]);
         recordFrecency(path).catch(console.error);
+        if (recentMode) resetToSearchView();
       };
-      if (recentMode) {
-        await closeWindow({
-          clearQuery: "prefixOnly",
-          prefix: PREFIX_CHAR + appSettings.recentKeyword,
-          cleanup,
-        });
-      } else if (favoriteMode) {
+      if (favoriteMode) {
         // external-design/01-screen-transitions.md「モード共存・排他一覧」の
         // /favorite の「確定時の処理」：
-        // recentMode・clipboardMode と同様、クエリはプレフィックス部分
-        // （"/favorite"）のみを残す（続く横断検索フィルタ文字列だけをクリアする）。
+        // クエリはプレフィックス部分（"/favorite"）のみを残す（続く横断検索
+        // フィルタ文字列だけをクリアする）。
         await closeWindow({
           clearQuery: "prefixOnly",
           prefix: PREFIX_CHAR + appSettings.favoriteKeyword,
@@ -2108,7 +2115,7 @@ export function useSearch(
       closeWindow,
       recordFrecency,
       recentMode,
-      appSettings.recentKeyword,
+      resetToSearchView,
       favoriteMode,
       appSettings.favoriteKeyword,
     ]
@@ -2117,12 +2124,19 @@ export function useSearch(
   // 選択中の項目の格納フォルダをエクスプローラーで開く（Shift+Enter）。通常の
   // launchFile と異なり frecency は記録しない（ファイルを起動したわけではないため）。
   // ウィンドウを閉じる（非表示にする）挙動は launchFile と同じにする。
+  // issue 0024：recentMode からの実行時は launchFile と同じく view を明示的に
+  // 検索画面へ戻す（favoriteMode 等、他の呼び出し元は従来通り view に触れない）。
   const openContainingFolder = useCallback(
     async (path: string) => {
       invoke("open_containing_folder", { path }).catch(console.error);
-      await closeWindow({ cleanup: () => setResults([]) });
+      await closeWindow({
+        cleanup: () => {
+          setResults([]);
+          if (recentMode) resetToSearchView();
+        },
+      });
     },
-    [closeWindow]
+    [closeWindow, recentMode, resetToSearchView]
   );
 
   const copyResult = useCallback(
@@ -2466,7 +2480,11 @@ export function useSearch(
     selectPrefixCommand,
     clipboardFilterText,
     clipboardMode,
+    clipboardEditFilterText,
+    setClipboardEditFilterText,
     recentMode,
+    recentEditFilterText,
+    setRecentEditFilterText,
     urlConvertResult,
     pendingCommand,
     requestSystemCommand,

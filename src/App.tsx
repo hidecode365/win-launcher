@@ -14,10 +14,11 @@ import { useOcr } from "./hooks/useOcr";
 import { useUpdater } from "./hooks/useUpdater";
 import { useMemoManage } from "./hooks/useMemoManage";
 import { SearchBox } from "./components/SearchBox";
-import { OcrPreview } from "./components/OcrPreview";
+import { OcrEditView } from "./components/OcrEditView";
 import { ResultList } from "./components/ResultList";
 import { PathPasteWizard } from "./components/PathPasteWizard";
-import { ClipboardPanel } from "./components/ClipboardPanel";
+import { ClipboardEditView } from "./components/ClipboardEditView";
+import { RecentEditView } from "./components/RecentEditView";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SystemCommandModal } from "./components/SystemCommandModal";
 import { RegisterEntryDialog } from "./components/RegisterEntryDialog";
@@ -37,11 +38,22 @@ import type {
 const DEFAULT_CLIPBOARD_PANE_WIDTH = 224;
 const DEFAULT_MEMO_PANE_WIDTH = 280;
 
-// 「検索」「設定」「お気に入り管理」「メモ管理」の全画面ビュー。二択の boolean
-// swap（旧 showSettings）では3枚目以降を表現できないため enum 化した。
-// いずれも同一の main ウィンドウ内での表示切り替えであり、新規のOSウィンドウは
-// 作らない（00-requirements.md「お気に入り編集ビュー」節を参照）。
-type MainView = "search" | "settings" | "favoriteEdit" | "memoEdit";
+// 「検索」「設定」「お気に入り管理」「メモ管理」「クリップボード履歴」「最近使った
+// ファイル」「OCR」の全画面ビュー。二択の boolean swap（旧 showSettings）では
+// 3枚目以降を表現できないため enum 化した。いずれも同一の main ウィンドウ内での
+// 表示切り替えであり、新規のOSウィンドウは作らない（00-requirements.md「お気に入り
+// 編集ビュー」節を参照）。issue 0024：クリップボード履歴・最近使ったファイル・OCRを
+// 検索画面の子状態／Fullscreen OverlayからL1画面へ再構成するにあたり、
+// window-lifecycle.md「5枚目以降の全画面ビューを追加する場合はUnion型へ新しい
+// 文字列リテラルを1つ追加するだけにする」という既存の指針をそのまま適用した。
+type MainView =
+  | "search"
+  | "settings"
+  | "favoriteEdit"
+  | "memoEdit"
+  | "clipboardEdit"
+  | "recentEdit"
+  | "ocrEdit";
 
 export default function App() {
   const [view, setView] = useState<MainView>("search");
@@ -58,7 +70,10 @@ export default function App() {
   useEffect(() => {
     getVersion().then((v) => setAppVersion(v));
   }, []);
-  const [ocrClosing, setOcrClosing] = useState(false);
+  // issue 0024：クリップボード履歴・最近使ったファイルの確定クローズで、L1状態
+  // （view）を明示的に検索画面へ戻すためのコールバック。useSearch.ts/useClipboard.ts
+  // 自身は view を保持しないため、App.tsx から渡す（詳細は各フック側のコメントを参照）。
+  const resetToSearchView = useCallback(() => setView("search"), []);
   const [clipboardPaneWidth, setClipboardPaneWidth] = useState(
     DEFAULT_CLIPBOARD_PANE_WIDTH
   );
@@ -87,7 +102,15 @@ export default function App() {
 
   const settings = useSettings(showSettings);
   const hotkey = useHotkey(settings.setAppSettings);
-  const search = useSearch(settings.appSettings, settingsVersion, storeRef);
+  const search = useSearch(
+    settings.appSettings,
+    settingsVersion,
+    storeRef,
+    resetToSearchView
+  );
+  // issue 0024：OCR画面への昇格判定（下記 ocrActive）に必要なため、useOcr() を
+  // 他のL1昇格判定と同じ箇所へ引き上げた（旧位置は favoriteEdit 定義の直後）。
+  const ocr = useOcr();
 
   // issue 0026 軸C：検索・お気に入り・メモは同格のL1 UI State。`/favorite`・`/memo`
   // を入力した時点（検索画面の子状態としての判定はそれぞれ search.favoriteMode・
@@ -101,7 +124,28 @@ export default function App() {
     search.query.toLowerCase().startsWith(`/${settings.appSettings.memoKeyword.toLowerCase()}`);
   const favoriteEditOpen = view === "favoriteEdit" || (view === "search" && search.favoriteMode);
   const memoEditOpen = view === "memoEdit" || (view === "search" && memoQueryMatch);
-  viewRef.current = favoriteEditOpen ? "favoriteEdit" : memoEditOpen ? "memoEdit" : view;
+  // issue 0024：クリップボード履歴・最近使ったファイル・OCRも同じ「同格のL1
+  // UI State」として、favoriteEditOpen/memoEditOpen と全く同型の同期OR判定で
+  // 昇格させる。clipboardMode/recentMode は useSearch.ts 側で
+  // appSettings.xxxEnabled も含めて判定済みのため、ここでの追加条件は不要。
+  const ocrActive =
+    ocr.ocrLoading || ocr.ocrText !== null || ocr.ocrError !== null;
+  const clipboardEditOpen =
+    view === "clipboardEdit" || (view === "search" && search.clipboardMode);
+  const recentEditOpen =
+    view === "recentEdit" || (view === "search" && search.recentMode);
+  const ocrEditOpen = view === "ocrEdit" || (view === "search" && ocrActive);
+  viewRef.current = favoriteEditOpen
+    ? "favoriteEdit"
+    : memoEditOpen
+      ? "memoEdit"
+      : clipboardEditOpen
+        ? "clipboardEdit"
+        : recentEditOpen
+          ? "recentEdit"
+          : ocrEditOpen
+            ? "ocrEdit"
+            : view;
 
   useEffect(() => {
     if (view === "search" && search.favoriteMode) setView("favoriteEdit");
@@ -109,6 +153,23 @@ export default function App() {
   useEffect(() => {
     if (view === "search" && memoQueryMatch) setView("memoEdit");
   }, [view, memoQueryMatch]);
+  useEffect(() => {
+    // issue 0024：`/cb`入力時点で後続文字列は破棄し、ローカル絞り込みは空から
+    // 開始する（04-history-lists.md「クリップボード履歴」節）。
+    if (view === "search" && search.clipboardMode) {
+      search.setClipboardEditFilterText("");
+      setView("clipboardEdit");
+    }
+  }, [view, search.clipboardMode, search.setClipboardEditFilterText]);
+  useEffect(() => {
+    if (view === "search" && search.recentMode) {
+      search.setRecentEditFilterText("");
+      setView("recentEdit");
+    }
+  }, [view, search.recentMode, search.setRecentEditFilterText]);
+  useEffect(() => {
+    if (view === "search" && ocrActive) setView("ocrEdit");
+  }, [view, ocrActive]);
 
   // メモ画面のツリー編集state・本文（下書き・確定版）管理。App.tsx側でフックとして
   // 保持することで、設定画面往復（MemoManageView自体のアンマウント・再マウント）を
@@ -124,12 +185,17 @@ export default function App() {
     search.favoriteEditRawTree,
     search.favoriteEditFilterText
   );
-  const ocr = useOcr();
   const updater = useUpdater();
-  // issue 0026 軸C：Ctrl+, は検索画面に加え、お気に入り画面・メモ画面表示中も有効
+  // issue 0026/0024 軸C：Ctrl+, は検索画面に加え、お気に入り・メモ・クリップボード
+  // 履歴・最近使ったファイル・OCRのL1画面表示中も有効
   // （06-keyboard-interactions.md 表1「共通操作」を参照）。
   const settingsShortcutAvailable =
-    (view === "search" || favoriteEditOpen || memoEditOpen) &&
+    (view === "search" ||
+      favoriteEditOpen ||
+      memoEditOpen ||
+      clipboardEditOpen ||
+      recentEditOpen ||
+      ocrEditOpen) &&
     !search.pendingCommand &&
     !search.favoriteDialogTarget &&
     !search.pendingDeleteFavoriteFolder;
@@ -148,7 +214,8 @@ export default function App() {
     search.clipboardFilterText,
     storeRef,
     search.closeWindow,
-    search.syncClipboardSelectionItems
+    search.syncClipboardSelectionItems,
+    resetToSearchView
   );
 
   useEffect(() => {
@@ -175,15 +242,15 @@ export default function App() {
     }
   }, [view, search.searchOverlayActive]);
 
+  // issue 0024：OCR画面を閉じて通常の検索画面へ戻る。「閉じる」ボタン・Escapeの
+  // いずれからも呼ばれる（ウィンドウは隠さない）。view の明示リセットを追加した点が
+  // L1再構成前との差分（旧実装は ocr.clearOcr() だけで良かった。ocrActive が
+  // view に依存しない独立した派生値だったため）。
   const handleOcrClose = useCallback(() => {
     ocr.clearOcr();
+    setView("search");
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [ocr.clearOcr]);
-
-  // Ctrl+D（クエリ全クリア）の分岐判定に使う。OCR プレビュー表示中かどうかで挙動が
-  // 変わるため、キー操作のエフェクトより前に算出しておく（JSX 側での利用は後述）。
-  const ocrActive =
-    ocr.ocrLoading || ocr.ocrText !== null || ocr.ocrError !== null;
 
   // 起動時アップデートチェック。設定の初回読み込みが完了した時点で一度だけ行う
   // （appSettings は他の設定変更でも更新されるため、settingsLoaded 遷移時のみに限定する）。
@@ -198,18 +265,21 @@ export default function App() {
     }
   }, [settings.settingsLoaded, settings.appSettings.checkUpdateOnStartup, updater.runCheck]);
 
+  // issue 0024：OCR固有のフェードアウト演出（180ms）を廃止し、他のL1画面の確定
+  // クローズと同じ共通経路（search.closeWindow）でウィンドウを非表示にする。
+  // コピー本体（copy_to_clipboard）は closeWindow() の hideWindow() を待たず
+  // fire-and-forget で発火する（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
   const handleOcrCopyAndClose = useCallback(async () => {
     if (ocr.ocrText !== null) {
-      await invoke("copy_to_clipboard", { text: ocr.ocrText }).catch(
-        console.error
-      );
+      invoke("copy_to_clipboard", { text: ocr.ocrText }).catch(console.error);
     }
-    setOcrClosing(true);
-    await new Promise((resolve) => setTimeout(resolve, 180));
-    await hideWindow();
-    setOcrClosing(false);
-    ocr.clearOcr();
-  }, [ocr.ocrText, ocr.clearOcr]);
+    await search.closeWindow({
+      cleanup: () => {
+        ocr.clearOcr();
+        setView("search");
+      },
+    });
+  }, [ocr.ocrText, ocr.clearOcr, search.closeWindow]);
 
   // ファイル起動履歴（frecency）とクリップボードのテキスト履歴を読み込む。
   // Rust 側にコマンドを追加せず、settings.json を Rust と共有する
@@ -339,10 +409,28 @@ export default function App() {
     search.setQuery("");
   }, [memoManage.setRenaming, memoManage.cancelCreate, memoManage.setFilterText, search.setQuery]);
 
-  // issue 0026 軸C-2：設定を開いた元のL1画面（検索/お気に入り/メモ）を1段だけ記録し、
-  // 設定を閉じるとその画面へ戻す（履歴スタックにはしない）。viewRef.current は
-  // favoriteEditOpen/memoEditOpen による実効ビューを反映済みのため、遷移直後の
-  // 1フレームに「search」のまま記録してしまう心配はない。
+  // issue 0024：クリップボード履歴・最近使ったファイル画面を閉じて検索画面へ戻る
+  // （Escape・戻るボタン・空欄でのBackspace共通の経路）。closeMemoEdit と同じ理由で
+  // 検索クエリを空にする（空にしないと clipboardMode/recentMode が直ちに再び真に
+  // なり、検索画面へ戻れず同じ画面に留まってしまう）。ローカル絞り込み文字列は
+  // useSearch.ts側のstateのため、そちらのsetterで空へ戻す。
+  const closeClipboardEdit = useCallback(() => {
+    setView("search");
+    search.setClipboardEditFilterText("");
+    search.setQuery("");
+  }, [search.setClipboardEditFilterText, search.setQuery]);
+
+  const closeRecentEdit = useCallback(() => {
+    setView("search");
+    search.setRecentEditFilterText("");
+    search.setQuery("");
+  }, [search.setRecentEditFilterText, search.setQuery]);
+
+  // issue 0026/0024 軸C-2：設定を開いた元のL1画面（検索・お気に入り・メモ・
+  // クリップボード履歴・最近使ったファイル・OCR）を1段だけ記録し、設定を閉じると
+  // その画面へ戻す（履歴スタックにはしない）。viewRef.current は各Open系派生値
+  // による実効ビューを反映済みのため、遷移直後の1フレームに「search」のまま
+  // 記録してしまう心配はない。
   const openSettings = useCallback(() => {
     previousViewRef.current = viewRef.current;
     setView("settings");
@@ -599,10 +687,15 @@ export default function App() {
   // ステップの操作は window レベルの keydown で処理する。input 要素のローカル
   // onKeyDown に持たせると、フォーカス状態やブラウザ既定動作の影響で発火しないことが
   // あるため、この一箇所に統一している。
-  // Ctrl+D は OCR プレビュー表示中のみ「閉じる」ボタン（handleOcrClose）と同一の処理を
-  // 呼び、それ以外の全画面・全モードでは現在の表示に関わらずクエリを空文字にする
-  // （ウィンドウは閉じないため closeWindow は経由しない。closeRefreshTick の加算も
-  // 不要：query 自体が変化するので検索用 useEffect は通常通り再トリガーされる）。
+  // Ctrl+D は画面ごとの絞り込み文字列を空文字にする（ウィンドウは閉じないため
+  // closeWindow は経由しない。closeRefreshTick の加算も不要：query 自体が変化
+  // するので検索用 useEffect は通常通り再トリガーされる）。
+  // issue 0024：OCR画面ではCtrl+Dは完全に無効（何もしない）。クリップボード履歴・
+  // 最近使ったファイル画面では、L1滞在中に内部で維持し続けている呼び出しクエリ
+  // （search.query）を誤って変更しない（変更すると clipboardMode/recentMode の
+  // 判定自体が崩れ、一覧・選択・フォーカス回復再取得が壊れる。詳細は
+  // docs/internal-design/recent-files.md を参照）ため、localQueryClearHandlerRef
+  // へ登録されたローカル絞り込み文字列のクリアのみを行う。
   // パス貼り付けウィザードの両ステップ（"folderSelect"／"nameEdit"）も、SearchBox の
   // フォーカス状態に依存しないここで一括処理する。
   // - "folderSelect"：候補行は SearchBox とは別の `<button>` 要素（一覧の各行）であり、
@@ -642,8 +735,11 @@ export default function App() {
       } else if (e.ctrlKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
         e.stopPropagation();
-        if (ocrActive) handleOcrClose();
-        else {
+        if (ocrEditOpen) {
+          // 無効：何もしない（背後の検索クエリを含め一切変更しない）。
+        } else if (clipboardEditOpen || recentEditOpen) {
+          localQueryClearHandlerRef.current?.();
+        } else {
           // メイン検索クエリに加え、現在の全画面ビューが独自に持つ可視の
           // 絞り込み文字列も同じCtrl+Dからクリアする。キーリスナー自体は
           // 画面ごとに増やさず、このwindowハンドラへ一本化する。
@@ -663,6 +759,21 @@ export default function App() {
         // 到達しない。
         e.preventDefault();
         closeMemoEdit();
+      } else if (e.key === "Escape" && clipboardEditOpen) {
+        // issue 0024：クリップボード履歴画面のEscapeはフォーカス位置に依存せず
+        // 通常の検索画面へ戻る（06-keyboard-interactions.md表6）。
+        e.preventDefault();
+        closeClipboardEdit();
+      } else if (e.key === "Escape" && recentEditOpen) {
+        // issue 0024：最近使ったファイル画面のEscapeも同様（06-keyboard-interactions.md
+        // 表1「Esc」の注記を参照）。
+        e.preventDefault();
+        closeRecentEdit();
+      } else if (e.key === "Escape" && ocrEditOpen) {
+        // issue 0024：OCR画面のEscapeは「閉じる」ボタンと同一
+        // （06-keyboard-interactions.md表5）。
+        e.preventDefault();
+        handleOcrClose();
       } else if (favoriteEditOpen && search.pendingDeleteFavoriteFolder) {
         // 削除確認モーダル表示中は Escape のみキャンセル扱いにする（下の
         // favoriteEditOpen 単体の分岐より先に判定し、Escape でモーダルではなく
@@ -880,9 +991,6 @@ export default function App() {
           void logUiEvent("[window-keydown] key=Escape");
           search.cancelSystemCommand();
         }
-      } else if (e.key === "Escape" && ocrActive) {
-        e.preventDefault();
-        handleOcrClose();
       } else if (e.key === "Escape" && viewRef.current === "search") {
         e.preventDefault();
         memoFlushRef.current().catch(console.error).finally(() => hideWindow());
@@ -896,6 +1004,11 @@ export default function App() {
     closeMemoEdit,
     favoriteEditOpen,
     closeFavoriteEdit,
+    clipboardEditOpen,
+    closeClipboardEdit,
+    recentEditOpen,
+    closeRecentEdit,
+    ocrEditOpen,
     search.pendingCommand,
     search.cancelSystemCommand,
     search.favoriteDialogTarget,
@@ -914,7 +1027,6 @@ export default function App() {
     moveFavoriteNodeWithinParent,
     indentFavoriteNode,
     outdentFavoriteNode,
-    ocrActive,
     handleOcrClose,
     updater.dialog,
     updater.dismiss,
@@ -964,10 +1076,16 @@ export default function App() {
           ? search.wizardFolders.length
           : 0
         : search.rows.length;
+  // issue 0024：最近使ったファイル画面ではWeb検索候補を表示しない
+  // （04-history-lists.md「最近使ったファイル一覧」節）。recentMode は query が
+  // 常に非空（"/recent..."）になるため、この除外が無いと意図せずWeb検索行が
+  // 選択可能になってしまう（実装時に発見した既存の潜在的な不整合。詳細は
+  // docs/internal-design/recent-files.md を参照）。
   const webSearchVisible =
     settings.appSettings.webSearchEnabled &&
     search.query.trim().length > 0 &&
     !search.clipboardMode &&
+    !search.recentMode &&
     !search.pathPasteWizardMode;
   const listLength = baseLength + (webSearchVisible ? 1 : 0);
 
@@ -1296,11 +1414,92 @@ export default function App() {
     );
   }
 
+  if (clipboardEditOpen) {
+    return (
+      <ClipboardEditView
+        entries={clipboard.clipboardEntries}
+        selected={search.selected}
+        onSelect={(index, clientX, clientY) => {
+          const entry = clipboard.clipboardEntries[index];
+          if (entry) {
+            search.selectRowFromHover(entry.id, clientX, clientY);
+          }
+        }}
+        onSelectEntry={clipboard.selectClipboardEntry}
+        filterText={search.clipboardEditFilterText}
+        onFilterTextChange={search.setClipboardEditFilterText}
+        onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler}
+        onKeyDown={handleKeyDown}
+        initialLeftWidth={clipboardPaneWidth}
+        onWidthChange={handlePaneWidthChange}
+        memoEnabled={settings.appSettings.memoEnabled}
+        onAddMemo={addMemoFromClipboard}
+        onClose={closeClipboardEdit}
+        version={appVersion}
+      />
+    );
+  }
+
+  if (recentEditOpen) {
+    return (
+      <RecentEditView
+        filterText={search.recentEditFilterText}
+        onFilterTextChange={search.setRecentEditFilterText}
+        onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler}
+        onKeyDown={handleKeyDown}
+        resultListProps={{
+          rows: search.rows,
+          pinIconVisible,
+          favoriteIconVisible,
+          onTogglePin: search.togglePin,
+          onToggleFavorite: search.toggleFavorite,
+          onReorderPinned: search.reorderPinned,
+          prefixCommandMode: false,
+          prefixCommandCandidates: [],
+          results: search.results,
+          query: search.query,
+          selected: search.selected,
+          baseLength,
+          webSearchVisible: false,
+          onSelect: search.selectFromHover,
+          onSelectRowByKey: search.selectRowFromHover,
+          onAddSearchFolder: search.addSearchFolderFromPaste,
+          onStartShortcutWizard: search.startShortcutWizard,
+          onTogglePinFromPaste: search.togglePinFromPaste,
+          onToggleFavoriteFromPaste: search.toggleFavoriteFromPaste,
+          onCopyResult: search.copyResult,
+          onSelectPrefixCommand: search.selectPrefixCommand,
+          onLaunchFile: search.launchFile,
+          onOpenWebSearch: search.openWebSearch,
+          onCopyUrlConvertResult: search.copyUrlConvertResult,
+        }}
+        selectionAvailable={baseLength > 0}
+        onClose={closeRecentEdit}
+        version={appVersion}
+      />
+    );
+  }
+
+  if (ocrEditOpen) {
+    return (
+      <OcrEditView
+        imageUrl={ocr.ocrImageUrl}
+        loading={ocr.ocrLoading}
+        text={ocr.ocrText}
+        error={ocr.ocrError}
+        onTextChange={ocr.setOcrText}
+        onClose={handleOcrClose}
+        onCopyAndClose={handleOcrCopyAndClose}
+        onOpenSettings={openSettings}
+        ocrRunId={ocr.ocrRunId}
+        version={appVersion}
+      />
+    );
+  }
+
   return (
     <div
-      className={`relative flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl transition-opacity duration-[180ms] ${
-        ocrClosing ? "opacity-0" : "opacity-100"
-      }`}
+      className="relative flex flex-col h-screen bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/20 shadow-2xl"
       onMouseMove={(e) => search.recordMouseMove(e.clientX, e.clientY)}
     >
       {/* お気に入り登録ダイアログ（★を押した未登録行から開く。段階5の /memo でも
@@ -1359,105 +1558,65 @@ export default function App() {
         />
       )}
 
-      {/* OCR プレビュー（画像ペースト時に表示。表示中は検索結果エリアを非表示にする） */}
-      {/* key に ocrRunId を使い、新しい画像が貼り付けられるたびに再マウントして
-          左右ペインの分割幅を 50:50 の初期状態にリセットする */}
-      {ocrActive && (
-        <OcrPreview
-          key={ocr.ocrRunId}
-          imageUrl={ocr.ocrImageUrl}
-          loading={ocr.ocrLoading}
-          text={ocr.ocrText}
-          error={ocr.ocrError}
-          onTextChange={ocr.setOcrText}
-          onClose={handleOcrClose}
-          onCopyAndClose={handleOcrCopyAndClose}
+      {/* 検索結果 / 計算結果 / パス貼り付けウィザード。issue 0024でクリップボード
+          履歴・最近使ったファイル・OCRはそれぞれ独立したL1画面（ClipboardEditView/
+          RecentEditView/OcrEditView）へ再構成し、検索画面（本JSX）へは到達しなく
+          なったため、ここでの分岐・OCRの表示可否ガードは撤去した。 */}
+      {search.pathPasteWizardMode ? (
+        <PathPasteWizard
+          step={search.wizardStep}
+          folders={search.wizardFolders}
+          selected={search.selected}
+          onSelect={search.selectFromHover}
+          onSelectFolder={search.selectWizardFolder}
+          name={search.wizardName}
+          onNameChange={search.setWizardName}
         />
-      )}
-
-      {/* 検索結果 / 計算結果 / クリップボード履歴 / パス貼り付けウィザード
-          （OCR プレビュー中は非表示） */}
-      {!ocrActive &&
-        (search.clipboardMode ? (
-          <ClipboardPanel
-            entries={clipboard.clipboardEntries}
-            selected={search.selected}
-            onSelect={(index, clientX, clientY) => {
-              // R-1 フェーズD-2: clipboardMode の選択も intent の更新のみで
-              // 表現する。ClipboardPanel.tsx 自体は変更せず、渡ってくる生
-              // インデックスをここで対象エントリの id（key）に変換してから
-              // search.selectRowFromHover へ渡す（詳細は useSearch.ts の
-              // SelectIntent 型のコメントを参照）。
-              const entry = clipboard.clipboardEntries[index];
-              if (entry) {
-                search.selectRowFromHover(entry.id, clientX, clientY);
-              }
-            }}
-            onSelectEntry={clipboard.selectClipboardEntry}
-            initialLeftWidth={clipboardPaneWidth}
-            onWidthChange={handlePaneWidthChange}
-            memoEnabled={settings.appSettings.memoEnabled}
-            onAddMemo={addMemoFromClipboard}
-          />
-        ) : search.pathPasteWizardMode ? (
-          <PathPasteWizard
-            step={search.wizardStep}
-            folders={search.wizardFolders}
-            selected={search.selected}
-            onSelect={search.selectFromHover}
-            onSelectFolder={search.selectWizardFolder}
-            name={search.wizardName}
-            onNameChange={search.setWizardName}
-          />
-        ) : (
-          <ResultList
-            rows={search.rows}
-            pinIconVisible={pinIconVisible}
-            favoriteIconVisible={favoriteIconVisible}
-            onTogglePin={search.togglePin}
-            onToggleFavorite={search.toggleFavorite}
-            onReorderPinned={search.reorderPinned}
-            prefixCommandMode={search.prefixCommandMode}
-            prefixCommandCandidates={search.prefixCommandCandidates}
-            results={search.results}
-            query={search.query}
-            selected={search.selected}
-            baseLength={baseLength}
-            webSearchVisible={webSearchVisible}
-            onSelect={search.selectFromHover}
-            onSelectRowByKey={search.selectRowFromHover}
-            onAddSearchFolder={search.addSearchFolderFromPaste}
-            onStartShortcutWizard={search.startShortcutWizard}
-            onTogglePinFromPaste={search.togglePinFromPaste}
-            onToggleFavoriteFromPaste={search.toggleFavoriteFromPaste}
-            onCopyResult={search.copyResult}
-            onSelectPrefixCommand={search.selectPrefixCommand}
-            onLaunchFile={search.launchFile}
-            onOpenWebSearch={search.openWebSearch}
-            onCopyUrlConvertResult={search.copyUrlConvertResult}
-          />
-        ))}
-
-      {/* フッター（OCR プレビュー中は非表示） */}
-      {!ocrActive && (
-        <StatusFooter
-          pendingCommand={search.pendingCommand !== null}
-          webSearchVisible={webSearchVisible}
-          isWebSearchSelected={search.selected === baseLength}
-          clipboardMode={search.clipboardMode}
-          pathPasteWizardStep={
-            search.pathPasteWizardMode ? search.wizardStep : null
-          }
+      ) : (
+        <ResultList
+          rows={search.rows}
+          pinIconVisible={pinIconVisible}
+          favoriteIconVisible={favoriteIconVisible}
+          onTogglePin={search.togglePin}
+          onToggleFavorite={search.toggleFavorite}
+          onReorderPinned={search.reorderPinned}
           prefixCommandMode={search.prefixCommandMode}
-          settingsShortcutAvailable={settingsShortcutAvailable}
-          selectionAvailable={listLength > 0}
-          registerDialogOpen={search.favoriteDialogTarget !== null}
-          updateDialogOpen={updater.dialog !== null}
-          updateInstalling={updater.dialog?.kind === "installing"}
-          selectedRowKind={selectedRow?.kind ?? null}
-          version={appVersion}
+          prefixCommandCandidates={search.prefixCommandCandidates}
+          results={search.results}
+          query={search.query}
+          selected={search.selected}
+          baseLength={baseLength}
+          webSearchVisible={webSearchVisible}
+          onSelect={search.selectFromHover}
+          onSelectRowByKey={search.selectRowFromHover}
+          onAddSearchFolder={search.addSearchFolderFromPaste}
+          onStartShortcutWizard={search.startShortcutWizard}
+          onTogglePinFromPaste={search.togglePinFromPaste}
+          onToggleFavoriteFromPaste={search.toggleFavoriteFromPaste}
+          onCopyResult={search.copyResult}
+          onSelectPrefixCommand={search.selectPrefixCommand}
+          onLaunchFile={search.launchFile}
+          onOpenWebSearch={search.openWebSearch}
+          onCopyUrlConvertResult={search.copyUrlConvertResult}
         />
       )}
+
+      <StatusFooter
+        pendingCommand={search.pendingCommand !== null}
+        webSearchVisible={webSearchVisible}
+        isWebSearchSelected={search.selected === baseLength}
+        pathPasteWizardStep={
+          search.pathPasteWizardMode ? search.wizardStep : null
+        }
+        prefixCommandMode={search.prefixCommandMode}
+        settingsShortcutAvailable={settingsShortcutAvailable}
+        selectionAvailable={listLength > 0}
+        registerDialogOpen={search.favoriteDialogTarget !== null}
+        updateDialogOpen={updater.dialog !== null}
+        updateInstalling={updater.dialog?.kind === "installing"}
+        selectedRowKind={selectedRow?.kind ?? null}
+        version={appVersion}
+      />
     </div>
   );
 }

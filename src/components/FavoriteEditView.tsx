@@ -4,6 +4,7 @@ import { FavoriteEditTree } from "./FavoriteEditTree";
 import { CreateFolderIcon } from "./FavoriteTreeVisuals";
 import { FavoriteFolderDeleteModal } from "./FavoriteFolderDeleteModal";
 import { FavoriteEditFooter } from "./FavoriteEditFooter";
+import { isEmptyFilterBackspaceReturn } from "../lib/treeEditUtils";
 import { CreateFolderResult, FavoriteEditTreeRow, FileEntry } from "../types";
 
 // お気に入り編集ビュー。4bで読み取り専用のツリー描画＋選択、4cでフォルダの
@@ -182,6 +183,22 @@ export function FavoriteEditView({
           type="text"
           value={filterText}
           onChange={(e) => onFilterTextChange(e.target.value)}
+          onKeyDown={(e) => {
+            // issue 0024：空のローカル絞り込み入力欄での無修飾Backspaceで通常検索
+            // 画面へ戻る（06-keyboard-interactions.md表1「Backspace（修飾キーなし）」）。
+            // フォルダ削除確認モーダル表示中は、このモーダルがマウント時autofocusを
+            // 持たないため入力欄にDOMフォーカスが残ったままになりうる。フォーカス
+            // 条件だけに頼るとモーダルを無視して画面ごと閉じてしまうため、
+            // pendingDeleteFolder を明示的に除外する。
+            if (
+              !pendingDeleteFolder &&
+              isEmptyFilterBackspaceReturn(e, filterText)
+            ) {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }
+          }}
           placeholder="お気に入りを絞り込み..."
           className="flex-1 bg-transparent outline-none text-lg text-gray-800 placeholder-gray-400"
           autoComplete="off"

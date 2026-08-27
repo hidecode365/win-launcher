@@ -11,7 +11,6 @@ import { listen } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import type { Store } from "@tauri-apps/plugin-store";
 import { makeId } from "../lib/format";
-import { PREFIX_CHAR } from "./useSearch";
 import {
   AppSettings,
   ClipboardChangedPayload,
@@ -34,7 +33,12 @@ export function useClipboard(
   // （id）一覧を useSearch 側へ push する（useSearch は useClipboard の戻り値に
   // 依存できない構成のため、逆方向に push する形にしている。詳細は useSearch.ts の
   // SelectIntent 型のコメントを参照）。
-  syncClipboardSelectionItems: (items: { key: string }[]) => void
+  syncClipboardSelectionItems: (items: { key: string }[]) => void,
+  // issue 0024：クリップボード履歴画面の確定クローズ（Enter/クリックでの
+  // コピー）で、L1状態（App.tsx の view）を明示的に検索画面へ戻すためのコールバック
+  // （useSearch.ts の launchFile と同じ理由。次回表示は常に通常の検索画面から
+  // 開始する仕様のため）。
+  resetToSearchView: () => void
 ) {
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardEntry[]>(
     []
@@ -121,10 +125,12 @@ export function useClipboard(
     };
   }, [recordClipboardEntry]);
 
-  // クエリはプレフィックス部分（"/" + 現在の呼び出しキーワード。例: "/cb"）まで残し、
-  // 続く絞り込みフィルタ文字列だけをクリアする（/recent の launchFile と同じ方針）。
-  // クリップボードへの書き込み invoke は closeWindow() の hideWindow() を待たず
-  // fire-and-forget で発火する（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
+  // issue 0024：クリップボード履歴画面はお気に入り・メモと異なり、確定クローズ後の
+  // 次回表示は常に通常の検索画面から開始する仕様のため、クエリは完全にクリアし
+  // （closeWindow() の既定 "full"）、L1状態（App.tsx の view）も明示的に検索画面へ
+  // 戻す（resetToSearchView）。クリップボードへの書き込み invoke は closeWindow() の
+  // hideWindow() を待たず fire-and-forget で発火する（詳細は「ウィンドウを閉じる系
+  // アクションの共通設計」節）。
   const selectClipboardEntry = useCallback(
     async (entry: ClipboardEntry) => {
       if (entry.type === "text") {
@@ -132,12 +138,9 @@ export function useClipboard(
       } else {
         invoke("paste_clipboard_image", { id: entry.id }).catch(console.error);
       }
-      await closeWindow({
-        clearQuery: "prefixOnly",
-        prefix: PREFIX_CHAR + appSettingsRef.current.clipboardPrefix,
-      });
+      await closeWindow({ cleanup: () => resetToSearchView() });
     },
-    [closeWindow]
+    [closeWindow, resetToSearchView]
   );
 
   const setInitialHistory = useCallback((data: ClipboardTextEntry[]) => {

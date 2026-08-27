@@ -4,7 +4,10 @@ import { MEMO_HEADER_CREATE_ANCHOR } from "../hooks/useMemoManage";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
 import { MEMO_FOLDER_ID, MEMO_TRASH_ID } from "../types";
 import { memoNodeDisplayName } from "../lib/memoTree";
-import { shouldStopEditInputKeyPropagation } from "../lib/treeEditUtils";
+import {
+  shouldStopEditInputKeyPropagation,
+  isEmptyFilterBackspaceReturn,
+} from "../lib/treeEditUtils";
 import { Tooltip } from "./Tooltip";
 import { IconSlot } from "./IconSlot";
 import { ResizableSplitPane } from "./ResizableSplitPane";
@@ -273,7 +276,16 @@ export function MemoManageView({
           </button>
         </Tooltip>
         <svg className="mr-3 h-5 w-5 flex-shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-        <input ref={filterInputRef} type="text" autoFocus autoComplete="off" spellCheck={false} value={manage.filterText} onChange={(event) => manage.setFilterText(event.target.value)} placeholder="メモを絞り込み..." className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400" />
+        <input ref={filterInputRef} type="text" autoFocus autoComplete="off" spellCheck={false} value={manage.filterText} onChange={(event) => manage.setFilterText(event.target.value)} onKeyDown={(event) => {
+          // issue 0024：空のローカル絞り込み入力欄での無修飾Backspaceで通常検索
+          // 画面へ戻る（06-keyboard-interactions.md表1）。メモ画面にはお気に入り
+          // 画面のような削除確認モーダルが無いため追加ガードは不要。
+          if (isEmptyFilterBackspaceReturn(event, manage.filterText)) {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+          }
+        }} placeholder="メモを絞り込み..." className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400" />
         {/* issue 0026 軸A：固定行「メモ」を撤去した代わりに、常にメモルート直下へ
             作成する新規フォルダ・新規メモアイコンをヘッダーへ常設する。 */}
         <div className="ml-2 flex flex-shrink-0 items-center gap-2">

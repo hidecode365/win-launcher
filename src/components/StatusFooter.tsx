@@ -11,7 +11,6 @@ export function StatusFooter({
   pendingCommand,
   webSearchVisible,
   isWebSearchSelected,
-  clipboardMode,
   pathPasteWizardStep,
   prefixCommandMode,
   settingsShortcutAvailable,
@@ -25,7 +24,6 @@ export function StatusFooter({
   pendingCommand: boolean;
   webSearchVisible: boolean;
   isWebSearchSelected: boolean;
-  clipboardMode: boolean;
   pathPasteWizardStep: PathPasteWizardStep | null;
   prefixCommandMode: boolean;
   settingsShortcutAvailable: boolean;
@@ -95,18 +93,16 @@ export function StatusFooter({
 
   const enterLabel = webSearchVisible && isWebSearchSelected
     ? "ブラウザで開く"
-    : clipboardMode
-      ? "クリップボードにセット"
-      : prefixCommandMode
-        ? "実行"
-        : selectedRowKind === "pathPasteShortcut" ||
-            selectedRowKind === "pathPasteAddFolder" ||
-            selectedRowKind === "pathPastePin" ||
-            selectedRowKind === "pathPasteFavorite"
-          ? "選択"
-          : selectedRowKind === "calc" || selectedRowKind === "urlConvert"
-            ? "コピー"
-            : "起動";
+    : prefixCommandMode
+      ? "実行"
+      : selectedRowKind === "pathPasteShortcut" ||
+          selectedRowKind === "pathPasteAddFolder" ||
+          selectedRowKind === "pathPastePin" ||
+          selectedRowKind === "pathPasteFavorite"
+        ? "選択"
+        : selectedRowKind === "calc" || selectedRowKind === "urlConvert"
+          ? "コピー"
+          : "起動";
 
   return (
     <FooterBar version={version}>

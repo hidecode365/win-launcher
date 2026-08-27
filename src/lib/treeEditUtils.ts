@@ -32,6 +32,37 @@ export function shouldStopEditInputKeyPropagation(
   return event.ctrlKey && event.key.toLowerCase() === "d";
 }
 
+/**
+ * ローカル絞り込み入力欄が空の状態での無修飾Backspaceを検出する（お気に入り・
+ * メモ・クリップボード履歴・最近使ったファイルのL1画面共通。06-keyboard-interactions.md
+ * 「共通操作」表1「Backspace（修飾キーなし）」を参照）。呼び出し元の入力欄に
+ * フォーカスがある間だけonKeyDownが発火するため、フォーカス位置自体はこの関数の
+ * 対象外（呼び出し側が「フィルタ入力欄自身のonKeyDown」から呼ぶことで担保する）。
+ * モーダル表示中に発火させない等、画面固有の追加条件は呼び出し側で判定すること
+ * （お気に入り画面のフォルダ削除確認モーダル等）。
+ */
+export function isEmptyFilterBackspaceReturn(
+  event: {
+    key: string;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    metaKey: boolean;
+    nativeEvent: { isComposing: boolean };
+  },
+  filterText: string
+): boolean {
+  return (
+    event.key === "Backspace" &&
+    filterText === "" &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.nativeEvent.isComposing
+  );
+}
+
 export type TreeDropPosition = "before" | "after" | "into";
 
 /** 行内の相対Y位置から、前・後・配下のどこへ落とすかを純粋計算する。 */
