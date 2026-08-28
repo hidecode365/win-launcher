@@ -40,6 +40,9 @@ WinLauncherはPOがソロ開発しているTauri v2 + React + TypeScript + Rust�
 | 設定タブの追加・削除・改名など、コードから読み取れる派生情報を変更した際に更新すべき箇所 | `ad_app_900_sync-checklist.md` |
 | 不具合調査・修正の進め方（7ステップ） | `ad_app_900_bugfix-flow.md` |
 | WinGetパッケージの新バージョン申請手順 | `ad_app_900_winget-application.md` |
+| ディレクトリ構成・技術スタック・Tauriプラグイン一覧 | `ad_app_900_architecture-overview.md` |
+| Tauriコマンド（Rust⇄フロントエンドのIPC）一覧 | `ad_app_900_tauri-commands.md` |
+| フロントエンドのhooks/コンポーネント構成 | `ad_app_900_frontend-structure.md` |
 
 工程別ファイルは工程横断ファイルへのポインタを持つ。工程別ファイルを読んだうえで、そこから参照されている900番台のファイルもあわせて読むこと。
 
