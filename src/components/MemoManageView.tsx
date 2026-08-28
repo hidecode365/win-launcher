@@ -9,6 +9,7 @@ import {
   isEmptyFilterBackspaceReturn,
 } from "../lib/treeEditUtils";
 import { Tooltip } from "./Tooltip";
+import { SettingsButton } from "./SettingsButton";
 import { IconSlot } from "./IconSlot";
 import { ResizableSplitPane } from "./ResizableSplitPane";
 import { ActionButton } from "./ActionButton";
@@ -65,6 +66,7 @@ export function MemoManageView({
   onRegisterLocalQueryClearHandler,
   initialLeftWidth,
   onPaneResizeEnd,
+  onOpenSettings,
   version,
 }: {
   manage: UseMemoManageResult;
@@ -73,6 +75,7 @@ export function MemoManageView({
   onRegisterLocalQueryClearHandler: (handler: (() => void) | null) => void;
   initialLeftWidth: number;
   onPaneResizeEnd: (width: number) => void;
+  onOpenSettings: () => void;
   version: string;
 }) {
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -300,6 +303,7 @@ export function MemoManageView({
             </button>
           </Tooltip>
         </div>
+        <SettingsButton onOpenSettings={onOpenSettings} className="ml-2" />
       </header>
       {manage.moveError && <div className="flex-shrink-0 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600">{manage.moveError}</div>}
       <ResizableSplitPane

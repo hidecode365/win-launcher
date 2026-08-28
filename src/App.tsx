@@ -1394,6 +1394,7 @@ export default function App() {
           onLaunchFile={search.launchFile}
           onStartCreateFolderAtRoot={startCreateFolderAtRoot}
           onClose={closeFavoriteEdit}
+          onOpenSettings={openSettings}
           version={appVersion}
         />
       </>
@@ -1409,6 +1410,7 @@ export default function App() {
         onRegisterLocalQueryClearHandler={registerLocalQueryClearHandler}
         initialLeftWidth={memoPaneWidth}
         onPaneResizeEnd={handleMemoPaneWidthChange}
+        onOpenSettings={openSettings}
         version={appVersion}
       />
     );
@@ -1435,6 +1437,7 @@ export default function App() {
         memoEnabled={settings.appSettings.memoEnabled}
         onAddMemo={addMemoFromClipboard}
         onClose={closeClipboardEdit}
+        onOpenSettings={openSettings}
         version={appVersion}
       />
     );
@@ -1475,6 +1478,7 @@ export default function App() {
         }}
         selectionAvailable={baseLength > 0}
         onClose={closeRecentEdit}
+        onOpenSettings={openSettings}
         version={appVersion}
       />
     );

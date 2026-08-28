@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { Tooltip } from "./Tooltip";
+import { SettingsButton } from "./SettingsButton";
 import { FavoriteEditTree } from "./FavoriteEditTree";
 import { CreateFolderIcon } from "./FavoriteTreeVisuals";
 import { FavoriteFolderDeleteModal } from "./FavoriteFolderDeleteModal";
@@ -64,6 +65,7 @@ export function FavoriteEditView({
   onLaunchFile,
   onStartCreateFolderAtRoot,
   onClose,
+  onOpenSettings,
   version,
 }: {
   tree: FavoriteEditTreeRow[];
@@ -101,6 +103,7 @@ export function FavoriteEditView({
   onLaunchFile: (path: string) => void;
   onStartCreateFolderAtRoot: () => void;
   onClose: () => void;
+  onOpenSettings: () => void;
   version: string;
 }) {
   useLayoutEffect(() => {
@@ -215,6 +218,7 @@ export function FavoriteEditView({
             <CreateFolderIcon className="w-5 h-5" />
           </button>
         </Tooltip>
+        <SettingsButton onOpenSettings={onOpenSettings} className="ml-2" />
       </div>
 
       {pendingDeleteFolder && (

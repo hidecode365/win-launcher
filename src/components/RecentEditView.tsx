@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, type ComponentProps } from "react";
 import { Tooltip } from "./Tooltip";
+import { SettingsButton } from "./SettingsButton";
 import { ResultList } from "./ResultList";
 import { RecentEditFooter } from "./RecentEditFooter";
 import { isEmptyFilterBackspaceReturn } from "../lib/treeEditUtils";
@@ -23,6 +24,7 @@ export function RecentEditView({
   resultListProps,
   selectionAvailable,
   onClose,
+  onOpenSettings,
   version,
 }: {
   filterText: string;
@@ -32,6 +34,7 @@ export function RecentEditView({
   resultListProps: ComponentProps<typeof ResultList>;
   selectionAvailable: boolean;
   onClose: () => void;
+  onOpenSettings: () => void;
   version: string;
 }) {
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +107,7 @@ export function RecentEditView({
           placeholder="最近使ったファイルを絞り込み..."
           className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400"
         />
+        <SettingsButton onOpenSettings={onOpenSettings} className="ml-2" />
       </header>
       <ResultList {...resultListProps} />
       <RecentEditFooter selectionAvailable={selectionAvailable} version={version} />

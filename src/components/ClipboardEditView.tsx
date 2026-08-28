@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { Tooltip } from "./Tooltip";
+import { SettingsButton } from "./SettingsButton";
 import { ClipboardPanel } from "./ClipboardPanel";
 import { ClipboardEditFooter } from "./ClipboardEditFooter";
 import { isEmptyFilterBackspaceReturn } from "../lib/treeEditUtils";
@@ -32,6 +33,7 @@ export function ClipboardEditView({
   memoEnabled,
   onAddMemo,
   onClose,
+  onOpenSettings,
   version,
 }: {
   entries: ClipboardEntry[];
@@ -47,6 +49,7 @@ export function ClipboardEditView({
   memoEnabled: boolean;
   onAddMemo: (text: string) => void;
   onClose: () => void;
+  onOpenSettings: () => void;
   version: string;
 }) {
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +122,7 @@ export function ClipboardEditView({
           placeholder="クリップボード履歴を絞り込み..."
           className="flex-1 bg-transparent text-lg text-gray-800 outline-none placeholder-gray-400"
         />
+        <SettingsButton onOpenSettings={onOpenSettings} className="ml-2" />
       </header>
       <ClipboardPanel
         entries={entries}
