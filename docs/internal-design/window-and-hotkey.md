@@ -54,8 +54,8 @@
 
 `resizable: true` でウィンドウ枠からのリサイズを許可する。`tauri.conf.json` の `width` / `height`（デフォルトサイズ）と `minWidth` / `minHeight`（最小サイズ）はいずれも 640 / 420 とする。
 
-- **保存**：フロントエンドが `getCurrentWindow().onResized` イベントを購読し、リサイズ確定から 500ms デバウンスしたうえで `@tauri-apps/plugin-store` の JS API（frecency・クリップボード履歴と同じ `storeRef`／`settings.json`）の `"windowSize"` キーへ `{ width, height }`（論理ピクセル。`scaleFactor()` で物理→論理に変換）を直接書き込む。Rust コマンドは追加しない
-- **復元**：Rust 側の `setup()` で `settings.json` の `"windowSize"` を読み込み、存在すればメインウィンドウ生成直後に `window.set_size(LogicalSize::new(width, height))` を呼んで適用する（フロントエンドの描画・表示前に確定させるため、`show()` より前に行う）。キーが存在しない場合（初回起動等）は `tauri.conf.json` のデフォルトサイズ（640×420）のままにする
+- **保存**：フロントエンドが `getCurrentWindow().onResized` イベントを購読し、リサイズ確定から 500ms デバウンスしたうえで `@tauri-apps/plugin-store` の JS API（frecency・クリップボード履歴と同じ `storeRef`／`settings.json`）へ `{ width, height }`（論理ピクセル。`scaleFactor()` で物理→論理に変換）を直接書き込む。Rust コマンドは追加しない。**保存先キーはリサイズ確定時点の実効ビュー（`viewRef.current`）によって`"windowSize"`（検索・設定・クリップボード履歴・最近使ったファイル・OCR共通）／`"favoriteEditWindowSize"`（お気に入り編集ビュー）／`"memoWindowSize"`（メモ管理画面）の3キーに分岐する**（`App.tsx`の`onResized`ハンドラ内）。お気に入り編集ビューが独立キーを持つのは軸4a時点からの意図的な設計判断で、検索/設定側のサイズと巻き添えで混ざらないようにするための布石（メモ画面がその後同じビューへ本文編集を追加した際に活きた）
+- **復元**：`"windowSize"`（検索・設定ビュー等）はRust側の `setup()` で読み込み、存在すればメインウィンドウ生成直後に `window.set_size(LogicalSize::new(width, height))` を呼んで適用する（フロントエンドの描画・表示前に確定させるため、`show()` より前に行う）。キーが存在しない場合（初回起動等）は `tauri.conf.json` のデフォルトサイズ（640×420）のままにする。**`"memoWindowSize"`はこの起動時復元の対象外で、代わりにフロントエンド側（`App.tsx`の`memoEditOpen`変化を監視する`useEffect`）がメモ画面を開いた時点で`getCurrentWindow().setSize(...)`を直接呼んで適用する**（お気に入り編集ビューには対応する復元処理は無く、常に直近の`"windowSize"`のまま開く）
 - 最小サイズの強制は `tauri.conf.json` の `minWidth` / `minHeight` に委譲する（Rust 側で個別にクランプ処理は行わない）
 
 <a id="hotkey-registration"></a>

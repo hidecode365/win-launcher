@@ -65,7 +65,7 @@ ADは、担当issueについて次を直接更新してよい。
 
 ## 変更時の同期チェックリスト
 
-コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`00-requirements.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は `docs/internal-design/settings-panel-architecture.md` の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
+コードから読み取れる情報（ファイル名の一覧・タブ名の一覧・設定項目名の一覧等）を `CLAUDE.md`・`00-requirements.md` に書き写すと、コード側だけが変更されドキュメント側の更新が漏れる「派生情報の同期漏れ」が発生する。実際に、設定画面のカテゴリナビ一覧が2箇所に重複して存在し、互いに異なる不完全なリストになっていた事例があった（詳細は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tab-list-duplication-incident) の「設定画面カテゴリナビ一覧の重複事例」を参照）。この節はその再発防止のための原則を定める。
 
 - **原則**：コードから読み取れる情報は、原則として `CLAUDE.md`・`00-requirements.md` に重複して書かない。書く場合は正本を1箇所だけ定め、他の箇所は参照に留める（同じ一覧を2箇所以上に独立して書かない）
 - **表記の正本はコード**（タブラベル等の実際の文字列）であり、`00-requirements.md` と `CLAUDE.md`／`docs/internal-design/*.md` はそれに従う。表記を変更する場合は、コード・`00-requirements.md`・該当する `docs/internal-design/*.md` の3つを同時に更新する
@@ -472,24 +472,24 @@ win-launcher/
 
 ## フロントエンド
 
-- `App.tsx` はルートのコンポジションのみを担う（検索/計算 UI・設定パネル・お気に入り管理・メモ管理の4ビュー（`MainView`）の切替、`storeRef`／`inputRef` の保持、フック間をつなぐ `handleKeyDown`・`closeSettings` 等の組み立て）。機能ごとのロジックはカスタムフックへ、UI は `components/` 配下の個別コンポーネントへ分離している
+- `App.tsx` はルートのコンポジションのみを担う（検索・設定・お気に入り管理・メモ管理・クリップボード履歴・最近使ったファイル・OCRの7ビュー（`MainView`）の切替、`storeRef`／`inputRef` の保持、フック間をつなぐ `handleKeyDown`・`closeSettings` 等の組み立て）。機能ごとのロジックはカスタムフックへ、UI は `components/` 配下の個別コンポーネントへ分離している
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
-  - `useSearch(appSettings, settingsVersion, storeRef)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボードモード・最近使ったファイル一覧モードの判定もここで行う。パス貼り付けによる検索フォルダ管理（機能1〜4のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクションを持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している
+  - `useSearch(appSettings, settingsVersion, storeRef, resetToSearchView)`：検索クエリ・計算/プレフィックスコマンド候補判定・ファイル検索・frecency（ファイル起動用・プレフィックスコマンド用の両方）・ファイル起動／コピー／Web検索を一括管理する。クリップボード履歴・最近使ったファイルのL1画面への昇格判定（`clipboardMode`/`recentMode`）とローカル絞り込みstate（`clipboardEditFilterText`/`recentEditFilterText`）もここで持つ（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-l1-promotion) を参照）。パス貼り付けによる検索フォルダ管理（機能1〜4のアクション一式）もここで管理する。`closeWindow` を内部で直接使うアクションを持つため、`useClipboard` のように別フックへ切り出さず `useSearch.ts` 自身に実装している
     - 検索一覧で選択操作を「キーボード操作」と「マウスホバー」に分離しているロジック（ホバー抑制）は [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
     - 非同期呼び出しの世代 ID 管理とフォーカス回復時の再取得は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture) を、ウィンドウを閉じる処理は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design) を参照。新しい "/" プレフィックスモード・ウィンドウを閉じるアクションを追加する際はそれぞれのポインタ先の規約に従うこと
     - ファイル起動やコピー等でウィンドウを閉じる直前の空クエリへの変化でも `search_files("")` を抑止しない設計の経緯は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#suppress-next-search-ref-removed) を参照
   - `useTreeEditSelection(tree, resetKey, resetWhen)`：お気に入り編集ビュー（`useFavoriteEditSelection.ts` 経由）・メモ管理画面（`useMemoManage.ts` 経由）の選択intentを共有管理する。管理画面ツリーのキーボード／ホバー入口分離とホバー抑制も [result-list-and-selection.md](docs/internal-design/result-list-and-selection.md#hover-suppression) を参照
-  - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う
+  - `useClipboard(appSettingsRef, clipboardMode, clipboardFilterText, storeRef, closeWindow, syncClipboardSelectionItems, resetToSearchView)`：クリップボード履歴の記録・永続化・フィルタ済み一覧・書き戻し。ウィンドウを閉じる処理は `useSearch` の `closeWindow` をそのまま受け取って使う
+  - `useOcr()`：OCR画面の状態（ローディング・結果テキスト・エラー・画像URL）管理と`ocr_from_clipboard`の呼び出し
   - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](docs/internal-design/tray-autostart-updater.md#auto-update) を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
-- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（通常のファイル検索結果／`/recent` のみ対象）の格納フォルダを開く、Esc で非表示、`Ctrl+,` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
-- `Ctrl+D`：同じ `window` の `keydown`イベントリスナーで一括処理する。OCRプレビュー表示中は「閉じる」ボタンと同じハンドラを呼び出し、それ以外では`search.setQuery("")`に加え、表示中の管理画面が`localQueryClearHandlerRef`へ登録した可視の絞り込み文字列もクリアする（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)）
-- クリップボード履歴モードのときのみ、検索結果リストの右側に詳細パネルを表示する2カラムレイアウトになる（詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history) を参照）
-- OCR プレビュー表示中（`ocrLoading || ocrText !== null || ocrError !== null`）は検索結果エリア（`ResultList` / `ClipboardPanel`）と `StatusFooter` を非表示にする。検索ロジック自体は動作し続け、クエリや内部 state には影響しない。閉じる／コピーして閉じるの挙動詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature) を参照
-- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list) を参照。Escで検索 UI に戻る（表示中の`Ctrl+,`は無効）
+- 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（ピン止め・通常のファイル検索結果選択時）の格納フォルダを開く、Esc で非表示、`Ctrl+,` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
+- `Ctrl+D`：同じ `window` の `keydown`イベントリスナーで一括処理する。**OCR画面ではCtrl+Dを完全に無効化し、検索クエリ・OCR本文とも一切変更しない**。クリップボード履歴・最近使ったファイル画面ではローカル絞り込みのみをクリアし、L1滞在中に凍結して維持している検索クエリ自体は変更しない（変更すると`clipboardMode`/`recentMode`の判定が崩れるため）。それ以外の画面では`search.setQuery("")`に加え、表示中の管理画面が`localQueryClearHandlerRef`へ登録した可視の絞り込み文字列もクリアする（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)）
+- クリップボード履歴・最近使ったファイル・OCRは検索画面の子状態ではなく、お気に入り・メモと同格のL1画面（`ClipboardEditView.tsx`／`RecentEditView.tsx`／`OcrEditView.tsx`）として独立している。クリップボード履歴画面は常に左リスト・右の読み取り専用プレビューの2カラムレイアウト（詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history) を参照）。OCR画面は左に画像・右に編集可能な結果テキストの2ペインで、閉じる／コピーして閉じるはいずれも共通クローズ経路を使う（詳細は [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature) を参照）
+- 設定パネル：タブ構成。カテゴリ一覧は [settings-panel-architecture.md](docs/internal-design/settings-panel-architecture.md#settings-tabs-list) を参照。設定を開くボタンは各L1画面のヘッダーに共通コンポーネント`SettingsButton`として配置する（詳細は [shared-ui-system.md](docs/internal-design/shared-ui-system.md#settings-button) を参照）。Escで開いた元のL1画面に戻る（表示中の`Ctrl+,`は無効）
 - `@tauri-apps/api/core` の `invoke` で Rust コマンドを呼ぶ
 - `@tauri-apps/api/event` の `listen` で Rust 側からの `clipboard-changed` / `check-for-update-requested` イベントを受信する
 - `getCurrentWindow().onFocusChanged` でフォーカスアウト検知・自動非表示、フォーカスイン時の再フォーカス（詳細は [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide) を参照）

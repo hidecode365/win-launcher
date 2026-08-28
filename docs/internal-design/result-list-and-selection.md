@@ -1,6 +1,6 @@
 # 検索結果一覧の選択状態管理・行構造
 
-対象コード: `src/hooks/useSearch.ts`（`rows`・intent・`resolveSelected`）、`src/hooks/useTreeEditSelection.ts`（管理画面ツリーのintent・ホバー抑制）、`src/App.tsx`（`handleKeyDown`・`StatusFooter` への受け渡し）、`src/components/ResultList.tsx`（`rows.map` の描画）、`src/components/FavoriteEditTree.tsx`・`src/components/MemoManageView.tsx`（管理画面ツリーの描画）。
+対象コード: `src/lib/selectIntent.ts`（`SelectIntent`型・`resolveSelected`・`SELECT_INTENT_TIMEOUT_MS`の実体）、`src/hooks/useSearch.ts`（`rows`・intent）、`src/hooks/useTreeEditSelection.ts`（管理画面ツリーのintent・ホバー抑制）、`src/App.tsx`（`handleKeyDown`・`StatusFooter` への受け渡し）、`src/components/ResultList.tsx`（`rows.map` の描画）、`src/components/FavoriteEditTree.tsx`・`src/components/MemoManageView.tsx`（管理画面ツリーの描画）。
 
 横断アーキテクチャ系のファイル。ピン止め・お気に入り・今後のメモ機能など、検索結果一覧に新しい行種別を追加する機能はすべてこのファイルの設計に乗せること。
 
@@ -38,7 +38,7 @@ function resolveSelected(
 
 `selected` への書き込みは、`intent`／`rows`／`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになっている。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
 
-適用範囲の定義（どの選択ドメインが intent 方式に乗るか）は外部設計書 `external-design/02-list-and-selection.md#list-structure-layers` が正本。実装上の対応は以下のとおり：`useSearch.ts` 内の単一の `intent`/`selected` が「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`）」の3ドメインをモード判定で切り替えて共有する。一方、お気に入り管理画面は `useFavoriteEditSelection.ts`、メモ画面とメモ管理画面はそれぞれの `useTreeEditSelection.ts` 呼び出しが、同じ `resolveSelected` の実装を再利用しつつ**独立した** `intent`/`selected` を持つ（お気に入り管理画面の仮想ルート行は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row) を参照）。Web検索行の +1 特例は [web-search-row-exception](#web-search-row-exception) を参照。
+適用範囲の定義（どの選択ドメインが intent 方式に乗るか）は外部設計書 `external-design/02-list-and-selection.md#list-structure-layers` が正本。実装上の対応は以下のとおり：`useSearch.ts` 内の単一の `intent`/`selected` が「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`）」の3ドメインをモード判定で切り替えて共有する。一方、お気に入り管理画面は `useFavoriteEditSelection.ts`、メモ画面とメモ管理画面はそれぞれの `useTreeEditSelection.ts` 呼び出しが、同じ `resolveSelected` の実装を再利用しつつ**独立した** `intent`/`selected` を持つ（お気に入り管理画面がかつて持っていた仮想ルート行はissue 0026で撤去済み。詳細は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row-removed) を参照）。Web検索行の +1 特例は [web-search-row-exception](#web-search-row-exception) を参照。
 
 `clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした。
 
@@ -88,7 +88,7 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 
 `rows: ResultRow[]`（`src/hooks/useSearch.ts`、`src/types.ts` の判別可能 Union）が通常モードの結果一覧の並び順の正本である。並び順を変更する場合は `rows` の構築ロジックのみを直し、他の箇所（`App.tsx`/`ResultList.tsx`）はそれを参照するだけにする。
 
-`ResultRow` の各バリアント（`kind: "pinned" | "pathPasteShortcut" | "pathPasteAddFolder" | "calc" | "urlConvert" | "file"`）は、`rows` の並び順（ピン止めブロック→パス貼り付け候補（機能2→機能1の順）→計算結果→URLエンコード/デコード結果→ファイル検索結果）にそのまま対応する。`key` フィールドはファイルパス等に種別ごとの接頭辞（`pinned:`/`file:` 等）を付けたもので、他種別のキーと衝突しない安定した識別子として持たせている（行番号は使わない。行の追加・削除で他の行の React key が変わらないようにするため）。
+`ResultRow` の各バリアント（`kind: "pinned" | "pathPasteShortcut" | "pathPasteAddFolder" | "pathPastePin" | "pathPasteFavorite" | "calc" | "urlConvert" | "file"`）は、`rows` の並び順（ピン止めブロック→パス貼り付け候補（機能2→機能1→機能3→機能4の順）→計算結果→URLエンコード/デコード結果→ファイル検索結果）にそのまま対応する。`key` フィールドはファイルパス等に種別ごとの接頭辞（`pinned:`/`file:` 等）を付けたもので、他種別のキーと衝突しない安定した識別子として持たせている（行番号は使わない。行の追加・削除で他の行の React key が変わらないようにするため）。`pinned`/`file`/`pathPastePin`行は`isPinned(path)`によるピン止め状態（`pinned: boolean`）、`pinned`/`file`/`pathPasteFavorite`行は`isFavorited(path)`によるお気に入り登録状態（`favorited: boolean`）を、`rows`構築時（`useSearch.ts`）に事前計算して埋め込む。
 
 `pinned`（ピン止めブロック）の `exists`／`file`（ファイル検索結果）の `pinned` は、`rows` 構築時に一度だけ計算して各行に埋め込む（`exists: pinnedExistence[file.path] ?? true`、`pinned: isPinned(file.path)`）。`ResultList.tsx` 側の描画はこの埋め込み済みの値（`row.exists`/`row.pinned`）を使い、行ごとに個別で再計算しない（`pinIconVisible` によるアイコン自体の表示可否は行データではなく表示設定のため、描画側で `pinIconVisible && row.pinned` のように別途掛け合わせる）。
 
@@ -119,7 +119,7 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 
 ### 結果行の DOM 構造（`<div role="button">`）と区切り線を使わない方針
 
-`ResultList.tsx` の `rows.map` が描画する6種類の行（`pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlConvert`/`file`）は、行のルート要素を `<button>` ではなく **`<div role="button">`** で実装している。
+`ResultList.tsx` の `rows.map` が描画する8種類の行（`pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`pathPastePin`/`pathPasteFavorite`/`calc`/`urlConvert`/`file`）は、行のルート要素を `<button>` ではなく **`<div role="button">`** で実装している。
 
 - `role="button"` は、この要素がクリックで実行される操作であることをアクセシビリティツリー上に示すためのもの。ただし `tabIndex` は付与していない（キーボード操作は行そのものにフォーカスを当てる設計ではなく、検索ボックス側の document レベル `keydown` リスナー・↑↓キーによる選択インデックス管理で完結しているため。フォーカス移動を伴うキーボード操作の対象にする設計ではない）
 - `type="button"` 属性は行の要素には元々付与されていなかった（`div` になった今も不要）。`PinToggleButton`／`FavoriteToggleButton` 自身の `<button type="button">` は実在する `<button>` として維持しており、入れ子構造ではなくなったため `type="button"`・クリックの `stopPropagation()` ともにそのまま機能する
@@ -254,9 +254,9 @@ v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlC
 
 **横並び調査**：「一覧の行を実在の `<button>` で実装している箇所」を機械的に grep（`<button` の後に `onMouseEnter` を伴うものを一覧行の目印として抽出）した結果、上記4箇所が全て該当した。「一覧からEnterで選択した直後に別の確認要素へフォーカスを移す」という構造そのものを持つのは `SystemCommandModal`（window レベルで Enter/Escape を処理する）だけで、`FavoriteFolderDeleteModal`（お気に入り編集ビューの削除確認）は Escape のみ window レベルで処理し Enter は未束縛のため、同じ行フォーカス残留があっても「削除の誤実行」までは起きない（トリガーである削除アイコンボタン自身の `onClick` が再度呼ばれるだけ）。ただし行ルート要素が `<button>` であること自体は不具合の有無に関わらず本プロジェクトの既存規約（[dom-structure-and-dividers](#dom-structure-and-dividers)）への違反であり、`PathPasteWizard.tsx` のフォルダ選択候補行についても、クリック直後に遷移する次ステップ（名前編集）の `nameInputRef.current?.focus()` が非同期的な競合（`RegisterEntryDialog` で `requestAnimationFrame` 化して修正したのと同種のレース）を潜在的に抱えていた。
 
-**原因の性質**：個々のコンポーネント固有の実装ミスではなく、「一覧行のDOMフォーカス管理」という設計原則（検索ボックスの `<input>` だけが常にフォーカスを持つ）を、`ResultList.tsx` の `rows.map` 由来の6種類の行にしか適用していなかったという構造的な抜けだった。区切り線の調査（本節前半）の時点で存在に気づいていながら「ボタンの入れ子が無いから」という別の観点だけで判断し、フォーカス管理という観点での再検証をしていなかったことが直接の見落とし要因。
+**原因の性質**：個々のコンポーネント固有の実装ミスではなく、「一覧行のDOMフォーカス管理」という設計原則（検索ボックスの `<input>` だけが常にフォーカスを持つ）を、`ResultList.tsx` の `rows.map` 由来の各種行にしか適用していなかったという構造的な抜けだった。区切り線の調査（本節前半）の時点で存在に気づいていながら「ボタンの入れ子が無いから」という別の観点だけで判断し、フォーカス管理という観点での再検証をしていなかったことが直接の見落とし要因。
 
-**対応**：`prefixCommandMode` の候補行（`ResultList.tsx`）・`WebSearchRow.tsx`・`pathPasteWizardMode` のフォルダ選択候補行（`PathPasteWizard.tsx`）・クリップボード履歴一覧行（`ClipboardPanel.tsx`）の4箇所すべてを、`ResultList.tsx` の既存6種類と同じ `<div role="button">` パターンへ統一した（`type="button"` 属性の削除以外、`className`／`onClick`／`onMouseEnter`／`data-index` はそのまま維持。見た目・クリック操作に変化はない）。個別の分岐やフラグでの対症療法ではなく、「一覧行のルート要素は常に `<div role="button">` とする」という既存規約の適用範囲を、`ResultList.tsx` 内の行だけでなくアプリ全体の選択可能な一覧行へ広げる形で解消した。
+**対応**：`prefixCommandMode` の候補行（`ResultList.tsx`）・`WebSearchRow.tsx`・`pathPasteWizardMode` のフォルダ選択候補行（`PathPasteWizard.tsx`）・クリップボード履歴一覧行（`ClipboardPanel.tsx`）の4箇所すべてを、`ResultList.tsx` の既存の行と同じ `<div role="button">` パターンへ統一した（`type="button"` 属性の削除以外、`className`／`onClick`／`onMouseEnter`／`data-index` はそのまま維持。見た目・クリック操作に変化はない）。個別の分岐やフラグでの対症療法ではなく、「一覧行のルート要素は常に `<div role="button">` とする」という既存規約の適用範囲を、`ResultList.tsx` 内の行だけでなくアプリ全体の選択可能な一覧行へ広げる形で解消した。
 
 <a id="selectable-row-wrapper"></a>
 
@@ -264,7 +264,7 @@ v0.10.0 時点で `pinned`/`pathPasteShortcut`/`pathPasteAddFolder`/`calc`/`urlC
 
 上記の修正を「ドキュメントに書くだけ」で終わらせると、新しい行タイプを実装する際にドキュメントを読み忘れて同じ違反が混入しうるため、以下3案を検討した。
 
-1. **一覧行の共通ラッパーコンポーネント**：採用。`src/components/SelectableRow.tsx` を新設し、`role="button"` の `<div>`・`data-index`・`onClick`・`onMouseEnter` を1箇所に固定した。行の実装者は `<button>`/`<div role="button">` を直接書く必要がなくなり、`IconSlot`／`Tooltip` と同様「まずこれを使う」共通コンポーネントとして機能する。今回修正した4箇所（`prefixCommandMode` 候補行・`WebSearchRow`・`PathPasteWizard` のフォルダ選択候補行・`ClipboardPanel` の履歴一覧行）はこのラッパーへ移行済み。`ResultList.tsx` の `rows.map` 由来の6種類（`pinned` 等）は、ドラッグ&ドロップ・複数の内部操作ボタンなど個別の事情を持つ行があり、このラッパーの現在のprops（`index`/`className`/`onClick`/`onMouseEnter`/`children`のみ）では表現しきれないため、今回は移行対象外とした（将来 `draggable` 系props等を追加してラッパーを拡張すれば移行可能。無理に今回の修正範囲へ含めず、既存の直書き `<div role="button">` のまま維持する判断とした）
+1. **一覧行の共通ラッパーコンポーネント**：採用。`src/components/SelectableRow.tsx` を新設し、`role="button"` の `<div>`・`data-index`・`onClick`・`onMouseEnter` を1箇所に固定した。行の実装者は `<button>`/`<div role="button">` を直接書く必要がなくなり、`IconSlot`／`Tooltip` と同様「まずこれを使う」共通コンポーネントとして機能する。今回修正した4箇所（`prefixCommandMode` 候補行・`WebSearchRow`・`PathPasteWizard` のフォルダ選択候補行・`ClipboardPanel` の履歴一覧行）はこのラッパーへ移行済み。`ResultList.tsx` の `rows.map` 由来の各種行（`pinned` 等）は、ドラッグ&ドロップ・複数の内部操作ボタンなど個別の事情を持つ行があり、このラッパーの現在のprops（`index`/`className`/`onClick`/`onMouseEnter`/`children`のみ）では表現しきれないため、今回は移行対象外とした（将来 `draggable` 系props等を追加してラッパーを拡張すれば移行可能。無理に今回の修正範囲へ含めず、既存の直書き `<div role="button">` のまま維持する判断とした）
 2. **ESLintの独自ルール**：本プロジェクトには現時点で ESLint 自体が導入されていない（`package.json` にESLint関連の依存・スクリプトが存在しない）。ルール1つのためだけに新規ツールチェインを導入するのは、このバグ修正チケットの範囲を超える判断（devDependencies追加・設定作成・導入時点で顕在化する既存コードの他の指摘への対応要否等を伴う）と判断し、見送った
 3. **grepベースのCIチェック**：本プロジェクトには `.github/workflows` が存在せず、CI パイプライン自体が無い（Issueテンプレートのみ）。CIを新設する判断も本チケットの範囲を超える。加えて、テキストベースのgrep（`<button` の後に `onMouseEnter` を伴うものを検出、等）は今回の横並び調査でも使えたヒューリスティックだが、行の書き方が変われば容易にすり抜ける（誤検知・見逃しの両方がありうる）ため、AST解析を伴う1の静的チェック（ESLintルール）ほどの信頼性は無い
 

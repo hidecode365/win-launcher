@@ -33,7 +33,7 @@
 - マッチしたシステムコマンドは、クリップボード履歴・最近使ったファイル一覧の呼び出しキーワードと合わせて統一された候補一覧（`prefixCommandCandidates`）としてフロントエンドが表示・選択を扱う（詳細は [prefix-command-candidates](#prefix-command-candidates) を参照）
 - 各キーワードは設定画面の「システムコマンド」カテゴリで、3つの独立したテキスト入力としてそれぞれ変更可能
   - `set_system_command_keyword(command, keyword)`（Rust コマンド）は対象コマンドとキーワードを引数に取り、該当フィールドのみを更新する。空文字列はエラーを返し保存しない
-  - `validate_unique_keyword(settings, changing, new_value)`（Rust の共通関数）で重複チェックを行う。システムコマンド3キーワード＋クリップボードの呼び出しキーワード（`clipboard_prefix`）＋最近使ったファイル一覧の呼び出しキーワード（`recent_keyword`）＋お気に入りの呼び出しキーワード（`favorite_keyword`）の計6つのうち、`changing`（変更対象の識別子）を除く他のいずれかと大小文字区別なしで完全一致する場合はエラーを返し保存しない。トリム＋小文字化して比較する作法は [favorites-data-model.md](favorites-data-model.md#duplicate-folder-name-validation) の同名フォルダバリデーションでも踏襲されている
+  - `validate_unique_keyword(settings, changing, new_value)`（Rust の共通関数）で重複チェックを行う。システムコマンド3キーワード＋クリップボードの呼び出しキーワード（`clipboard_prefix`）＋最近使ったファイル一覧の呼び出しキーワード（`recent_keyword`）＋お気に入りの呼び出しキーワード（`favorite_keyword`）＋メモの呼び出しキーワード（`memo_keyword`）の計7つのうち、`changing`（変更対象の識別子）を除く他のいずれかと大小文字区別なしで完全一致する場合はエラーを返し保存しない。トリム＋小文字化して比較する作法は [favorites-data-model.md](favorites-data-model.md#duplicate-folder-name-validation) の同名フォルダバリデーションでも踏襲されている
 - 候補を Enter／クリックした時点では即実行せず、確認モーダル（`pendingCommand` state）を表示する。「実行」ボタン or Enter キーで確定し、`execute_system_command(action)` を呼び出してウィンドウを閉じる（[window-lifecycle.md](window-lifecycle.md#close-window-common-design) の `closeWindow` を経由）
 - `execute_system_command(action)`（Rust）自体は確認を行わず、指定されたコマンドを即実行するだけ
   - `shutdown` → `shutdown /s /t 0`
@@ -46,29 +46,31 @@
 
 **拡張ポイントとしての方針**（新機能は候補生成ロジックに1つ追加するだけで既存の表示・選択・frecency に乗る／個別の候補表示 UI を新設しない／キーワードの重複チェック／OFF 時の除外）は、外部設計書 `external-design/04-platform-policies.md#prefix-command-extension-point` へ移設した。本節には実装の詳細のみを記す。
 
-検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`buildPrefixCommandCandidates`）。
+検索クエリが `/` から始まる場合、登録済みの全プレフィックスコマンド（システムコマンド3つ＋クリップボード履歴＋最近使ったファイル一覧＋お気に入り＋メモ。今後プレフィックス機能が追加された場合も同様に扱う）を、ファイル検索結果とは別枠の候補一覧として表示する（`buildPrefixCommandCandidates`）。
 
 - システムコマンド3つは既存の `matchSystemCommands` をそのまま呼び出し、一致した `SystemCommand` を `PrefixCommand`（`{ keyword, description, kind: "system", action }`）に変換して候補に加える
 - クリップボード履歴は `/` + `appSettings.clipboardPrefix` がクエリに前方一致するかを判定し、一致すれば `{ keyword, description: "クリップボード履歴", kind: "clipboard", action: null }` を候補に加える
 - 最近使ったファイル一覧は `/` + `appSettings.recentKeyword` が同様に前方一致するかを判定し、一致すれば `{ keyword, description: "最近使ったファイル", kind: "recent", action: null }` を候補に加える
-- `appSettings.systemCommandEnabled` / `clipboardEnabled` / `recentFilesEnabled` が `false` の機能はそれぞれ候補生成の対象から除外する
-- `calcMode`（数式らしい入力）、または `clipboardMode`／`recentMode`（呼び出しキーワードが完全に入力済みで既に専用モードに切り替わっている状態）の間は候補を生成しない
+- お気に入りは `/` + `appSettings.favoriteKeyword` が同様に前方一致するかを判定し、一致すれば `{ keyword, description: "お気に入り", kind: "favorite", action: null }` を候補に加える
+- メモは `/` + `appSettings.memoKeyword` が同様に前方一致するかを判定し、一致すれば `{ keyword, description: "メモ", kind: "memo", action: null }` を候補に加える
+- `appSettings.systemCommandEnabled` / `clipboardEnabled` / `recentFilesEnabled` / `favoriteEnabled` / `memoEnabled` が `false` の機能はそれぞれ候補生成の対象から除外する
+- `calcMode`（数式らしい入力）、または `clipboardMode`／`recentMode`（呼び出しキーワードが完全に入力済みで既に専用L1画面に切り替わっている状態。詳細は [clipboard-and-ocr.md](clipboard-and-ocr.md#clipboard-history)・[recent-files.md](recent-files.md#recent-mode-and-fetch) を参照）の間は候補を生成しない
 
-`PrefixCommand`（`src/types.ts`）は `{ keyword: string, description: string, kind: "system" | "clipboard" | "recent", action: SystemCommandAction | null }`。`keyword` は呼び出し文字列（`/` + キーワード全体、例: `"/shutdown"`）で、frecency のキーにもそのまま使う。
+`PrefixCommand`（`src/types.ts`）は `{ keyword: string, description: string, kind: "system" | "clipboard" | "recent" | "favorite" | "memo", action: SystemCommandAction | null }`。`keyword` は呼び出し文字列（`/` + キーワード全体、例: `"/shutdown"`）で、frecency のキーにもそのまま使う。
 
 候補は frecency スコアの降順で並び替える（`sortPrefixCommandsByFrecency`）。ファイル検索結果の frecency（[file-search-and-frecency.md](file-search-and-frecency.md#frecency) を参照）と全く同じ関数を再利用し、キーだけを `path` から `keyword` に変えている。
 
 - 使用実績（`count`/`lastUsed`）は候補を Enter／クリックで選択（＝実行）した時点（`selectPrefixCommand`）で記録する。システムコマンドは確認モーダルの確定を待たず、候補を選んだ時点で記録する
 - `tauri-plugin-store` の `settings.json` に `"prefixCommandFrecency"` キー（`{ [keyword]: { count, lastUsed } }`）でフロントエンドが直接永続化する
 
-表示（`ResultList.tsx`）：ファイル検索結果・システムコマンド候補と同じリストUI（アイコン＋太字1行目＋グレー2行目）を流用する。1行目に呼び出し文字列（`cmd.keyword`）、2行目に説明文（`cmd.description`）を表示する。アイコンは `kind` によって切り替える（システムコマンドは既存の電源アイコン、クリップボード履歴は `ClipboardPanel` のテキストエントリと同じドキュメントアイコン、最近使ったファイル一覧は時計アイコン）。
+表示（`ResultList.tsx`）：ファイル検索結果・システムコマンド候補と同じリストUI（アイコン＋太字1行目＋グレー2行目）を流用する。1行目に呼び出し文字列（`cmd.keyword`）、2行目に説明文（`cmd.description`）を表示する。アイコンは `kind` によって切り替える（システムコマンドは既存の電源アイコン、クリップボード履歴は `ClipboardPanel` のテキストエントリと同じドキュメントアイコン、最近使ったファイル一覧は時計アイコン、お気に入りは★と同じ意匠、メモは`MemoIcon`）。
 
 ファイル検索結果との関係は排他（`prefixCommandMode = prefixCommandCandidates.length > 0` の間はファイル検索・計算結果・URLエンコード/デコード結果を表示せず、`search_files` も呼ばない）。
 
 選択・実行（`selectPrefixCommand`）：↑↓ で選択、Enter／クリックで直接実行する。
 
 - `kind: "system"` の場合：`requestSystemCommand({ action, label: description })` を呼ぶだけで、既存の確認モーダルにそのまま合流する
-- `kind: "clipboard"` または `kind: "recent"` の場合：`setQuery(candidate.keyword)` で検索クエリを呼び出しキーワード全体（例: `"/cb"`、`"/recent"`）に置き換える。これにより次のレンダリングで既存の `clipboardModeFilter`／`recentModeFilter` が自然に一致し、それぞれの専用モードへ切り替わる（専用の遷移コードを新設しない）
+- `kind: "clipboard"`／`"recent"`／`"favorite"`／`"memo"` のいずれの場合も：`setQuery(candidate.keyword)` で検索クエリを呼び出しキーワード全体（例: `"/cb"`、`"/recent"`）に置き換える。これにより次のレンダリングで各L1画面への昇格判定（`hasPrefixMatch`。クリップボード履歴・最近使ったファイルは[window-lifecycle.md](window-lifecycle.md#prefix-mode-l1-promotion)のパターン、お気に入り・メモは`App.tsx`の`favoriteMode`/`memoQueryMatch`）が自然に一致し、それぞれのL1画面へ切り替わる（専用の遷移コードを新設しない）
 
 前方一致する候補が0件の場合（例: `/xyz`）は `prefixCommandMode` が `false` のままとなり、候補欄を表示せず通常のファイル検索結果を表示する。
 

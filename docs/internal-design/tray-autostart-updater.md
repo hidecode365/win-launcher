@@ -14,8 +14,8 @@ Tauri v2 の `tray-icon` 機能を使用。トレイアイコンは `icons/32x32
 
 トレイメニューの項目構成（この順で配置）：
 
-- 「Show WinLauncher」：左クリック / メニュークリックでウィンドウ表示（`window.center()` → `show()` → `set_focus()`）
-- 「Check for Updates」：ウィンドウを表示（「Show WinLauncher」と同じ）したうえで `"check-for-update-requested"` イベントを emit する。実際のチェック処理はフロントエンド（`useUpdater`）が行う
+- 「Show WinLauncher」：**メニュー項目のクリックは常に**ウィンドウ表示（`window.center()` → `show()` → `set_focus()`）。**トレイアイコン本体への左クリックはこれとは別処理**で、`on_tray_icon_event`が`window.is_visible()`を見て、表示中なら`"request-hide"`イベントをフロントエンドへemitして隠し（`App.tsx`が受信し`hideWindow()`を呼ぶ）、非表示中のみメニュー項目と同じ表示処理を行うトグル動作
+- 「Check for Updates」：ウィンドウを表示（メニュー項目「Show WinLauncher」と同じ）したうえで `"check-for-update-requested"` イベントを emit する。実際のチェック処理はフロントエンド（`useUpdater`）が行う
 - 「Start with Windows」：チェック付きメニュー項目。現在の自動起動状態を反映し、クリックで `tauri-plugin-autostart` の有効/無効をトグルしてチェック状態を更新
 - 「Restart」：`app.request_restart()`（`tauri-plugin-process` プラグイン登録後に `AppHandle` が持つメソッド）でアプリケーションを再起動する
 - 「Quit」：`app.exit(0)` でアプリケーションを終了する
