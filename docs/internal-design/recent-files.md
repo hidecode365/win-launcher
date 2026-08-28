@@ -1,24 +1,32 @@
 # 最近使ったファイル一覧
 
-対象コード: `src-tauri/src/recent_files.rs`（`get_recent_files`／`resolve_lnk_target_path`／`resolve_sync_engine_local_path`）、`src/hooks/useSearch.ts`（`recentMode`／`recentModeFilter`）。
+対象コード: `src-tauri/src/recent_files.rs`（`get_recent_files`／`resolve_lnk_target_path`／`resolve_sync_engine_local_path`）、`src/hooks/useSearch.ts`（`recentMode`／`hasPrefixMatch`）、`src/components/RecentEditView.tsx`／`RecentEditFooter.tsx`。
 
 ## 現在の設計
 
 <a id="recent-mode-and-fetch"></a>
 
-### 呼び出し・モード切替・フィルタ（フロントエンド）
+### 呼び出し・L1画面化・フィルタ（フロントエンド）
 
-明示プレフィックスは「`/`（固定） + `appSettings.recentKeyword`（呼び出しキーワード。デフォルト `"recent"`）」の2部構成。判定方式（前方一致・残り文字列をフィルタとして使う）はクリップボード履歴と同じ（`recentModeFilter`）。
+明示プレフィックスは「`/`（固定） + `appSettings.recentKeyword`（呼び出しキーワード。デフォルト `"recent"`）」の2部構成。issue 0024で検索画面の子状態からL1画面（`App.tsx`の`view === "recentEdit"`）へ再構成した。判定方式は`hasPrefixMatch`（前方一致の真偽値のみを返す。旧`recentModeFilter`は続く文字列の抽出も兼ねていたが役割を分離した）。
 
 - `appSettings.recentFilesEnabled` が `false` の場合はこのモード判定自体を行わない
 - 他のプレフィックスキーワード（システムコマンド3つ・クリップボード・お気に入り）と重複できない（`validate_unique_keyword` の対象。詳細は [calc-and-prefix-commands.md](calc-and-prefix-commands.md#system-command-feature) を参照）
 - キーワードは設定画面の「最近使ったファイル」カテゴリで変更可能。`set_recent_keyword(keyword)`（Rust コマンド）は他の `set_*` と同一パターン（空文字列はエラー、重複チェック後にフィールド更新・保存）で実装する
 
-モードに入ったタイミング（`recentMode` が `false → true` になった瞬間）で `get_recent_files` を呼び直す。フィルタ文字列が変わるたびには再取得せず、取得済みの一覧をフロントエンド側で表示名（`RecentFile.name`。`.lnk`/`.url` いずれもここに統一済み）への部分一致でフィルタする（`recentResults`）。既に最終アクセス日時降順で取得済みのため、フィルタ後も順序は維持される。
+**画面構成**：`RecentEditView.tsx`（ヘッダー：戻るボタン＋ローカル絞り込み入力欄＋[SettingsButton](shared-ui-system.md#settings-button)、本体：既存どおりの1ペイン一覧、フッター：`RecentEditFooter.tsx`）。プレフィックス入力時点で後続文字列は使用せず、画面上部のローカル絞り込み入力欄（`recentEditFilterText`。`useSearch.ts`内の独立した`useState`）は常に空から開始する。判定用の呼び出しクエリ（`search.query`）自体はL1滞在中変更せず凍結したまま維持する（`clipboardMode`と同じ設計パターン。詳細は[window-lifecycle.md](window-lifecycle.md#prefix-mode-l1-promotion)を参照）——この設計により、以下に記す`recentMode`ベースの既存機構（取得・フィルタ・フォーカス回復再取得・世代ID管理）はL1化にあたって一切変更していない。一覧本体は既存の`ResultList`をそのまま再利用する（`RecentEditView.tsx`は`App.tsx`から`ComponentProps<typeof ResultList>`をそのまま受け取って描画するだけで、独自の行UIを持たない）。
 
-加えて、`recentMode` を維持したままウィンドウが非表示→再表示された場合（フォーカス回復を検知）も取得し直す（[window-lifecycle.md](window-lifecycle.md#prefix-mode-architecture) の「フォーカス回復時再取得テーブル」に `recent` エントリとして登録）。クリップボード履歴は OS のクリップボード変更通知を常時受信しているため非表示中の変化も自動で最新化されるが、最近使ったファイル一覧にはプッシュ通知の仕組みがなく、モード遷移時の1回きりの取得のままだと非表示中にファイルを開く／削除する等の変化が反映されないままになるため、この再取得が必要。
+`recentMode`が`false → true`になったタイミングで `get_recent_files` を呼び直す。フィルタ文字列が変わるたびには再取得せず、取得済みの一覧をフロントエンド側で表示名（`RecentFile.name`。`.lnk`/`.url` いずれもここに統一済み）への部分一致でフィルタする（`recentResults`）。既に最終アクセス日時降順で取得済みのため、フィルタ後も順序は維持される。
 
-`RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する。ファイル検索結果・計算結果・URLエンコード/デコード結果との関係は他のプレフィックスモードと同様に排他。frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）。
+加えて、`recentMode` を維持したままウィンドウが非表示→再表示された場合（フォーカス回復を検知）も取得し直す（[window-lifecycle.md](window-lifecycle.md#prefix-mode-architecture) の「フォーカス回復時再取得テーブル」に `recent` エントリとして登録）。クリップボード履歴は OS のクリップボード変更通知を常時受信しているため非表示中の変化も自動で最新化されるが、最近使ったファイル一覧にはプッシュ通知の仕組みがなく、モード遷移時の1回きりの取得のままだと非表示中にファイルを開く／削除する等の変化が反映されないままになるため、この再取得が必要。フォーカスアウトによる一時的な自動非表示は画面離脱ではないため、次回フォーカス回復時も最近使ったファイル画面を維持する（`view`は変更しない）。
+
+`RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する。ファイル検索結果・計算結果・URLエンコード/デコード結果・Web検索候補との関係は排他。frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）。
+
+**確定クローズ（Enter起動・Shift+Enterで格納フォルダを開く）**：`launchFile`/`openContainingFolder`の`recentMode`分岐は、クエリを既定（`"full"`）でクリアしたうえで`closeWindow()`の`cleanup`内で`resetToSearchView`（[window-lifecycle.md](window-lifecycle.md#l1-confirm-close-view-reset)）を呼び、`view`も明示的に検索画面へ戻す。これにより次回ウィンドウ表示時は必ず通常の検索画面から始まる（お気に入りの「確定後も同じ画面に留まる」既存挙動とは意図的に非対称）。Escapeおよび空のローカル絞り込み入力欄での無修飾Backspace（[window-lifecycle.md](window-lifecycle.md#empty-filter-backspace-return)）も同じく検索画面へ戻る。
+
+<a id="recent-web-search-exclusion-bug"></a>
+
+**発見・修正した既存の潜在的な不整合**：`App.tsx`の`webSearchVisible`（Web検索行の表示可否）の判定式には元々`recentMode`の除外が含まれておらず、`query`が常に非空（`"/recent..."`）になる`/recent`表示中に、理論上「Googleで/recentXXXを検索」という無意味なWeb検索行が選択可能になり得た。issue 0024のL1再構成に合わせて`!search.recentMode`（実装上は`!recentEditOpen`相当のタイミング）を追加して修正した。**教訓**：検索画面の子状態として"/" プレフィックスモードを追加する際は、`webSearchVisible`のような「クエリが非空なら成立する」形の判定式すべてに、新しいモードの除外を追加し忘れていないか確認すること。
 
 <a id="recent-files-retrieval"></a>
 
@@ -101,3 +109,4 @@ Teams サイト形式のマウントでは、`MountPoint`（ローカルフォ�
 
 - OneDrive のレジストリ情報を使った URL→ローカルパス変換ロジックに手を入れる場合、`FullRemotePath` と `UrlNamespace` の使い分け（[onedrive-double-folder-bug](#onedrive-double-folder-bug)）とパーセントエンコーディングの正規化（[percent-encoding-normalization-bug](#percent-encoding-normalization-bug)）の両方を必ず踏まえる。個人 OneDrive のテストだけでは Teams サイト・SharePoint 固有の不具合を再現できないため、可能ならどちらの構成でも検証する
 - `.url`／`.lnk` のような「軽い判定→重い処理」の順で処理できる項目を追加する場合、`.url` の表示対象設定と同様に、軽い判定を先に行って対象外を早期リターンする最適化を検討する
+- 検索画面の子状態だった"/" プレフィックスモードをL1画面へ昇格する場合、[window-lifecycle.md](window-lifecycle.md#prefix-mode-l1-promotion)のパターン（判定クエリを凍結、ローカル絞り込みは独立state）に乗せる。あわせて`webSearchVisible`等「クエリが非空なら成立する」形の判定式に新しいモードの除外が必要かを必ず確認する（[recent-web-search-exclusion-bug](#recent-web-search-exclusion-bug)を参照）

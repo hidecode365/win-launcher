@@ -32,13 +32,25 @@
 
 Ctrl+Dはフォーカス位置によらず動作させるため、`App.tsx`のwindow `keydown`ハンドラ1箇所で処理する。メイン検索の`search.query`は常に`search.setQuery("")`で消去し、全画面の管理ビューが独自の可視クエリを持つ場合は、表示中のビューが`localQueryClearHandlerRef`へ消去処理を登録する。同じキーのwindowリスナーを画面側へ追加しない。
 
-お気に入り管理画面は`favoriteEditFilterText`（`App.tsx`が保持）、メモ管理画面は`useMemoManage`フック（`App.tsx`が`useMemoManage(memoEditOpen)`として呼び出す）が返す`filterText`を使う。issue 0026（画面スコープでの状態保持、PO承認済み）により、メモ側もお気に入り側と同じく設定画面との往復でコンポーネントがアンマウントされても値を保持する`App.tsx`レベルへ引き上げ済み（以前はメモ管理ビュー自身のコンポーネントローカルstateだった）。
+お気に入り管理画面は`favoriteEditFilterText`（`App.tsx`が保持）、メモ管理画面は`useMemoManage`フック（`App.tsx`が`useMemoManage(memoEditOpen)`として呼び出す）が返す`filterText`を使う。issue 0026（画面スコープでの状態保持、PO承認済み）により、メモ側もお気に入り側と同じく設定画面との往復でコンポーネントがアンマウントされても値を保持する`App.tsx`レベルへ引き上げ済み（以前はメモ管理ビュー自身のコンポーネントローカルstateだった）。issue 0024でL1化したクリップボード履歴・最近使ったファイル画面は`clipboardEditFilterText`/`recentEditFilterText`（`useSearch.ts`内の`useState`。[prefix-mode-l1-promotion](#prefix-mode-l1-promotion)を参照）を同じ仕組みで登録する。
 
-両画面とも`useLayoutEffect`で登録する（500_リリース前作業でのドキュメント突き合わせ中に、メモ管理画面だけ通常の`useEffect`で登録していた実装差を発見し、お気に入り管理画面と同じ`useLayoutEffect`へ統一した。layout effectを使う目的——ビューのDOMが表示されてから通常effectが実行されるまでの間に登録が空となる時間窓を作らない——に照らして揃える必要があると判断したため）。`localQueryClearHandlerRef`への登録箇所はこの2箇所のみで、いずれもマウント時に登録・アンマウント時に解除する同じ形を取る。
+各画面とも`useLayoutEffect`で登録する（500_リリース前作業でのドキュメント突き合わせ中に、メモ管理画面だけ通常の`useEffect`で登録していた実装差を発見し、お気に入り管理画面と同じ`useLayoutEffect`へ統一した。layout effectを使う目的——ビューのDOMが表示されてから通常effectが実行されるまでの間に登録が空となる時間窓を作らない——に照らして揃える必要があると判断したため）。`localQueryClearHandlerRef`への登録箇所はこの4箇所（お気に入り・メモ・クリップボード履歴・最近使ったファイル）で、いずれもマウント時に登録・アンマウント時に解除する同じ形を取る。
 
 導入前は共通ハンドラが`search.setQuery("")`だけを呼び、管理画面の絞り込みstateへ経路が無かった。そのためフッターにはCtrl+Dが表示される一方、メモ管理・お気に入り管理のどちらでも可視の絞り込み文字列が残っていた。複数のクエリstateを持つ画面を今後追加する場合も、共通ハンドラへ画面名の分岐とsetterを直接列挙せず、この登録口を使う。
 
-**Ctrl+Dを「消去する対象へリダイレクト」ではなく「無効化」すべき場合**：本文編集用のテキスト入力欄（メモ管理画面の本文textarea等）にフォーカスがある間は、Ctrl+Dは画面の絞り込み文字列を消去する意味を持たず、本文入力中の誤発火でしかない。この場合は`localQueryClearHandlerRef`への登録（何を消去するか）ではなく、Ctrl+D自体を無効化する。実装は2箇所に分かれる：①`MemoManageView.tsx`のcapture-phase `keydown`ハンドラが、本文編集エリアにフォーカスがある間はCtrl+D（およびCtrl+S・Escape・矢印キー）を`stopPropagation`し、`App.tsx`側の共通ハンドラへ到達させない。②リネーム・フォルダ作成・メモ作成のインライン入力欄（`RenameInput`等、5箇所）は、共有関数`shouldStopEditInputKeyPropagation`（`treeEditUtils.ts`）がCtrl+D・矢印キー・F2・Ctrl+Shift+Nの伝播を一括で止める。新しい編集用テキスト入力欄を追加する場合、個別に`stopPropagation`を書く前に、まずこの共有関数の対象に含められないか検討する。
+**クリップボード履歴・最近使ったファイル画面のCtrl+Dは`search.setQuery("")`を呼ばない**：[prefix-mode-l1-promotion](#prefix-mode-l1-promotion)の通り、この2画面は`search.query`を判定用に凍結したまま維持しているため、Favorite/Memoと同じ「メインクエリも常にクリアする」処理をそのまま適用すると`clipboardMode`/`recentMode`の判定が崩れる。`App.tsx`のCtrl+D分岐は`clipboardEditOpen || recentEditOpen`のときだけ`localQueryClearHandlerRef.current?.()`のみを呼び、`search.setQuery("")`をスキップする専用分岐を持つ。
+
+**Ctrl+Dを「消去する対象へリダイレクト」ではなく「無効化」すべき場合**：本文編集用のテキスト入力欄（メモ管理画面の本文textarea等）にフォーカスがある間は、Ctrl+Dは画面の絞り込み文字列を消去する意味を持たず、本文入力中の誤発火でしかない。この場合は`localQueryClearHandlerRef`への登録（何を消去するか）ではなく、Ctrl+D自体を無効化する。実装は2箇所に分かれる：①`MemoManageView.tsx`のcapture-phase `keydown`ハンドラが、本文編集エリアにフォーカスがある間はCtrl+D（およびCtrl+S・Escape・矢印キー）を`stopPropagation`し、`App.tsx`側の共通ハンドラへ到達させない。②リネーム・フォルダ作成・メモ作成のインライン入力欄（`RenameInput`等、5箇所）は、共有関数`shouldStopEditInputKeyPropagation`（`treeEditUtils.ts`）がCtrl+D・矢印キー・F2・Ctrl+Shift+Nの伝播を一括で止める。新しい編集用テキスト入力欄を追加する場合、個別に`stopPropagation`を書く前に、まずこの共有関数の対象に含められないか検討する。**画面全体でCtrl+Dを一律無効化する場合**（本文入力欄に限らない全面的な無効化）の例はOCR画面：`ocrEditOpen`分岐は中身を空にするだけで、背後の`search.query`を含め一切変更しない（`App.tsx`側の`preventDefault`/`stopPropagation`自体は他の画面と共通の1箇所から呼ばれるため、OCR用に追加の抑止は行っていない。stopImmediatePropagationはOCR関連コードには存在しない）。
+
+<a id="empty-filter-backspace-return"></a>
+
+### 空のローカル絞り込み入力欄でのBackspaceによる復帰
+
+issue 0024で追加した仕様。お気に入り・メモ・クリップボード履歴・最近使ったファイルの4画面のローカル絞り込み入力欄で、**入力値が空・無修飾（Ctrl/Shift/Alt/Metaいずれも無し）・IME変換中でない**状態でBackspaceを押すと、Escapeと同じ「一段戻る」操作（通常の検索画面へ戻る）を発火する。
+
+判定は共有関数`isEmptyFilterBackspaceReturn`（`treeEditUtils.ts`）が担う。Escape/Ctrl+Dとは異なり**windowレベルのリスナーへは追加せず、各画面のフィルタ入力欄自身のローカル`onKeyDown`**で完結させる（発火条件そのものが「その入力欄にフォーカスがあること」であり、フォーカス位置に依存させない設計にする理由が無いため）。該当時は`preventDefault`・`stopPropagation`の両方を呼び、値が非空のときは何もせずブラウザ標準の1文字削除に委ねる。
+
+お気に入り画面のみ、フォルダ削除確認モーダル（`pendingDeleteFolder`）表示中はこの判定に加えて明示的なガードが必要になる：このモーダルはマウント時autofocusを持たないため、開いてもフィルタ入力欄にDOMフォーカスが残ったままになりうる。フォーカス条件だけに頼ると、モーダルを無視して画面ごと閉じてしまう回帰を招く。他の3画面（メモ・クリップボード履歴・最近使ったファイル）には同種のモーダルが無いため追加ガードは不要。フッターのキー操作ヒントにはこのBackspace復帰を表示しない（`00-requirements.md`「フッター表示規約」）。
 
 <a id="focus-out-auto-hide"></a>
 
@@ -92,7 +104,15 @@ const closeWindow = useCallback(
 
 **再表示時（`cleanup` がまだ完了していない場合）の挙動方針**：`closeWindow()` の `cleanup` は `hideWindow()` の解決後に開始される。理論上、ユーザーが極めて素早く再度ウィンドウを表示した場合、`cleanup` の非同期部分（`recordFrecency` の store 書き込み、`search_files`/`get_recent_files` の再取得等）が完了していない状態で画面が見える可能性がある。採用した方針は「再表示時は一旦ニュートラルな状態を先に描画し、`cleanup` の結果は次のクエリ変化まで気にしない」（検討した他の2方針との比較は「経緯」節を参照）。
 
-**適用対象外の例外**：OCR プレビューの「コピーして閉じる」（`App.tsx` の `handleOcrCopyAndClose`）は、`closeWindow()` を経由せず独自に 180ms のフェードアウト演出を挟んでから `hideWindow()` を呼ぶ（詳細は [clipboard-and-ocr.md](clipboard-and-ocr.md) を参照）。これはウィンドウが可視のまま意図的に見せる演出であり、「隠れるまで state を変更しない」という本節の原則とは目的が異なる。同様に `Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない。
+`Escape` キーによる非表示は `hideWindow()` を直接呼ぶのみで、クエリ保持のため `closeWindow()` の後処理（クエリクリア）自体を意図的に行わない。
+
+<a id="l1-confirm-close-view-reset"></a>
+
+**確定クローズ時のL1状態（`view`）の明示リセット**：`closeWindow()` の `clearQuery` は検索クエリ（`search.query`）だけを対象とし、`App.tsx` が保持する画面状態 `view` には一切関与しない。favorite/memo のようにクエリが `view` の昇格判定の一部を担うだけで `view` 自体は一度昇格すると以後クエリの変化に左右されない画面では問題にならないが、issue 0024（クリップボード履歴・最近使ったファイルのL1化）で「確定クローズ後は次回表示を必ず通常検索画面から始める」という仕様を実装した際、クエリをクリアするだけでは `view` が `"clipboardEdit"`/`"recentEdit"` のまま取り残されることが判明した。この場合、**`view` を明示的に `"search"` へ戻す専用コールバック（`resetToSearchView`。`App.tsx` で `useCallback(() => setView("search"), [])` として定義）を、確定クローズを実行する側のフック（`useSearch.ts`/`useClipboard.ts`）へ引数として渡し、`closeWindow()` の `cleanup` 内で呼ぶ**。新しくL1画面を追加し、かつ「確定クローズ後は次回検索画面から始まる」仕様にする場合は、このコールバックを同様に配線すること（既存のfavorite/memoの「確定後も同じL1に留まる」挙動は変更していない。両者は意図的に非対称）。
+
+<a id="prefix-mode-l1-promotion"></a>
+
+**検索画面の子状態（"/" プレフィックスモード）をL1画面へ昇格させる場合の設計パターン**：クリップボード履歴・最近使ったファイルは、元は [prefix-mode-architecture](#prefix-mode-architecture) の枠組み（`asyncCallIdRef`／`focusRegainTableRef`／`useSearch.ts` 内の判定クエリ）に乗った検索画面の子状態だった。これをL1画面へ昇格する際、判定用の呼び出しクエリ（`search.query`）自体はL1滞在中も変更せず凍結したまま維持し（favorite/memoが既に採っていたパターンと同じ）、画面上部のローカル絞り込み入力欄用に**独立した状態**（`clipboardEditFilterText`/`recentEditFilterText`。`useSearch.ts` 内の `useState` として持ち、setter ごと戻り値で公開する。`favoriteEditFilterText` と同じ置き場所のパターン）を新設し、絞り込み文字列の実体をそちらへ差し替える。こうすることで、`asyncCallIdRef`／`focusRegainTableRef`／行構築ロジック等、判定クエリの真偽値化だけに依存する既存の仕組みを一切変更せずに済む。**クエリを昇格時や滞在中に空文字へ変更する設計にしないこと**（`recentMode`/`clipboardMode` 等の判定が直ちに偽になり、`focusRegainTableRef` の再取得や行一覧が壊れる）。
 
 <a id="modal-keydown-window-level"></a>
 
@@ -208,3 +228,5 @@ const closeWindow = useCallback(
 - モーダル・ダイアログ（`SystemCommandModal`／`RegisterEntryDialog`／`FavoriteFolderDeleteModal`／`PathPasteWizard` 等）のキー操作は、外部設計書 `external-design/01-screen-transitions.md#modal-key-policy` の非対称原則に従う：Escapeのみ DOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーへ一本化し、Enterはブラウザ標準のフォーカス経路（Tab で移動したボタン上の Enter）に委ねて window レベルに独自分岐を設けない
 - 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の `searchOverlayActive`（[search-overlay-active-consolidation](#search-overlay-active-consolidation)）を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。ただしオーバーレイごとにEnter/Escapeの意味が異なる window レベルリスナー自体は個別分岐が必要で、この値には集約できない
 - 「1回だけ抑止する」フラグ（`suppressNextSearchRef` のようなもの）を安易に新設しない。抑止した処理を後から再取得するタイミングが存在するかを必ず検討すること。存在しない場合、抑止は「気づかれないまま固まって見える」不具合の温床になる
+- 検索画面の子状態（"/" プレフィックスモード）をL1画面へ昇格する場合は [prefix-mode-l1-promotion](#prefix-mode-l1-promotion) のパターン（判定クエリを凍結、ローカル絞り込みは独立state）に乗せる。確定クローズ後に必ず検索画面から始まる仕様にする場合は、クエリのクリアだけでなく [l1-confirm-close-view-reset](#l1-confirm-close-view-reset) の `resetToSearchView` 相当のコールバックで `view` も明示的に戻す
+- 新しいL1画面のローカル絞り込み入力欄を追加する場合、空欄でのBackspace復帰は [empty-filter-backspace-return](#empty-filter-backspace-return) の共有関数 `isEmptyFilterBackspaceReturn` をその入力欄自身のローカル`onKeyDown`から呼ぶだけでよい。windowレベルリスナーへの追加は不要

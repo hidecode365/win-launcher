@@ -267,10 +267,13 @@ win-launcher/
 
 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md)
 
-- 設定画面はどのL1画面（検索／お気に入り／メモ）からでも開け、閉じると開いた元の画面へ戻る（戻り先は他のL1画面と異なり固定ではない）。設定は多重に開けないため、記憶は履歴スタックではなく1段（`previousViewRef`）で足りる。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#settings-return-view)
+- 設定画面はどのL1画面（検索・お気に入り・メモ・クリップボード履歴・最近使ったファイル・OCR）からでも開け、閉じると開いた元の画面へ戻る（戻り先は他のL1画面と異なり固定ではない）。設定は多重に開けないため、記憶は履歴スタックではなく1段（`previousViewRef`）で足りる。設定を開くボタン自体は共有コンポーネント`SettingsButton`を各画面ヘッダーで使い、個別にSVGを複製しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#settings-return-view)（設定ボタンの共有は[shared-ui-system.md#settings-button](docs/internal-design/shared-ui-system.md#settings-button)を参照）
 - Ctrl+DはAppのwindowハンドラ1箇所で処理する。全画面ビューが独自の可視クエリを持つ場合は、画面固有のkeydownを追加せず`localQueryClearHandlerRef`へ消去処理を登録する。本文編集用テキスト入力欄にフォーカスがある間のように、Ctrl+Dが「消去対象」を持たずただの誤発火でしかない場合は、登録ではなくCtrl+D自体を`stopPropagation`で無効化する（インライン入力欄はまず共有関数`shouldStopEditInputKeyPropagation`の対象に含められないか検討する）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)
-- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。**設定画面表示中のみ**この自動非表示を適用しない（お気に入り・メモ画面は検索画面と同じく自動非表示の対象）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
+- 空のローカル絞り込み入力欄にフォーカスがある状態での無修飾Backspaceは、Escapeと同じ「一段戻る」操作を発火する（お気に入り・メモ・クリップボード履歴・最近使ったファイルの4画面）。判定は共有関数`isEmptyFilterBackspaceReturn`（`treeEditUtils.ts`）を各入力欄自身のローカル`onKeyDown`から呼ぶだけで完結させ、windowレベルリスナーへは追加しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#empty-filter-backspace-return)
+- フォーカスアウトでの自動非表示は150msデバウンス＋再確認で行う。**設定画面表示中のみ**この自動非表示を適用しない（お気に入り・メモ・クリップボード履歴・最近使ったファイル・OCRの各画面は検索画面と同じく自動非表示の対象）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#focus-out-auto-hide)
 - ウィンドウを閉じる系アクションは必ず `closeWindow()` を経由させる。独自のクローズ処理・個別の `useRef` ガードを新設しない。画面に影響する React state の変更は `hideWindow()` の解決後（`cleanup` オプション内）にのみ行う。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#close-window-common-design)
+- `closeWindow()`のクエリクリアはL1画面の状態（`view`）を自動的には戻さない。確定クローズ後に必ず検索画面から始まる仕様のL1画面（クリップボード履歴・最近使ったファイル）では、`view`を明示的に検索画面へ戻す専用コールバック（`resetToSearchView`）をデータ管理フックへ渡し、`closeWindow()`の`cleanup`内で呼ぶ。お気に入り・メモの「確定後も同じ画面に留まる」既存挙動とは意図的に非対称。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#l1-confirm-close-view-reset)
+- 検索画面の子状態（"/" プレフィックスモード）をL1画面へ昇格させる場合、判定用の呼び出しクエリ（`search.query`）はL1滞在中変更せず凍結したまま維持し、ローカル絞り込み文字列は独立したstateへ分離する。クエリを空文字にする設計にしない（モード判定・行構築・フォーカス回復再取得等の既存機構が壊れる）。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-l1-promotion)
 - モーダル・ダイアログのキー操作は**キャンセルと確定で非対称**に扱う：キャンセル（Escape）はDOM上のフォーカス位置に依存させず window レベルの共通 keydown リスナーで常に効くようにし、確定（Enter）はブラウザ標準のフォーカス経路（Tabで移動 → ボタン上のEnterで `click` 発火）に委ねて window レベルに独自のEnter分岐を設けない。 → 詳細: **`external-design/01-screen-transitions.md#modal-key-policy`**（実装パターンは [window-lifecycle.md](docs/internal-design/window-lifecycle.md#modal-keydown-window-level)）
 - 「検索ビュー上のオーバーレイが1つでも開いているか」だけを見ればよい箇所（検索ボックス再フォーカス・`SearchBox` の `disabled` 判定・`handleKeyDown` の早期return）は、オーバーレイstateを個別に列挙せず `useSearch.ts` の派生値 `searchOverlayActive` を参照する。新しいオーバーレイstateを追加する場合はこの1箇所の配列へ追記するだけでよい。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#search-overlay-active-consolidation)
 - 新しい "/" プレフィックスモード（pull型のデータ取得を伴うもの）を追加する場合、世代ID管理は `asyncCallIdRef` に新しいキーを割り当てるだけにし、既存キー（`"search"`/`"recent"`）を使い回さない。フォーカス回復時の再取得は `focusRegainTableRef.current` にエントリを1つ追加するだけにし、`onFocusChanged` リスナー自体やモード専用の鏡refを新設しない。 → 詳細: [window-lifecycle.md](docs/internal-design/window-lifecycle.md#prefix-mode-architecture)
@@ -351,6 +354,7 @@ win-launcher/
 - インラインリネームのEnter／Escは共有`RenameInput`内で完結させる。IME変換中のEnterも伝播は止め、window capture側の除外はReact stateではなく実際の入力DOMを判定する。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#memo-inline-rename)
 - 作業を確定する主要ボタンと、それに並ぶ低優先度の補助ボタンは`ActionButton`のsemantic variantを使い、配置密度と固定heightの違いはsizeで表す。画面側で独自のheight・padding・outlineを追加しない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#action-button)
 - 本文textareaは挙動を無理に共通化せず、`EDITOR_SURFACE_CLASS`で表面だけを共有する。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#editor-surface)
+- 各L1画面のヘッダーで設定を開くボタンを追加する場合、共有コンポーネント`SettingsButton`をそのまま使い、個別にSVGを複製しない。 → 詳細: [shared-ui-system.md](docs/internal-design/shared-ui-system.md#settings-button)
 
 ### 計算機能・システムコマンド・プレフィックスコマンド候補
 
@@ -367,14 +371,17 @@ win-launcher/
 - クリップボード画像を扱う処理は画像本体を JS 側へ渡さず Rust 側で完結させる（IPC 越しの重量データ転送を避ける）。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history)
 - `clipboardPaneWidthRef`（mouseup用）と `clipboardPaneWidth` state（props用）は必ず同時に更新する。ref のみ更新すると、パネル再マウント時に古い幅が渡されるバグになる。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#clipboard-history)
 - 左右ペインは共有`ResizableSplitPane`を使い、分割線の見た目・pointer操作・幅制約・親リサイズ追従を画面側で再実装しない。各画面は内容と幅の永続化要否だけを持つ。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#resizable-split-pane)
+- OCR画面のヘッダーは共有`SearchBox`を流用せず専用実装にする（戻るボタンの差し込み口が無いため）。「閉じる」はヘッダーの戻るボタン、「コピーして閉じる」は本文直上の情報・操作行に配置し、メモ画面と同じ配置パターンに揃える。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature)
 - OCR前処理（拡大・グレースケール化・コントラスト補正）による精度改善は検証済みで却下・見送り確定。同じアプローチを再検証しない。改善が必要な場合はWindows OCRエンジン自体の限界を前提に別モデルの導入を検討する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-preprocessing-rejected)
-- ウィンドウを閉じる新しい演出（フェードアウト等）を追加する場合、`closeWindow()` の「隠れるまで state を変更しない」原則の例外にするかどうかを明確に判断し、例外にする場合は理由を明記する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-feature)
+- `ResizableSplitPane`の`initialLeftWidth`は絶対px値であり比率ではない。コンテナ幅に対する比率（50%等）で初期化したい場合、固定pxを渡さず呼び出し側で実測してから換算する。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-initial-width-not-proportional)
+- ウィンドウを閉じる新しい演出（フェードアウト等）を追加する場合、`closeWindow()` の「隠れるまで state を変更しない」原則の例外にするかどうかを明確に判断し、例外にする場合は理由を明記する。OCR固有のフェードアウトはissue 0024で廃止済みで、現時点で該当する例外は無い。 → 詳細: [clipboard-and-ocr.md](docs/internal-design/clipboard-and-ocr.md#ocr-fade-removed)
 
 ### 最近使ったファイル一覧
 
 → 詳細: [recent-files.md](docs/internal-design/recent-files.md)
 
-- `/recent` はフォーカス復帰のたびに再取得する（プッシュ通知を持たないため、モード遷移時の1回きりの取得だと非表示中の変化が反映されない）。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#recent-mode-and-fetch)
+- `/recent` はフォーカス復帰のたびに再取得する（プッシュ通知を持たないため、モード遷移時の1回きりの取得だと非表示中の変化が反映されない）。検索画面の子状態からL1画面へ昇格した後もこの機構は変更していない（判定用の呼び出しクエリを凍結したまま維持するパターンに乗せたため）。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#recent-mode-and-fetch)
+- `webSearchVisible`のような「クエリが非空なら成立する」形の判定式に、新設した"/" プレフィックスモードの除外を追加し忘れていないか確認する（`/recent`表示中に無意味なWeb検索行が選択可能になっていた実例）。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#recent-web-search-exclusion-bug)
 - OneDriveのURL→ローカルパス変換ロジックに手を入れる場合、`FullRemotePath`/`UrlNamespace` の使い分けとパーセントエンコーディングの正規化の両方を必ず踏まえる。個人OneDriveのテストだけではTeamsサイト・SharePoint固有の不具合を再現できない。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#onedrive-double-folder-bug)
 - 「軽い判定→重い処理」の順で処理できる項目（`.url`の表示対象設定等）は、軽い判定を先に行って対象外を早期リターンする最適化を検討する。 → 詳細: [recent-files.md](docs/internal-design/recent-files.md#url-filter-order-optimization)
 

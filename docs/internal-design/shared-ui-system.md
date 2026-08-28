@@ -1,6 +1,6 @@
 # 共有UI・デザインシステム
 
-対象コード: `tailwind.config.js`、`src/ui/sharedStyles.ts`、`src/components/ActionButton.tsx`、`src/components/MemoNodeRenameInput.tsx`。アイコン専用の共有設計は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
+対象コード: `tailwind.config.js`、`src/ui/sharedStyles.ts`、`src/components/ActionButton.tsx`、`src/components/MemoNodeRenameInput.tsx`、`src/components/SettingsButton.tsx`。アイコン専用の共有設計は [favorites-ui-iconography.md](favorites-ui-iconography.md) を参照。
 
 本ファイルは、新しい画面やUI要素を実装するときの共有UIの入口である。具体的な値の正本はコードとし、本書は「どの共有定義を、どの意味で使うか」を索引として管理する。
 
@@ -75,6 +75,14 @@ issue 0026で「閲覧専用パネル」（旧`FavoriteListPanel.tsx`／`MemoPan
 `src/ui/sharedStyles.ts`の`EDITOR_SURFACE_CLASS`が、本文を直接編集するtextareaの表面色・文字色・border・focus・disabledを管理する。
 
 メモ本文とOCRテキストは、値の所有者、autoFocus、キーボード処理、スクロール構造が異なるため、Reactコンポーネントには統合しない。各画面はflex・overflow・イベント等の構造と振る舞いを保持し、見た目だけを`EDITOR_SURFACE_CLASS`へ接続する。
+
+<a id="settings-button"></a>
+
+## 設定ボタン
+
+`src/components/SettingsButton.tsx`は、設定画面を開く歯車アイコン＋Tooltip「設定」を1コンポーネントへ共通化したもの。issue 0024の400_テスト・バグ修正（PO指摘）で、検索画面（`SearchBox.tsx`）とOCR画面にしか無かったこのボタンを、お気に入り・メモ・クリップボード履歴・最近使ったファイルの各L1画面ヘッダーにも追加した際に、6箇所へSVGを複製する代わりに切り出した。
+
+クリックで`onOpenSettings`を呼ぶだけの表示専用コンポーネントで、設定を開く／閉じて元のL1画面へ戻る経路自体（`App.tsx`の`openSettings`/`closeSettings`/`previousViewRef`。詳細は[window-lifecycle.md](window-lifecycle.md#settings-return-view)）には関与しない。新しいL1画面を追加する場合はヘッダー右端でこのコンポーネントをそのまま使い、個別にSVGを複製しない。設定画面自身（`SettingsPanel.tsx`）はこのボタンを表示しない（表示先そのものを持たないため自動的に満たされる）。
 
 ## 状態確認の範囲
 
