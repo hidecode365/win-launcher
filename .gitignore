@@ -26,6 +26,3 @@ src-tauri/keys/
 
 # Codex local configuration
 .codex*
-
-# Claude code local configuration
-.claude/settings.local.json
