@@ -41,6 +41,23 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  // 「ファイル検索」タブ末尾の単一保存ボタンから、未保存の場合のみ呼ばれる。成功時は
+  // `null`、失敗時はエラーメッセージ文字列を返す（setRecentMaxResults と同じ契約）。
+  const setSearchMaxResults = useCallback(
+    async (maxResults: number): Promise<string | null> => {
+      try {
+        const updated = await invoke<AppSettings>("set_search_max_results", {
+          maxResults,
+        });
+        setAppSettings(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
+
   const setCalcEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_calc_enabled", {
       enabled,
@@ -323,6 +340,28 @@ export function useSettings(showSettings: boolean) {
     if (updated) setFolders(updated);
   }, []);
 
+  // 検索フォルダ一覧のドラッグ並び替え。楽観的なクライアント側の並び替えは行わず、
+  // Rust側の保存が成功して初めて返却値（新しい順序）で `folders` を更新する。
+  // 失敗時は `folders` を一切書き換えないため、表示順は自然に操作前のまま残る
+  // （「保存失敗時は操作前の表示順へ戻す」を、ロールバック処理を書かずに満たす）。
+  // 他の folders 系操作と異なり戻り値で成否を返すのは、呼び出し元がエラー表示を
+  // 行うため（`set_folder_settings` と同じ「一括保存はエラーを呼び出し元へ返す」契約）。
+  const reorderFolders = useCallback(
+    async (fromPath: string, toPath: string): Promise<string | null> => {
+      try {
+        const updated = await invoke<FolderEntry[]>("reorder_folders", {
+          fromPath,
+          toPath,
+        });
+        setFolders(updated);
+        return null;
+      } catch (e) {
+        return String(e);
+      }
+    },
+    []
+  );
+
   const openFolder = useCallback(async (path: string) => {
     await invoke("launch_file", { path }).catch(console.error);
   }, []);
@@ -360,6 +399,7 @@ export function useSettings(showSettings: boolean) {
     settingsLoaded,
     folders,
     setFileSearchEnabled,
+    setSearchMaxResults,
     setCalcEnabled,
     setCopyWithComma,
     setUrlConvertEnabled,
@@ -386,6 +426,7 @@ export function useSettings(showSettings: boolean) {
     addFolder,
     toggleFolder,
     removeFolder,
+    reorderFolders,
     openFolder,
     setFolderSettings,
   };

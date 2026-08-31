@@ -50,6 +50,7 @@ export function ResultList({
   prefixCommandMode,
   prefixCommandCandidates,
   results,
+  fileSearchLoading,
   query,
   selected,
   baseLength,
@@ -81,6 +82,11 @@ export function ResultList({
   // 使う（rows 自体には該当する行が存在しないため、この判定だけは rows と別に
   // results を直接見る必要がある）。
   results: FileEntry[];
+  // 現在世代の通常ファイル検索結果が届くまでの間 true。「検索中…」は非選択行として
+  // 通常ファイル検索結果の領域にのみ表示し、上下キー・ホバー・クリックの対象には
+  // 含めない（「見つかりませんでした」と同じく rows 配列には含めない別枠表示。
+  // 詳細は CLAUDE.md「通常検索のlatest-wins＋cooperative cancellation」節を参照）。
+  fileSearchLoading: boolean;
   query: string;
   selected: number;
   baseLength: number;
@@ -607,7 +613,15 @@ export function ResultList({
               }
             }
           })}
-          {results.length === 0 && query.length > 0 && (
+          {fileSearchLoading && (
+            <div
+              role="presentation"
+              className="flex items-center justify-center text-gray-400 text-sm py-6"
+            >
+              検索中…
+            </div>
+          )}
+          {!fileSearchLoading && results.length === 0 && query.length > 0 && (
             <div className="flex items-center justify-center text-gray-400 text-sm py-6">
               見つかりませんでした
             </div>

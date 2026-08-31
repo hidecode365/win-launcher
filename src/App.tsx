@@ -1327,6 +1327,7 @@ export default function App() {
           appSettings={settings.appSettings}
           onSaveHotkey={hotkey.setHotkey}
           onSetFileSearchEnabled={settings.setFileSearchEnabled}
+          onSetSearchMaxResults={settings.setSearchMaxResults}
           onSetCalcEnabled={settings.setCalcEnabled}
           onSetCopyWithComma={settings.setCopyWithComma}
           onSetUrlConvertEnabled={settings.setUrlConvertEnabled}
@@ -1354,6 +1355,7 @@ export default function App() {
           onAddFolder={settings.addFolder}
           onToggleFolder={settings.toggleFolder}
           onRemoveFolder={settings.removeFolder}
+          onReorderFolders={settings.reorderFolders}
           onOpenFolder={settings.openFolder}
           onSaveFolderSettings={settings.setFolderSettings}
           onClose={closeSettings}
@@ -1460,6 +1462,7 @@ export default function App() {
           prefixCommandMode: false,
           prefixCommandCandidates: [],
           results: search.results,
+          fileSearchLoading: search.fileSearchLoading,
           query: search.query,
           selected: search.selected,
           baseLength,
@@ -1587,6 +1590,7 @@ export default function App() {
           prefixCommandMode={search.prefixCommandMode}
           prefixCommandCandidates={search.prefixCommandCandidates}
           results={search.results}
+          fileSearchLoading={search.fileSearchLoading}
           query={search.query}
           selected={search.selected}
           baseLength={baseLength}

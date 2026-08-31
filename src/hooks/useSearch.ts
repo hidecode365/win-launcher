@@ -597,6 +597,61 @@ export function useSearch(
     return asyncCallIdRef.current[key] === id;
   }, []);
 
+  // 通常ファイル検索のlatest-wins＋cooperative cancellation用ディスパッチャ。
+  // 実行中は最大1件（searchInFlightRef）とし、実行中に新しい検索文字列を受け付けた
+  // 場合は待機要求を最新1件だけで上書きする（searchQueueRef。途中の文字列をFIFOで
+  // 蓄積しない）。Rust側の実行中世代（`SEARCH_GENERATION`）は、待機中でもキュー
+  // 投入と同時に`set_search_generation`で即座に更新し、実行中の`search_files`が
+  // 次の確認箇所で自身をobsoleteと検知できるようにする（invoke自体は1件ずつ直列に
+  // 発行するが、実行中の重い同期処理を割り込んで早期終了させるための軽量な合図は
+  // 別送する。詳細は`external-design/05-file-search-and-shell-icons.md
+  // #file-search-loading-state`を参照）。
+  //
+  // 世代番号自体は上の asyncCallIdRef の "search" キーをそのまま流用する
+  // （JS側の「最新の呼び出しか」判定とRust側の「最新の世代か」判定を同じ数値で
+  // 表現できるため、専用のカウンタを別に持たない）。
+  const searchInFlightRef = useRef(false);
+  const searchQueueRef = useRef<{
+    generation: number;
+    query: string;
+    excludePaths: string[];
+  } | null>(null);
+  // 検索文字列変更時に直ちに一覧から除去した後、現在世代の結果が届くまで表示する
+  // 非選択の「検索中…」状態（表1「検索中に表示する行と操作」を参照）。
+  const [fileSearchLoading, setFileSearchLoading] = useState(false);
+
+  // runQueuedSearchRef.current は毎レンダー最新の frecency/isLatestAsyncCall を
+  // 捕捉するクロージャで上書きする（focusRegainTableRef.current と同じ「最新値を
+  // 保持するref」パターン）。.finally() からの再帰呼び出しは常にこのref経由で行う
+  // ため、useCallbackの循環依存を避けつつ古いクロージャを参照する心配がない。
+  const runQueuedSearchRef = useRef<() => void>(() => {});
+  runQueuedSearchRef.current = () => {
+    const next = searchQueueRef.current;
+    if (!next) {
+      searchInFlightRef.current = false;
+      return;
+    }
+    searchQueueRef.current = null;
+    searchInFlightRef.current = true;
+    const { generation, query, excludePaths } = next;
+    invoke<FileEntry[]>("search_files", { generation, query, excludePaths })
+      .then((files) => {
+        if (isLatestAsyncCall("search", generation)) {
+          setResults(sortByFrecency(files, frecency));
+          setFileSearchLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        if (isLatestAsyncCall("search", generation)) {
+          setFileSearchLoading(false);
+        }
+      })
+      .finally(() => {
+        runQueuedSearchRef.current();
+      });
+  };
+
   // 直近にキーボード（↑↓）で選択操作を行った時刻。
   const lastKeyboardNavAtRef = useRef(0);
 
@@ -872,6 +927,12 @@ export function useSearch(
   const [favoriteExistence, setFavoriteExistence] = useState<
     Record<string, boolean>
   >({});
+  // お気に入りは通常検索・ピン止めと異なり既存のShellアイコン取得経路を持たないため、
+  // `get_icons_for_paths`（汎用バッチ取得コマンド）で別途取得する（詳細は CLAUDE.md
+  // 「Shellアイコン表示」節を参照。既存のピン止め・通常検索の経路は無理に共有しない）。
+  const [favoriteIcons, setFavoriteIcons] = useState<
+    Record<string, string | null>
+  >({});
 
   // お気に入り編集ビュー専用の絞り込み文字列（軸4g）。/favorite ブラウジング側の
   // favoriteFilterText はメイン検索ボックスの query から導出される値だが、編集
@@ -887,15 +948,20 @@ export function useSearch(
           if (!isLatestAsyncCall("favorite", callId)) return;
           setRawFavoriteNodes(nodes);
           const fileNodes = nodes.filter((n) => n.type === "file");
-          return invoke<boolean[]>("check_paths_exist", {
-            paths: fileNodes.map((n) => n.value),
-          }).then((existsList) => {
+          const paths = fileNodes.map((n) => n.value);
+          return Promise.all([
+            invoke<boolean[]>("check_paths_exist", { paths }),
+            invoke<(string | null)[]>("get_icons_for_paths", { paths }),
+          ]).then(([existsList, iconsList]) => {
             if (!isLatestAsyncCall("favorite", callId)) return;
-            const map: Record<string, boolean> = {};
+            const existsMap: Record<string, boolean> = {};
+            const iconsMap: Record<string, string | null> = {};
             fileNodes.forEach((n, i) => {
-              map[n.value] = existsList[i] ?? true;
+              existsMap[n.value] = existsList[i] ?? true;
+              iconsMap[n.value] = iconsList[i] ?? null;
             });
-            setFavoriteExistence(map);
+            setFavoriteExistence(existsMap);
+            setFavoriteIcons(iconsMap);
           });
         })
         .catch((err) => {
@@ -1046,7 +1112,7 @@ export function useSearch(
     const filtered = filterLower
       ? rawRecentFiles.filter((f) => f.name.toLowerCase().includes(filterLower))
       : rawRecentFiles;
-    return filtered.map((f) => ({ name: f.name, path: f.path, icon: null }));
+    return filtered.map((f) => ({ name: f.name, path: f.path, icon: f.icon }));
   }, [recentMode, recentFilterText, rawRecentFiles]);
 
   // /favorite モードの表示用ツリー（フォルダ見出し行＋アイテム行のフラット配列）。
@@ -1145,7 +1211,7 @@ export function useSearch(
           key: favoriteItemRowKey(node.id),
           node,
           depth,
-          file: { name: node.name, path: node.value, icon: null },
+          file: { name: node.name, path: node.value, icon: favoriteIcons[node.value] ?? null },
           exists: favoriteExistence[node.value] ?? true,
           ...siblingEdgeInfo(node),
         });
@@ -1153,7 +1219,7 @@ export function useSearch(
       // clipboard/command 型は今回未実装のため対象外（メモ機能実装時に追加）。
     });
     return rows;
-  }, [rawFavoriteNodes, favoriteFilterText, favoriteExistence]);
+  }, [rawFavoriteNodes, favoriteFilterText, favoriteExistence, favoriteIcons]);
 
   // お気に入り編集ビュー専用の絞り込み済みツリー（軸4g）。上の favoriteTree
   // （/favorite ブラウジング用）と異なる点は2つ：
@@ -1246,7 +1312,7 @@ export function useSearch(
             key: favoriteItemRowKey(node.id),
             node,
             depth,
-            file: { name: node.name, path: node.value, icon: null },
+            file: { name: node.name, path: node.value, icon: favoriteIcons[node.value] ?? null },
             exists: favoriteExistence[node.value] ?? true,
             ...siblingEdgeInfo(node),
           });
@@ -1255,7 +1321,7 @@ export function useSearch(
     };
     walk(FAVORITES_FOLDER_ID, 0, false);
     return rows;
-  }, [rawFavoriteNodes, favoriteEditFilterText, favoriteExistence]);
+  }, [rawFavoriteNodes, favoriteEditFilterText, favoriteExistence, favoriteIcons]);
 
   // favoriteTree からアイテム行のみを抜き出したもの。軸1で↑↓キーによる選択移動・
   // intent ベースの選択解決（resolveSelected）の対象一覧は favoriteTree（フォルダ
@@ -1373,6 +1439,7 @@ export function useSearch(
   useEffect(() => {
     if (clipboardMode) {
       setResults([]);
+      setFileSearchLoading(false);
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1380,6 +1447,7 @@ export function useSearch(
     if (prefixCommandMode) {
       setSelectedRaw(0);
       setResults([]);
+      setFileSearchLoading(false);
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1389,6 +1457,7 @@ export function useSearch(
       // アクションが引き続き参照するため、ここではクリアしない。
       setSelectedRaw(0);
       setResults([]);
+      setFileSearchLoading(false);
       setCalcResult(null);
       return;
     }
@@ -1401,6 +1470,7 @@ export function useSearch(
       // 個別のガードは不要になった（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
       console.debug(`[recent] applying recentResults to results (count=${recentResults.length})`);
       setResults(recentResults);
+      setFileSearchLoading(false);
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1411,6 +1481,7 @@ export function useSearch(
       // 空にするだけでよい（selected の解決も intent + favoriteSelectionItems の
       // 組み合わせで別途行う。詳細は選択解決用 useLayoutEffect を参照）。
       setResults([]);
+      setFileSearchLoading(false);
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1451,7 +1522,7 @@ export function useSearch(
       // 空のまま固まって見える不具合になっていたため廃止した。世代 ID
       // （asyncCallIdRef の "search" キー）による使い捨てチェックは維持しているため、
       // 連続してクエリが変わった場合に古い呼び出しの結果が後から上書きしてしまうことはない）。
-      const callId = beginAsyncCall("search");
+      const generation = beginAsyncCall("search");
       // ピン止め済みパスの除外は、ピン止めブロックが実際に画面上へ表示されている
       // 場合（pinnedVisible。pinEnabled が OFF の場合や、クエリに文字が入力されている
       // 場合は false になる）のときのみ行う。query === "" だけで判定すると
@@ -1462,28 +1533,23 @@ export function useSearch(
       // 「pinEnabled && query === ""」と同値になる）。
       const excludePaths = pinnedVisible ? Array.from(pinnedPathSet) : [];
       console.debug(
-        `[search] search_files start (query="${query}", callId=${callId}, closeRefreshTick=${closeRefreshTick}, excludeCount=${excludePaths.length})`
+        `[search] search_files queued (query="${query}", generation=${generation}, closeRefreshTick=${closeRefreshTick}, excludeCount=${excludePaths.length})`
       );
-      invoke<FileEntry[]>("search_files", { query, excludePaths })
-        .then((files) => {
-          if (!isLatestAsyncCall("search", callId)) {
-            console.debug(
-              `[search] search_files discarded (callId=${callId}, current=${asyncCallIdRef.current["search"]})`
-            );
-            return; // 古い呼び出しの結果は破棄する
-          }
-          console.debug(
-            `[search] search_files resolved (callId=${callId}, count=${files.length})`
-          );
-          setResults(sortByFrecency(files, frecency));
-          // 選択（selected）はここでは一切触らない。通常モードでは results の
-          // 変化を検知した rows の再構築 → intent 解決用 useLayoutEffect が
-          // 選択を再計算するため、search_files の解決自体が選択に直接
-          // 書き込む必要はない（詳細は SelectIntent 型のコメントを参照）。
-        })
-        .catch(console.error);
+      // 検索文字列が変わった時点で、旧結果を一覧から直ちに除去し「検索中…」を
+      // 表示する（表1「検索中に表示する行と操作」を参照）。実行中のRust側処理へは
+      // 軽量コマンドで即座に新しい世代を通知し、実際の invoke 発行はキュー
+      // （searchQueueRef）に積むだけにとどめる。実行中の呼び出しが無ければ
+      // 直ちに runQueuedSearchRef を起動する。
+      invoke("set_search_generation", { generation }).catch(() => {});
+      setResults([]);
+      setFileSearchLoading(true);
+      searchQueueRef.current = { generation, query, excludePaths };
+      if (!searchInFlightRef.current) {
+        runQueuedSearchRef.current();
+      }
     } else {
       setResults([]);
+      setFileSearchLoading(false);
     }
   }, [
     query,
@@ -2466,6 +2532,7 @@ export function useSearch(
     query,
     setQuery,
     results,
+    fileSearchLoading,
     selected,
     setSelected,
     selectFromHover,

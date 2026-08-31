@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FolderDetailSettings, FolderEntry } from "../types";
 import { useTruncatedPath } from "../hooks/useTruncatedPath";
+import { useSettingsDraft } from "../hooks/useSettingsDraft";
 import { FeatureToggle } from "./FeatureToggle";
 import { FolderDetailSettingsModal } from "./FolderDetailSettingsModal";
+import { FolderInfoModal } from "./FolderInfoModal";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsIndent } from "./SettingsIndent";
+import { SettingsSaveBar } from "./SettingsSaveBar";
+import { draftInputClassName } from "./settingsFieldStyles";
 import { Tooltip } from "./Tooltip";
 
 // フックは呼び出し元の関数コンポーネント単位でしか使えないため（Rules of Hooks）、
@@ -35,10 +39,13 @@ function FolderPathButton({
 export function FileSearchSettings({
   enabled,
   onToggle,
+  searchMaxResults,
+  onChangeSearchMaxResults,
   folders,
   onAddFolder,
   onToggleFolder,
   onRemoveFolder,
+  onReorderFolders,
   onOpenFolder,
   onSaveFolderSettings,
   onRegisterEscapeHandler,
@@ -46,10 +53,13 @@ export function FileSearchSettings({
 }: {
   enabled: boolean;
   onToggle: (checked: boolean) => void;
+  searchMaxResults: number;
+  onChangeSearchMaxResults: (maxResults: number) => Promise<string | null>;
   folders: FolderEntry[];
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
   onRemoveFolder: (path: string) => void;
+  onReorderFolders: (fromPath: string, toPath: string) => Promise<string | null>;
   onOpenFolder: (path: string) => void;
   onSaveFolderSettings: (
     path: string,
@@ -62,12 +72,41 @@ export function FileSearchSettings({
     null
   );
   const [detailTarget, setDetailTarget] = useState<FolderEntry | null>(null);
+  const [infoTarget, setInfoTarget] = useState<FolderEntry | null>(null);
+
+  const [maxResultsInput, setMaxResultsInput, maxResultsDirty] =
+    useSettingsDraft(String(searchMaxResults));
+  const [maxResultsError, setMaxResultsError] = useState<string | null>(null);
+
+  const handleMaxResultsChange = (value: string) => {
+    setMaxResultsInput(value);
+    setMaxResultsError(null);
+  };
+
+  const handleSaveMaxResults = async () => {
+    const err = await onChangeSearchMaxResults(Number(maxResultsInput));
+    setMaxResultsError(err);
+  };
+
+  // ドラッグ中の並び替え元パス。専用ドラッグハンドル（⋮⋮）以外の要素（パス・
+  // チェックボックス・詳細設定・フォルダ情報・削除）には draggable を付与しない
+  // ことで、ドラッグの起点をハンドルだけに限定する（00-requirements.md「検索
+  // フォルダの並び順と情報表示」節を参照。ピン止めブロック・お気に入り編集ビューの
+  // 「行全体が draggable」という既存パターンとは異なる、この画面固有の要件）。
+  const dragFromPathRef = useRef<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
 
   useEffect(() => {
-    onOverlayActiveChange(detailTarget !== null || pendingRemovePath !== null);
+    onOverlayActiveChange(
+      detailTarget !== null || infoTarget !== null || pendingRemovePath !== null
+    );
     onRegisterEscapeHandler(() => {
       if (detailTarget) {
         setDetailTarget(null);
+        return true;
+      }
+      if (infoTarget) {
+        setInfoTarget(null);
         return true;
       }
       if (pendingRemovePath) {
@@ -80,7 +119,7 @@ export function FileSearchSettings({
       onRegisterEscapeHandler(null);
       onOverlayActiveChange(false);
     };
-  }, [detailTarget, onOverlayActiveChange, onRegisterEscapeHandler, pendingRemovePath]);
+  }, [detailTarget, infoTarget, onOverlayActiveChange, onRegisterEscapeHandler, pendingRemovePath]);
 
   const handleSaveFolderDetail = async (
     detail: FolderDetailSettings
@@ -89,6 +128,14 @@ export function FileSearchSettings({
     const err = await onSaveFolderSettings(detailTarget.path, detail);
     if (!err) setDetailTarget(null);
     return err;
+  };
+
+  const handleDrop = async (toPath: string) => {
+    const fromPath = dragFromPathRef.current;
+    dragFromPathRef.current = null;
+    if (!fromPath || fromPath === toPath) return;
+    const err = await onReorderFolders(fromPath, toPath);
+    setReorderError(err);
   };
 
   return (
@@ -100,6 +147,25 @@ export function FileSearchSettings({
         onChange={onToggle}
       />
       <SettingsIndent className="flex-1 flex flex-col min-h-0">
+        <div>
+          <div className="text-sm font-medium text-gray-800 mb-1">最大表示件数</div>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={maxResultsInput}
+            onChange={(e) => handleMaxResultsChange(e.target.value)}
+            className={draftInputClassName(maxResultsDirty)}
+          />
+          <div className="text-xs text-gray-400 mt-1">1〜200件</div>
+          <div className="mt-2">
+            <SettingsSaveBar
+              isDirty={maxResultsDirty}
+              onSave={handleSaveMaxResults}
+              error={maxResultsError}
+            />
+          </div>
+        </div>
         <SettingsGroup
           title="検索フォルダ"
           className="mt-8 flex-1 flex flex-col min-h-0"
@@ -107,6 +173,9 @@ export function FileSearchSettings({
         >
         {/* 行が画面幅いっぱいに広がると、フォルダ名（左端）と操作アイコン（右端）が
             離れすぎて対応が取りにくくなるため、一覧に最大幅を設定して抑える */}
+        <div className="max-w-md text-xs text-gray-400">
+          検索フォルダは上から順に検索されます。最大表示件数に達すると後続のフォルダは検索されないため、優先したいフォルダを上へ並べてください。
+        </div>
         <div className="flex-1 overflow-y-auto max-w-md">
           {folders.length === 0 && (
             <div className="py-3 text-sm text-gray-400">
@@ -117,7 +186,32 @@ export function FileSearchSettings({
             <div
               key={f.path}
               className="flex items-center py-2 gap-3"
+              onDragOver={(e) => {
+                if (!dragFromPathRef.current) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleDrop(f.path);
+              }}
             >
+              <Tooltip label="ドラッグして並び替え" className="flex-shrink-0">
+                <span
+                  draggable
+                  onDragStart={(e) => {
+                    dragFromPathRef.current = f.path;
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", f.path);
+                  }}
+                  onDragEnd={() => {
+                    dragFromPathRef.current = null;
+                  }}
+                  className="cursor-grab select-none font-bold text-gray-400"
+                >
+                  ⋮⋮
+                </span>
+              </Tooltip>
               <input
                 type="checkbox"
                 checked={f.enabled}
@@ -127,6 +221,27 @@ export function FileSearchSettings({
               <FolderPathButton path={f.path} onOpen={onOpenFolder} />
               {/* 行の右寄りに位置し、左側（フォルダパス表示部分）に十分な余白が
                   あるため、Tooltip の既定（左側表示）のままでよい。 */}
+              <Tooltip label="フォルダ情報" className="flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setInfoTarget(f)}
+                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    strokeWidth={1.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+                    />
+                  </svg>
+                </button>
+              </Tooltip>
               <Tooltip label="詳細設定" className="flex-shrink-0">
                 <button
                   type="button"
@@ -180,6 +295,9 @@ export function FileSearchSettings({
             </div>
           ))}
         </div>
+        {reorderError && (
+          <div className="text-xs text-red-500">{reorderError}</div>
+        )}
         <button
           type="button"
           onClick={onAddFolder}
@@ -231,6 +349,10 @@ export function FileSearchSettings({
           onCancel={() => setDetailTarget(null)}
           onSave={handleSaveFolderDetail}
         />
+      )}
+
+      {infoTarget && (
+        <FolderInfoModal folder={infoTarget} onClose={() => setInfoTarget(null)} />
       )}
     </div>
   );

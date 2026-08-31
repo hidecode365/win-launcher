@@ -15,6 +15,11 @@ pub struct RecentFile {
     /// Recent フォルダのショートカットは同じファイルを開くたびに上書きされる仕様のため、
     /// リンク先実ファイルのタイムスタンプより「最近開いた順」を正確に反映する。
     pub last_accessed: u64,
+    /// 表示用アイコン（`data:image/png;base64,...`。取得失敗時は `None`）。
+    /// お気に入り・ピン止めと同様、`crate::shell_icon::resolve_icon` で解決する
+    /// （実在確認・一覧採用条件とは独立した処理。詳細は
+    /// `external-design/05-file-search-and-shell-icons.md#shell-icon-policy` を参照）。
+    pub icon: Option<String>,
 }
 
 /// Windows の Recent フォルダ（Known Folder API）と Office の Recent フォルダ
@@ -299,11 +304,10 @@ fn percent_decode(s: &str) -> Option<String> {
 
 /// パスが `\\` で始まる UNC 形式（ネットワークパス）かどうかを判定する。UNC パスは
 /// 実在チェック自体をスキップする対象になる（「実在チェックとネットワークパス（UNC）の
-/// 扱い」を参照）。
+/// 扱い」を参照）。Shellアイコン取得（`crate::shell_icon`）と同じ判定基準を共有するため、
+/// ここに専用の実装は持たず `crate::shell_icon::is_unc_path` を使う。
 #[cfg(windows)]
-fn is_unc_path(path: &str) -> bool {
-    path.starts_with("\\\\")
-}
+use crate::shell_icon::is_unc_path;
 
 /// `UrlNamespace` がホスト名のみ（それ以上のパス階層を含まない）かどうかを判定する。
 /// 個人 OneDrive（`https://d.docs.live.net`）はこの形式でレジストリに登録される一方、
@@ -555,13 +559,18 @@ fn process_lnk(
     include_folders: bool,
     extension_filter_mode: crate::ExtensionFilterMode,
     extensions: &[String],
+    drive_cache: &mut crate::shell_icon::DriveTypeCache,
 ) -> Option<RecentFile> {
     use std::path::PathBuf;
 
     let target = resolve_lnk_target_path(lnk_path)?;
     let target_path = PathBuf::from(&target);
 
-    if !is_unc_path(&target) {
+    // ローカルパスは実際のメタデータでファイル/フォルダを確定できるが、UNC は
+    // フォルダ判定自体をスキップする既知の制約のため常にファイルとして扱う
+    // （拡張子フィルタリングと同じ前提。アイコン取得の種類アイコン判定にもこの値を
+    // そのまま使う）。
+    let is_dir = if !is_unc_path(&target) {
         let Ok(metadata) = std::fs::metadata(&target_path) else {
             return None;
         };
@@ -569,23 +578,32 @@ fn process_lnk(
             if !include_folders {
                 return None;
             }
-        } else if !crate::passes_extension_filter(&target_path, &extension_filter_mode, extensions)
-        {
+            true
+        } else {
+            if !crate::passes_extension_filter(&target_path, &extension_filter_mode, extensions) {
+                return None;
+            }
+            false
+        }
+    } else {
+        if !crate::passes_extension_filter(&target_path, &extension_filter_mode, extensions) {
             return None;
         }
-    } else if !crate::passes_extension_filter(&target_path, &extension_filter_mode, extensions) {
-        return None;
-    }
+        false
+    };
 
     let name = target_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| target.clone());
 
+    let icon = crate::shell_icon::resolve_icon(&target, is_dir, drive_cache);
+
     Some(RecentFile {
         name,
         path: target,
         last_accessed,
+        icon,
     })
 }
 
@@ -652,6 +670,7 @@ fn process_url(
     include_folders: bool,
     extension_filter_mode: crate::ExtensionFilterMode,
     extensions: &[String],
+    drive_cache: &mut crate::shell_icon::DriveTypeCache,
 ) -> Option<RecentFile> {
     // ファイル名から末尾の拡張子 ".url" を1つ取り除いたものを表示名とする
     // （Windows のエクスプローラーが .url を隠して表示するのと同じ見た目にするため）。
@@ -688,10 +707,14 @@ fn process_url(
         return None;
     }
 
+    // `.url` 由来のエントリは常にファイル（末尾が "/" のフォルダ的な参照は既に除外済み）。
+    let icon = crate::shell_icon::resolve_icon(&local_path, false, drive_cache);
+
     Some(RecentFile {
         name: display_name,
         path: local_path,
         last_accessed,
+        icon,
     })
 }
 
@@ -810,7 +833,10 @@ pub fn get_recent_files(
     let mounts = sync_engine_mount_points();
 
     // .lnk・.url を問わず、同一のローカルパスを指すエントリは1件に統合する
-    // （last_accessed が新しい方を採用）。
+    // （last_accessed が新しい方を採用）。アイコン取得のドライブ判定キャッシュは
+    // この呼び出し全体で1つを共有する（同一ドライブに属する複数エントリで
+    // `GetDriveTypeW` を呼び直さないため。詳細は `crate::shell_icon::resolve_icon` を参照）。
+    let mut drive_cache = crate::shell_icon::DriveTypeCache::new();
     let mut entries_by_path: HashMap<String, RecentFile> = HashMap::new();
     for candidate in &candidates {
         let file = match candidate.kind {
@@ -820,6 +846,7 @@ pub fn get_recent_files(
                 include_folders,
                 extension_filter_mode,
                 extensions,
+                &mut drive_cache,
             ),
             ShortcutKind::Url => process_url(
                 &candidate.path,
@@ -829,6 +856,7 @@ pub fn get_recent_files(
                 include_folders,
                 extension_filter_mode,
                 extensions,
+                &mut drive_cache,
             ),
         };
         // 6. 実在しない・変換失敗のものはここで除外する（切り捨てた候補までは遡らない）

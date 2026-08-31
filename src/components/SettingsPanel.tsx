@@ -55,6 +55,7 @@ export function SettingsPanel({
   appSettings,
   onSaveHotkey,
   onSetFileSearchEnabled,
+  onSetSearchMaxResults,
   onSetCalcEnabled,
   onSetCopyWithComma,
   onSetUrlConvertEnabled,
@@ -82,6 +83,7 @@ export function SettingsPanel({
   onAddFolder,
   onToggleFolder,
   onRemoveFolder,
+  onReorderFolders,
   onOpenFolder,
   onSaveFolderSettings,
   onClose,
@@ -91,6 +93,7 @@ export function SettingsPanel({
   appSettings: AppSettings;
   onSaveHotkey: (accelerator: string) => Promise<string | null>;
   onSetFileSearchEnabled: (checked: boolean) => void;
+  onSetSearchMaxResults: (maxResults: number) => Promise<string | null>;
   onSetCalcEnabled: (checked: boolean) => void;
   onSetCopyWithComma: (checked: boolean) => void;
   onSetUrlConvertEnabled: (checked: boolean) => void;
@@ -123,6 +126,7 @@ export function SettingsPanel({
   onAddFolder: () => void;
   onToggleFolder: (path: string) => void;
   onRemoveFolder: (path: string) => void;
+  onReorderFolders: (fromPath: string, toPath: string) => Promise<string | null>;
   onOpenFolder: (path: string) => void;
   onSaveFolderSettings: (
     path: string,
@@ -204,10 +208,13 @@ export function SettingsPanel({
             <FileSearchSettings
               enabled={appSettings.fileSearchEnabled}
               onToggle={onSetFileSearchEnabled}
+              searchMaxResults={appSettings.searchMaxResults}
+              onChangeSearchMaxResults={onSetSearchMaxResults}
               folders={folders}
               onAddFolder={onAddFolder}
               onToggleFolder={onToggleFolder}
               onRemoveFolder={onRemoveFolder}
+              onReorderFolders={onReorderFolders}
               onOpenFolder={onOpenFolder}
               onSaveFolderSettings={onSaveFolderSettings}
               onRegisterEscapeHandler={onRegisterEscapeHandler}

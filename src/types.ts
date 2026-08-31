@@ -8,11 +8,14 @@ export interface FileEntry {
 // ローカルパス、.url 由来なら OneDrive のローカル同期先パスへの変換に成功した
 // ローカルパス（変換に失敗したものは一覧に含まれないため、常に実在確認済みの
 // ローカルパスになる）。lastAccessed は .lnk/.url ショートカット自体の更新日時
-// （UNIX ms）で、リンク先実ファイルのタイムスタンプではない。
+// （UNIX ms）で、リンク先実ファイルのタイムスタンプではない。icon は表示用
+// アイコン（取得失敗時は null。詳細は CLAUDE.md「ファイル・フォルダのShellアイコン
+// 取得方針」節を参照）。
 export interface RecentFile {
   name: string;
   path: string;
   lastAccessed: number;
+  icon: string | null;
 }
 
 export interface FrecencyEntry {
@@ -45,6 +48,22 @@ export interface FolderDetailSettings {
 export interface FolderEntry extends FolderDetailSettings {
   path: string;
   enabled: boolean;
+}
+
+// Rust の `get_search_folder_info` コマンドの戻り値（検索フォルダ情報ダイアログ）。
+// maxDepthReached は対象フォルダ直下を1階層目とした最大階層数（1〜20）。
+// maxDepthExceedsMax が true の場合、実際の構造は20階層を超えるため表示は
+// 「20階層以上」とする。totalFileCount は検索階層数・拡張子フィルターを適用せず
+// 20階層までに読み取れたファイル数、filteredFileCount は現在の設定（検索階層数・
+// 拡張子フィルター）を適用したファイル数（フォルダは含めない）。partialError が
+// true の場合、対象フォルダ自体は確認できたがサブフォルダ・ファイルの一部を
+// 読み取れなかった（詳細は CLAUDE.md「検索フォルダ情報ダイアログ」節を参照）。
+export interface SearchFolderInfo {
+  maxDepthReached: number;
+  maxDepthExceedsMax: boolean;
+  totalFileCount: number;
+  filteredFileCount: number;
+  partialError: boolean;
 }
 
 // ピン止め・お気に入り・メモの3機能を単一のツリー構造で管理する共通ノード。
@@ -114,6 +133,10 @@ export interface RecentDisplaySettings {
 export interface AppSettings {
   hotkey: string;
   fileSearchEnabled: boolean;
+  // 通常ファイル検索の最大表示件数（デフォルト50件、1〜200件）。有効な検索フォルダを
+  // 保存順に処理し、候補がこの件数に達した時点で後続の検索フォルダは走査しない
+  // （詳細は CLAUDE.md「最大表示件数・検索フォルダ順序」節を参照）。
+  searchMaxResults: number;
   calcEnabled: boolean;
   systemCommandEnabled: boolean;
   shutdownKeyword: string;
@@ -151,6 +174,7 @@ export interface AppSettings {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   hotkey: "Alt+Space",
   fileSearchEnabled: true,
+  searchMaxResults: 50,
   calcEnabled: true,
   systemCommandEnabled: true,
   shutdownKeyword: "shutdown",

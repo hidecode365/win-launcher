@@ -40,8 +40,13 @@ const DEFAULT_MEMO_KEYWORD: &str = "memo";
 const DEFAULT_RECENT_MAX_AGE_DAYS: u32 = 180;
 const DEFAULT_RECENT_MAX_RESULTS: u32 = 50;
 const CLIPBOARD_THUMBNAIL_MAX_WIDTH: u32 = 320;
-// ファイル検索結果の表示件数上限。
-const MAX_SEARCH_RESULTS: usize = 50;
+// 通常ファイル検索の最大表示件数のデフォルト値（設定画面から1〜200件で変更可能。
+// `AppSettings.search_max_results`）。
+const DEFAULT_SEARCH_MAX_RESULTS: u32 = 50;
+// 検索フォルダ情報ダイアログが走査する最大階層数（対象フォルダ直下を1階層目とする）。
+// これを超える構造は「20階層以上」として扱う（外部設計書「検索フォルダの並び順と
+// 情報表示」節を参照）。
+const SEARCH_FOLDER_INFO_MAX_DEPTH: u32 = 20;
 
 // アプリ専用のログ用ディレクトリ（`app_log_dir()`）配下に置くログファイル名。
 const RECENT_DEBUG_LOG_FILENAME: &str = "recent_debug.log";
@@ -198,6 +203,48 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
+/// 通常ファイル検索・検索フォルダ情報ダイアログの cooperative cancellation で使う、
+/// 「最新として受け付けた世代番号」を保持するだけの薄いラッパー。フロントエンドは
+/// 新しい要求を受け付けた時点でこれを更新し（`set_search_generation`／
+/// `set_folder_info_generation`。実行中の重い処理を待たずに即座に呼べる軽量コマンド）、
+/// 実行中のコマンド（`search_files`／`get_search_folder_info`）は自身の世代番号と
+/// 一致するかを処理境界のたびに確認する。一致しなくなった時点でobsoleteとみなし、
+/// 残りの走査・アイコン取得・結果追加を行わず終了する（開始済みの同期I/O自体は
+/// 強制停止しない）。検索と情報ダイアログは互いに影響しない独立した世代管理のため、
+/// 別インスタンスとして持つ（`SEARCH_GENERATION`／`FOLDER_INFO_GENERATION`）。
+struct Generation(AtomicU64);
+impl Generation {
+    const fn new() -> Self {
+        Self(AtomicU64::new(0))
+    }
+    fn set(&self, generation: u64) {
+        self.0.store(generation, Ordering::SeqCst);
+    }
+    fn is_current(&self, generation: u64) -> bool {
+        self.0.load(Ordering::SeqCst) == generation
+    }
+}
+
+static SEARCH_GENERATION: Generation = Generation::new();
+static FOLDER_INFO_GENERATION: Generation = Generation::new();
+
+/// フロントエンドが新しい検索文字列を受け付けた時点で即座に呼ぶ軽量コマンド。
+/// 実行中の `search_files` 呼び出し（重い同期処理）を待たずに割り込んで
+/// obsolete化するためのもの。`search_files` 自身の実行開始時にも同じ世代番号を
+/// 設定するため、この呼び出しが多少前後しても最終的な整合性は保たれる。
+#[tauri::command]
+fn set_search_generation(generation: u64) {
+    SEARCH_GENERATION.set(generation);
+}
+
+/// `set_search_generation` と同じ役割を検索フォルダ情報ダイアログ側に持つ。
+/// ダイアログを閉じる・別フォルダの情報を開く操作の両方から、新しい走査を
+/// 開始するかどうかに関わらず必ず呼び、実行中の旧走査をobsolete化する。
+#[tauri::command]
+fn set_folder_info_generation(generation: u64) {
+    FOLDER_INFO_GENERATION.set(generation);
+}
+
 static CLIPBOARD_IMAGE_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn generate_clipboard_image_id() -> String {
@@ -270,6 +317,7 @@ struct FileEntry {
 
 #[cfg(windows)]
 mod shell_icon {
+    use std::collections::HashMap;
     use std::ffi::{c_void, OsStr};
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
@@ -277,8 +325,16 @@ mod shell_icon {
         CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, BITMAP, BITMAPINFO,
         BITMAPINFOHEADER, DIB_RGB_COLORS, HBITMAP,
     };
-    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
-    use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON};
+    use windows::Win32::Storage::FileSystem::{
+        GetDriveTypeW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_FLAGS_AND_ATTRIBUTES,
+    };
+
+    // Win32 `GetDriveTypeW` の戻り値（`windows` クレートに定数の再エクスポートが
+    // 無いため、Win32 API ドキュメント記載の値をそのまま使う）。
+    const DRIVE_REMOTE: u32 = 4;
+    use windows::Win32::UI::Shell::{
+        SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON, SHGFI_USEFILEATTRIBUTES,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
 
     struct IconGuard(HICON);
@@ -301,30 +357,24 @@ mod shell_icon {
         }
     }
 
-    /// ファイルパスから Windows シェルアイコン（エクスプローラーと同じアイコン）を
-    /// 取得し、`data:image/png;base64,...` 形式の文字列として返す。
-    pub fn get_icon_data_url(path: &str) -> Option<String> {
-        let wide: Vec<u16> = OsStr::new(path)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
+    fn wide_null(s: &str) -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    }
 
+    /// `SHGetFileInfoW` で取得した `HICON` を `data:image/png;base64,...` 形式の
+    /// 文字列へ変換する。実体アイコン（`get_icon_data_url`）・種類アイコン
+    /// （`get_type_icon_data_url`）の双方が、アイコン取得後のビットマップ抽出・
+    /// PNGエンコード処理をここへ共有する（取得方式が異なるだけで、`HICON` から先の
+    /// 変換処理は共通のため）。
+    fn icon_handle_to_data_url(hicon: HICON) -> Option<String> {
+        if hicon.is_invalid() {
+            return None;
+        }
         unsafe {
-            let mut shfi = SHFILEINFOW::default();
-            let result = SHGetFileInfoW(
-                PCWSTR(wide.as_ptr()),
-                FILE_FLAGS_AND_ATTRIBUTES(0),
-                Some(&mut shfi),
-                std::mem::size_of::<SHFILEINFOW>() as u32,
-                SHGFI_ICON | SHGFI_SMALLICON,
-            );
-            if result == 0 || shfi.hIcon.is_invalid() {
-                return None;
-            }
-            let _icon_guard = IconGuard(shfi.hIcon);
+            let _icon_guard = IconGuard(hicon);
 
             let mut icon_info = ICONINFO::default();
-            GetIconInfo(shfi.hIcon, &mut icon_info).ok()?;
+            GetIconInfo(hicon, &mut icon_info).ok()?;
             let _mask_guard = BitmapGuard(icon_info.hbmMask);
             let _color_guard = BitmapGuard(icon_info.hbmColor);
 
@@ -391,11 +441,131 @@ mod shell_icon {
             ))
         }
     }
+
+    /// ファイルパスから Windows シェルアイコン（エクスプローラーと同じ、実パスに
+    /// アクセスして取得する実体アイコン）を取得する。ローカルと判定できる対象にのみ
+    /// 使う（詳細は `resolve_icon` を参照）。
+    pub fn get_icon_data_url(path: &str) -> Option<String> {
+        let wide = wide_null(path);
+        unsafe {
+            let mut shfi = SHFILEINFOW::default();
+            let result = SHGetFileInfoW(
+                PCWSTR(wide.as_ptr()),
+                FILE_FLAGS_AND_ATTRIBUTES(0),
+                Some(&mut shfi),
+                std::mem::size_of::<SHFILEINFOW>() as u32,
+                SHGFI_ICON | SHGFI_SMALLICON,
+            );
+            if result == 0 {
+                return None;
+            }
+            icon_handle_to_data_url(shfi.hIcon)
+        }
+    }
+
+    /// 拡張子と既知のファイル／フォルダ属性から取得する種類アイコン。
+    /// `SHGFI_USEFILEATTRIBUTES` を指定することで、実パスへは一切アクセスせず
+    /// （UNC・ネットワークドライブでの待たされを避けるため）、渡した文字列の拡張子と
+    /// `is_dir` に基づく合成属性だけからアイコンを解決する。
+    pub fn get_type_icon_data_url(path: &str, is_dir: bool) -> Option<String> {
+        let wide = wide_null(path);
+        let attrs = if is_dir {
+            FILE_ATTRIBUTE_DIRECTORY
+        } else {
+            FILE_ATTRIBUTE_NORMAL
+        };
+        unsafe {
+            let mut shfi = SHFILEINFOW::default();
+            let result = SHGetFileInfoW(
+                PCWSTR(wide.as_ptr()),
+                FILE_FLAGS_AND_ATTRIBUTES(attrs.0),
+                Some(&mut shfi),
+                std::mem::size_of::<SHFILEINFOW>() as u32,
+                SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES,
+            );
+            if result == 0 {
+                return None;
+            }
+            icon_handle_to_data_url(shfi.hIcon)
+        }
+    }
+
+    /// パスが `\\` で始まる UNC 形式（ネットワークパス）かどうかを判定する。
+    /// `recent_files.rs` の同名判定と同じ基準を共有する。
+    pub fn is_unc_path(path: &str) -> bool {
+        path.starts_with("\\\\")
+    }
+
+    /// パス文字列からドライブレター形式のルート（例: `"C:\\"`）を抽出する。
+    /// UNC・相対パス等、ドライブレター形式でないものは `None`。
+    fn drive_root(path: &str) -> Option<String> {
+        let bytes = path.as_bytes();
+        if bytes.len() < 2 || bytes[1] != b':' || !bytes[0].is_ascii_alphabetic() {
+            return None;
+        }
+        Some(format!("{}:\\", bytes[0] as char))
+    }
+
+    /// ドライブルートごとの `GetDriveTypeW` 判定結果を、1回の一覧取得・検索コマンド
+    /// 内でのみ再利用する揮発的キャッシュ。呼び出し元（`search_files` 等）が
+    /// コマンド呼び出しの先頭で生成し、コマンド終了とともに破棄する（セッションを
+    /// またぐキャッシュ・アプリ起動時の事前判定は行わない。詳細は
+    /// `external-design/05-file-search-and-shell-icons.md#shell-icon-policy` を参照）。
+    pub type DriveTypeCache = HashMap<String, u32>;
+
+    /// パスがローカルと判定できるか（＝実体アイコン取得へ進めるか）を、
+    /// ドライブレター形式の場合のみ `GetDriveTypeW` で判定する。UNC は呼び出し側
+    /// （`resolve_icon`）が先に弾くためここには渡らない想定。ドライブレター形式で
+    /// ない・ルートを判定できない場合は「潜在的に低速」として扱い `false` を返す。
+    fn is_local_drive(path: &str, cache: &mut DriveTypeCache) -> bool {
+        let Some(root) = drive_root(path) else {
+            return false;
+        };
+        let drive_type = *cache.entry(root.clone()).or_insert_with(|| {
+            let wide = wide_null(&root);
+            unsafe { GetDriveTypeW(PCWSTR(wide.as_ptr())) }
+        });
+        drive_type != DRIVE_REMOTE && drive_type > 1
+        // DRIVE_UNKNOWN(0)・DRIVE_NO_ROOT_DIR(1) は判定不能として非ローカル扱いにする
+        // （表2「ドライブ種別が不明、またはルートが利用不能」→ 種類アイコン）。
+    }
+
+    /// 表示用アイコンを解決する。実在確認・一覧採用条件とは独立した処理であり、
+    /// ここでの取得失敗は呼び出し元の一覧採用判定に影響しない（`None` を返すのみ）。
+    /// `is_dir` は既に判明している場合はそれを渡し、判明していない場合（お気に入り・
+    /// 最近使ったファイル・ピン止め等、実パスへ触れずに知る手段がない場合）は
+    /// 拡張子の有無から推定した値を渡す（呼び出し元の判断。詳細は各呼び出し箇所の
+    /// コメントを参照）。
+    ///
+    /// フォールバック順：
+    /// - ローカルと判定できる対象：実体アイコン → 種類アイコン → （失敗時は `None`
+    ///   のまま。フロントエンドが汎用アイコン SVG へフォールバックする）
+    /// - UNC・ネットワークドライブ・判定不能なドライブ：種類アイコン → `None`
+    pub fn resolve_icon(path: &str, is_dir: bool, cache: &mut DriveTypeCache) -> Option<String> {
+        if is_unc_path(path) {
+            return get_type_icon_data_url(path, is_dir);
+        }
+        if is_local_drive(path, cache) {
+            get_icon_data_url(path).or_else(|| get_type_icon_data_url(path, is_dir))
+        } else {
+            get_type_icon_data_url(path, is_dir)
+        }
+    }
 }
 
 #[cfg(not(windows))]
 mod shell_icon {
+    pub type DriveTypeCache = std::collections::HashMap<String, u32>;
+
     pub fn get_icon_data_url(_path: &str) -> Option<String> {
+        None
+    }
+
+    pub fn is_unc_path(path: &str) -> bool {
+        path.starts_with("\\\\")
+    }
+
+    pub fn resolve_icon(_path: &str, _is_dir: bool, _cache: &mut DriveTypeCache) -> Option<String> {
         None
     }
 }
@@ -522,6 +692,34 @@ fn toggle_folder(app: AppHandle, path: String) -> Result<Vec<FolderEntry>, Strin
     Ok(folders)
 }
 
+/// 検索フォルダ一覧のドラッグ並び替え。保存配列の並び順がそのまま検索優先順位になる
+/// （有効/無効に関わらず全フォルダの配列位置を保持する）。`from_path` のエントリを
+/// 取り出し、`to_path` の位置へ挿入し直すことで並び替えを表現する（`Vec::remove` +
+/// `Vec::insert`）。同一パスの複数登録は `add_folder` の重複防止により起こり得ないため、
+/// パス文字列でエントリを一意に特定できる。
+#[tauri::command]
+fn reorder_folders(
+    app: AppHandle,
+    from_path: String,
+    to_path: String,
+) -> Result<Vec<FolderEntry>, String> {
+    let mut folders = load_folders(&app);
+    let from_index = folders
+        .iter()
+        .position(|f| f.path == from_path)
+        .ok_or_else(|| "フォルダが見つかりません".to_string())?;
+    let to_index = folders
+        .iter()
+        .position(|f| f.path == to_path)
+        .ok_or_else(|| "フォルダが見つかりません".to_string())?;
+    if from_index != to_index {
+        let moved = folders.remove(from_index);
+        folders.insert(to_index, moved);
+    }
+    save_folders(&app, &folders)?;
+    Ok(folders)
+}
+
 /// 拡張子タグ配列を正規化する（前後の空白除去・先頭の `.` 除去・小文字化・重複除去）。
 /// ブラックリスト・ホワイトリストの双方、かつ「検索フォルダの詳細設定」「/recent の
 /// 表示対象設定」の両機能で同じ正規化ルールを適用するため共通化している
@@ -569,6 +767,115 @@ fn set_folder_settings(
     f.whitelist_extensions = normalized_whitelist;
     save_folders(&app, &folders)?;
     Ok(folders)
+}
+
+/// 検索フォルダ情報ダイアログの集計結果。
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SearchFolderInfo {
+    /// 対象フォルダ直下を1階層目として観測した最大階層数（1〜20）。
+    max_depth_reached: u32,
+    /// `true` の場合、実際の構造は20階層を超える（表示は「20階層以上」）。
+    max_depth_exceeds_max: bool,
+    /// 検索階層数・拡張子フィルターを適用せず、20階層までに読み取れたファイル数。
+    total_file_count: u32,
+    /// 現在の設定（検索階層数・拡張子フィルター）を適用したファイル数
+    /// （`include_folders` の値に関わらずフォルダは含めない）。
+    filtered_file_count: u32,
+    /// `true` の場合、サブフォルダまたはファイルの一部を読み取れなかった
+    /// （対象フォルダ自体は確認できている）。
+    partial_error: bool,
+}
+
+/// 検索フォルダ情報ダイアログ用の1回の走査で、最大階層数・全ファイル数・現在の
+/// 設定を適用したファイル数を同時に集計する。`generation` は
+/// `get_search_folder_info` 専用の世代管理（`FOLDER_INFO_GENERATION`。通常検索の
+/// `SEARCH_GENERATION` とは独立）で、ダイアログを閉じる・別フォルダの情報を開く
+/// 操作でobsolete化される（詳細は関数冒頭のコメント・`set_folder_info_generation`を
+/// 参照）。集計結果はキャッシュせず、呼び出しごとに現在のファイルシステムを確認する。
+///
+/// 対象フォルダの現在の検索階層数・拡張子フィルターは、引数では受け取らずこの関数が
+/// `load_folders` で都度読み直す（「現在の設定」を反映するため。呼び出し時点で
+/// 該当フォルダが設定から削除されていた場合はデフォルト値にフォールバックする）。
+#[tauri::command]
+fn get_search_folder_info(
+    app: AppHandle,
+    generation: u64,
+    path: String,
+) -> Result<SearchFolderInfo, String> {
+    FOLDER_INFO_GENERATION.set(generation);
+
+    let folders = load_folders(&app);
+    let folder = folders.iter().find(|f| f.path == path);
+    let folder_max_depth = folder.map(|f| f.max_depth).unwrap_or_else(default_folder_max_depth);
+    let extension_filter_mode = folder
+        .map(|f| f.extension_filter_mode)
+        .unwrap_or_else(default_extension_filter_mode);
+    let empty_extensions: Vec<String> = Vec::new();
+    let active_extensions: &[String] = folder
+        .map(|f| match f.extension_filter_mode {
+            ExtensionFilterMode::Blacklist => f.blacklist_extensions.as_slice(),
+            ExtensionFilterMode::Whitelist => f.whitelist_extensions.as_slice(),
+        })
+        .unwrap_or(&empty_extensions);
+
+    // +1 階層ぶん余分に走査することで、「20階層を超える構造が存在するか」だけを
+    // 実際に深く再帰することなく検出する（21階層目より深くは WalkDir 自体が
+    // 訪問しない）。
+    let mut iter = WalkDir::new(&path)
+        .follow_links(true)
+        .max_depth((SEARCH_FOLDER_INFO_MAX_DEPTH + 1) as usize)
+        .into_iter();
+
+    // 先頭（走査ルート自身、depth 0）の読み取りに失敗した場合は、対象フォルダ自体を
+    // 確認できないと判断する。
+    match iter.next() {
+        Some(Ok(_)) => {}
+        _ => return Err("フォルダを確認できませんでした".to_string()),
+    }
+
+    let mut max_depth_reached: u32 = 0;
+    let mut max_depth_exceeds_max = false;
+    let mut total_file_count: u32 = 0;
+    let mut filtered_file_count: u32 = 0;
+    let mut partial_error = false;
+
+    for entry in iter {
+        if !FOLDER_INFO_GENERATION.is_current(generation) {
+            break;
+        }
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => {
+                partial_error = true;
+                continue;
+            }
+        };
+        let depth = entry.depth() as u32;
+        if depth > SEARCH_FOLDER_INFO_MAX_DEPTH {
+            max_depth_exceeds_max = true;
+            continue;
+        }
+        if depth > max_depth_reached {
+            max_depth_reached = depth;
+        }
+        if entry.file_type().is_file() {
+            total_file_count += 1;
+            if depth <= folder_max_depth
+                && passes_extension_filter(entry.path(), &extension_filter_mode, active_extensions)
+            {
+                filtered_file_count += 1;
+            }
+        }
+    }
+
+    Ok(SearchFolderInfo {
+        max_depth_reached,
+        max_depth_exceeds_max,
+        total_file_count,
+        filtered_file_count,
+        partial_error,
+    })
 }
 
 /// 拡張子フィルタリングの判定。ディレクトリには適用しない（呼び出し側でファイルのみに
@@ -906,9 +1213,17 @@ fn set_favorites(app: AppHandle, favorite_lock: tauri::State<'_, FavoriteNodesWr
     Ok(favorites)
 }
 
+/// 実パスへアクセスせずに（お気に入り・最近使ったファイル・ピン止めのように、対象が
+/// 既にファイル/フォルダのどちらか判定済みでない場合に）is_dir を推定する。拡張子が
+/// 無ければフォルダとみなすヒューリスティック（`SHGFI_USEFILEATTRIBUTES` の種類アイコン
+/// 判定にのみ使う値のため、実在確認・一覧採用条件には影響しない）。
+pub(crate) fn guess_is_dir_by_extension(path: &str) -> bool {
+    Path::new(path).extension().is_none()
+}
+
 /// ピン止めブロック表示用に、「ピン止め」予約フォルダ直下（`file` 型）のノードだけを
 /// `order` 順に抽出し、ファイル検索結果と同じ `FileEntry`（シェルアイコン付き）へ
-/// 変換して返す。件数上限は設けない（`MAX_SEARCH_RESULTS` とは独立させる）。
+/// 変換して返す。件数上限は設けない（通常ファイル検索の最大表示件数設定とは独立させる）。
 #[tauri::command]
 fn get_pinned_files(app: AppHandle) -> Vec<FileEntry> {
     let mut pinned: Vec<FavoriteNode> = load_favorites(&app)
@@ -916,10 +1231,15 @@ fn get_pinned_files(app: AppHandle) -> Vec<FileEntry> {
         .filter(|f| f.parent_id == PINNED_FOLDER_ID && f.node_type == FavoriteNodeType::File)
         .collect();
     pinned.sort_by_key(|f| f.order);
+    let mut drive_cache = shell_icon::DriveTypeCache::new();
     pinned
         .into_iter()
         .map(|f| {
-            let icon = shell_icon::get_icon_data_url(&f.value);
+            let icon = shell_icon::resolve_icon(
+                &f.value,
+                guess_is_dir_by_extension(&f.value),
+                &mut drive_cache,
+            );
             FileEntry {
                 name: f.name,
                 path: f.value,
@@ -935,6 +1255,20 @@ fn get_pinned_files(app: AppHandle) -> Vec<FileEntry> {
 #[tauri::command]
 fn check_paths_exist(paths: Vec<String>) -> Vec<bool> {
     paths.iter().map(|p| Path::new(p).exists()).collect()
+}
+
+/// お気に入り・最近使ったファイルのように、既存のShellアイコン取得経路を持たない
+/// 画面向けの汎用アイコン取得コマンド。渡されたパス配列と同じ順序・同じ長さでアイコンの
+/// `data:image/png;base64,...`（取得失敗時は `None`）を返す。1回の呼び出し内で
+/// `DriveTypeCache` を共有するため、同一ドライブに属する複数パスの `GetDriveTypeW`
+/// 判定は1回だけで済む（詳細は `shell_icon::resolve_icon` を参照）。
+#[tauri::command]
+fn get_icons_for_paths(paths: Vec<String>) -> Vec<Option<String>> {
+    let mut drive_cache = shell_icon::DriveTypeCache::new();
+    paths
+        .iter()
+        .map(|p| shell_icon::resolve_icon(p, guess_is_dir_by_extension(p), &mut drive_cache))
+        .collect()
 }
 
 // ==================== お気に入り機能（段階2 ①） ====================
@@ -1704,11 +2038,17 @@ fn default_recent_max_results() -> u32 {
     DEFAULT_RECENT_MAX_RESULTS
 }
 
+fn default_search_max_results() -> u32 {
+    DEFAULT_SEARCH_MAX_RESULTS
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
     hotkey: String,
     file_search_enabled: bool,
+    #[serde(default = "default_search_max_results")]
+    search_max_results: u32,
     calc_enabled: bool,
     system_command_enabled: bool,
     #[serde(default = "default_shutdown_keyword")]
@@ -1766,6 +2106,7 @@ impl Default for AppSettings {
         Self {
             hotkey: DEFAULT_HOTKEY.to_string(),
             file_search_enabled: true,
+            search_max_results: DEFAULT_SEARCH_MAX_RESULTS,
             calc_enabled: true,
             system_command_enabled: true,
             shutdown_keyword: DEFAULT_SHUTDOWN_KEYWORD.to_string(),
@@ -1852,6 +2193,17 @@ fn get_app_settings(app: AppHandle) -> AppSettings {
 fn set_file_search_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.file_search_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_search_max_results(app: AppHandle, max_results: u32) -> Result<AppSettings, String> {
+    if !(1..=200).contains(&max_results) {
+        return Err("1件以上200件以下の整数を指定してください".to_string());
+    }
+    let mut settings = load_app_settings(&app);
+    settings.search_max_results = max_results;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -2537,8 +2889,27 @@ fn paste_clipboard_image(id: String, cache: tauri::State<ClipboardImageCache>) -
 /// この使い分けにより、クエリが空のときだけピン止めブロックとの重複表示を避け、
 /// クエリ入力中はピン止め済みファイルも通常の関連度順のまま表示される
 /// （00-requirements.md「ピン止め・お気に入り・メモ機能」節を参照）。
+///
+/// `generation` は呼び出し元（フロントエンド）が発行する世代番号。実行開始時点で
+/// `SEARCH_GENERATION` へ設定（＝自分を最新として宣言）したうえで、検索フォルダの
+/// 処理前後・フォルダ走査中の各エントリの処理境界・Shellアイコン取得前後・結果への
+/// 追加前の各所で `SEARCH_GENERATION` と一致するかを確認する。新しい世代が割り込んで
+/// いた場合はその時点で残りの処理を行わず終了する（cooperative cancellation。詳細は
+/// `external-design/05-file-search-and-shell-icons.md#file-search-loading-state` を参照）。
+/// 開始済みの同期I/O（`WalkDir`の1エントリ分の読み取り・Shellアイコン取得）自体は
+/// 強制停止しない。
 #[tauri::command]
-fn search_files(app: AppHandle, query: String, exclude_paths: Vec<String>) -> Vec<FileEntry> {
+fn search_files(
+    app: AppHandle,
+    generation: u64,
+    query: String,
+    exclude_paths: Vec<String>,
+) -> Vec<FileEntry> {
+    SEARCH_GENERATION.set(generation);
+
+    let settings = load_app_settings(&app);
+    let max_results = settings.search_max_results as usize;
+
     let enabled_dirs: Vec<FolderEntry> = load_folders(&app)
         .into_iter()
         .filter(|f| f.enabled)
@@ -2551,8 +2922,12 @@ fn search_files(app: AppHandle, query: String, exclude_paths: Vec<String>) -> Ve
 
     let exclude_set: HashSet<String> = exclude_paths.into_iter().collect();
     let query_lower = query.to_lowercase();
+    let mut drive_cache = shell_icon::DriveTypeCache::new();
 
     'outer: for dir in &enabled_dirs {
+        if !SEARCH_GENERATION.is_current(generation) {
+            break 'outer;
+        }
         let search_dir = Path::new(&dir.path);
         if !search_dir.exists() {
             continue;
@@ -2561,6 +2936,9 @@ fn search_files(app: AppHandle, query: String, exclude_paths: Vec<String>) -> Ve
             .follow_links(true)
             .max_depth(dir.max_depth as usize)
         {
+            if !SEARCH_GENERATION.is_current(generation) {
+                break 'outer;
+            }
             let Ok(entry) = entry else { continue };
             // フォルダ自身（走査ルート、depth 0）は「フォルダ自体を検索対象に含める」
             // 設定に関わらず結果に含めない（既存の「フォルダは検索対象外」挙動と
@@ -2596,9 +2974,15 @@ fn search_files(app: AppHandle, query: String, exclude_paths: Vec<String>) -> Ve
                 if exclude_set.contains(&path) {
                     continue;
                 }
-                let icon = shell_icon::get_icon_data_url(&path);
+                if !SEARCH_GENERATION.is_current(generation) {
+                    break 'outer;
+                }
+                let icon = shell_icon::resolve_icon(&path, is_dir, &mut drive_cache);
+                if !SEARCH_GENERATION.is_current(generation) {
+                    break 'outer;
+                }
                 results.push(FileEntry { name, path, icon });
-                if results.len() >= MAX_SEARCH_RESULTS {
+                if results.len() >= max_results {
                     break 'outer;
                 }
             }
@@ -3109,6 +3493,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             search_files,
+            set_search_generation,
             launch_file,
             open_containing_folder,
             calculate,
@@ -3118,11 +3503,16 @@ fn main() {
             add_folder,
             remove_folder,
             toggle_folder,
+            reorder_folders,
             set_folder_settings,
+            get_search_folder_info,
+            set_folder_info_generation,
+            get_icons_for_paths,
             execute_system_command,
             log_ui_event,
             get_app_settings,
             set_file_search_enabled,
+            set_search_max_results,
             set_calc_enabled,
             set_system_command_enabled,
             set_system_command_keyword,
