@@ -1462,7 +1462,6 @@ export default function App() {
           prefixCommandMode: false,
           prefixCommandCandidates: [],
           results: search.results,
-          fileSearchLoading: search.fileSearchLoading,
           query: search.query,
           selected: search.selected,
           baseLength,
@@ -1532,6 +1531,7 @@ export default function App() {
         onQueryChange={search.setQuery}
         onKeyDown={handleKeyDown}
         disabled={search.searchOverlayActive}
+        searching={search.searchSpinnerVisible}
         onOpenSettings={openSettings}
         onImagePaste={
           settings.appSettings.ocrEnabled ? ocr.runOcr : undefined
@@ -1590,7 +1590,6 @@ export default function App() {
           prefixCommandMode={search.prefixCommandMode}
           prefixCommandCandidates={search.prefixCommandCandidates}
           results={search.results}
-          fileSearchLoading={search.fileSearchLoading}
           query={search.query}
           selected={search.selected}
           baseLength={baseLength}

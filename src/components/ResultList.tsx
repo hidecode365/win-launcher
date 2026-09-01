@@ -50,7 +50,6 @@ export function ResultList({
   prefixCommandMode,
   prefixCommandCandidates,
   results,
-  fileSearchLoading,
   query,
   selected,
   baseLength,
@@ -80,13 +79,11 @@ export function ResultList({
   prefixCommandCandidates: PrefixCommand[];
   // rows.length === 0 かつ query が非空のときの「見つかりませんでした」表示判定に
   // 使う（rows 自体には該当する行が存在しないため、この判定だけは rows と別に
-  // results を直接見る必要がある）。
+  // results を直接見る必要がある）。直前に完了した通常ファイル検索結果を保持し
+  // 続ける方式（一覧内に「検索中…」の状態行は追加しない。検索欄周囲のスピナーは
+  // SearchBox.tsx が別途表示する）のため、この判定に検索中フラグは不要（詳細は
+  // CLAUDE.md「通常検索の要求集約・検索中表示」節を参照）。
   results: FileEntry[];
-  // 現在世代の通常ファイル検索結果が届くまでの間 true。「検索中…」は非選択行として
-  // 通常ファイル検索結果の領域にのみ表示し、上下キー・ホバー・クリックの対象には
-  // 含めない（「見つかりませんでした」と同じく rows 配列には含めない別枠表示。
-  // 詳細は CLAUDE.md「通常検索のlatest-wins＋cooperative cancellation」節を参照）。
-  fileSearchLoading: boolean;
   query: string;
   selected: number;
   baseLength: number;
@@ -613,15 +610,7 @@ export function ResultList({
               }
             }
           })}
-          {fileSearchLoading && (
-            <div
-              role="presentation"
-              className="flex items-center justify-center text-gray-400 text-sm py-6"
-            >
-              検索中…
-            </div>
-          )}
-          {!fileSearchLoading && results.length === 0 && query.length > 0 && (
+          {results.length === 0 && query.length > 0 && (
             <div className="flex items-center justify-center text-gray-400 text-sm py-6">
               見つかりませんでした
             </div>

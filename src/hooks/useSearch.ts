@@ -616,9 +616,40 @@ export function useSearch(
     query: string;
     excludePaths: string[];
   } | null>(null);
-  // 検索文字列変更時に直ちに一覧から除去した後、現在世代の結果が届くまで表示する
-  // 非選択の「検索中…」状態（表1「検索中に表示する行と操作」を参照）。
-  const [fileSearchLoading, setFileSearchLoading] = useState(false);
+
+  // 検索欄周囲のスピナー表示。「検索中…」の一覧行は廃止し、直前に完了した
+  // ファイル検索結果は最新世代が確定するまでそのまま表示し続ける（外部設計
+  // 「通常ファイル検索の候補収集と更新制御」図2を参照）。searchBusyRef は
+  // 「実行中または待機要求が存在する、一続きの検索中状態」かどうかを表す
+  // （100ms未満で終わればスピナーは一度も見えない）。searchBusyTimerRef は
+  // その状態でのみ生存する100ms猶予タイマーのid。
+  const [searchSpinnerVisible, setSearchSpinnerVisible] = useState(false);
+  const searchBusyRef = useRef(false);
+  const searchBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // アイドル状態から検索中状態へ移行した時だけ100ms監視を開始する。既に検索中
+  // （searchBusyRef.current）であれば、新しい世代を受け付けても監視を再起動しない
+  // （「検索中に新しい世代を受け付けても100ms監視を再起動しない」を参照）。
+  const startSearchBusy = useCallback(() => {
+    if (searchBusyRef.current) return;
+    searchBusyRef.current = true;
+    searchBusyTimerRef.current = setTimeout(() => {
+      searchBusyTimerRef.current = null;
+      setSearchSpinnerVisible(true);
+    }, 100);
+  }, []);
+
+  // 実行中・待機要求のいずれも無くなった時点（アイドルへ戻った時点）、または
+  // 通常検索コンテキストを離れる時点で呼ぶ。100ms未満で完了した場合はタイマーを
+  // 破棄するだけでスピナーは一度も表示されない。
+  const endSearchBusy = useCallback(() => {
+    searchBusyRef.current = false;
+    if (searchBusyTimerRef.current !== null) {
+      clearTimeout(searchBusyTimerRef.current);
+      searchBusyTimerRef.current = null;
+    }
+    setSearchSpinnerVisible(false);
+  }, []);
 
   // runQueuedSearchRef.current は毎レンダー最新の frecency/isLatestAsyncCall を
   // 捕捉するクロージャで上書きする（focusRegainTableRef.current と同じ「最新値を
@@ -629,6 +660,7 @@ export function useSearch(
     const next = searchQueueRef.current;
     if (!next) {
       searchInFlightRef.current = false;
+      endSearchBusy();
       return;
     }
     searchQueueRef.current = null;
@@ -637,20 +669,47 @@ export function useSearch(
     invoke<FileEntry[]>("search_files", { generation, query, excludePaths })
       .then((files) => {
         if (isLatestAsyncCall("search", generation)) {
+          // 到着時点で表示中の直前結果と一括置換する（結果が空でも同様。
+          // 選択識別子の維持・先頭フォールバックは rows の変化を検知する
+          // 既存の useLayoutEffect が resolveSelected 経由で行う）。
           setResults(sortByFrecency(files, frecency));
-          setFileSearchLoading(false);
         }
       })
       .catch((err) => {
         console.error(err);
         if (isLatestAsyncCall("search", generation)) {
-          setFileSearchLoading(false);
+          // エラー時も保持結果を消去する（表1「最新世代が空結果または
+          // エラーで完了した場合は...消去する」を参照）。
+          setResults([]);
         }
       })
       .finally(() => {
         runQueuedSearchRef.current();
       });
   };
+
+  // 通常検索以外のモード（/recent・お気に入り・クリップボード履歴・
+  // プレフィックスコマンド・パス貼り付けウィザード）へ移行する際に呼ぶ。
+  // フロントエンド側の世代を進めて「search」キーの最新性を握り、実行中・
+  // 待機中の通常検索が（開始済みの同期I/Oはそのまま進行させつつ）自身を
+  // obsoleteと検知できるようにしたうえで、保持していた待機要求を破棄し、
+  // スピナーも即座に終了する。開始済みのinvoke自体は強制停止しない
+  // （戻ってきた時点でisLatestAsyncCallがfalseになるため、その結果は
+  // resultsへ反映されない）。
+  const abandonSearchOnModeExit = useCallback(() => {
+    const generation = beginAsyncCall("search");
+    invoke("set_search_generation", { generation }).catch(() => {});
+    searchQueueRef.current = null;
+    endSearchBusy();
+  }, [beginAsyncCall, endSearchBusy]);
+
+  // 別モードから通常検索コンテキストへ戻った直後かどうかを判定するための
+  // 「直前は通常検索コンテキストだったか」のミラー。通常検索コンテキストへ
+  // 戻った最初の1回だけ、保持していた（別モードの一覧かもしれない）results を
+  // 空にし、最新結果が確定するまでファイル結果を表示しない（表2「別のモードから
+  // 通常検索へ移行」を参照）。それ以降、通常検索コンテキスト内に留まる限りは
+  // クエリ変更のたびに results を消去しない（保持し続ける）。
+  const wasNormalSearchContextRef = useRef(true);
 
   // 直近にキーボード（↑↓）で選択操作を行った時刻。
   const lastKeyboardNavAtRef = useRef(0);
@@ -1391,6 +1450,15 @@ export function useSearch(
     query,
   ]);
 
+  // 通常検索コンテキストにいるかどうか（外部設計「通常検索における選択維持の
+  // 適用境界」を参照）。この5モードのいずれにも該当しない状態を「通常検索の
+  // 同一コンテキスト」とする。数式・URL・Web検索・パス貼り付け候補などの固定候補が
+  // 表示されているかどうかは、この判定を変えない（`prefixCommandMode`は候補が
+  // 実際に発生している場合のみtrueになるため、固定候補の一種である計算式のみの
+  // 入力等では引き続きfalseのまま＝通常検索コンテキストに留まる）。
+  const specialMode =
+    clipboardMode || recentMode || favoriteMode || prefixCommandMode || pathPasteWizardMode;
+
   // R-1 フェーズD-2: intent を {type:'top'} へ更新する専用トリガーその1。
   // クエリ・設定・「ウィンドウを閉じた直後の強制再取得」（closeRefreshTick）の
   // いずれかが変化した場合にのみ発火する（＝ユーザーが新しい検索文脈に入った、
@@ -1406,8 +1474,25 @@ export function useSearch(
   // 「ユーザー起因の文脈変化」と「その文脈変化に伴う副作用としての再取得」を
   // 依存配列のレベルで構造的に分離することで、一発の抑止フラグに頼らずに
   // competing writes の問題そのものを起こらなくしている。
+  //
+  // issue 0030再実装：通常検索の同一コンテキスト内（specialModeがfalseのまま）で
+  // 検索文字列だけが変化した場合は、この汎用トリガーでもリセットしない
+  // （外部設計「選択モデル」表2「同一コンテキスト内で検索文字列が変化」を参照。
+  // 画面に表示中の選択対象の識別子を保持する）。settingsVersion／appSettings／
+  // closeRefreshTickの変化や、specialModeへの出入り（どちらか一方でもtrueなら）は
+  // 従来どおり無条件で先頭へリセットする。
+  // 依存配列に specialMode 自体は含めない。specialMode は query と appSettings
+  // だけから導出される値のため、specialMode が変化しうる場面では query または
+  // appSettings も必ず変化しており、この effect は既存の依存項目だけで確実に
+  // 再実行される（specialMode を独立した依存として追加する必要がない）。
+  const intentResetPrevSpecialModeRef = useRef(specialMode);
   useEffect(() => {
-    updateIntent({ type: "top" }, "query-or-settings-change");
+    const wasSpecialMode = intentResetPrevSpecialModeRef.current;
+    const suppressReset = !specialMode && !wasSpecialMode;
+    if (!suppressReset) {
+      updateIntent({ type: "top" }, "query-or-settings-change");
+    }
+    intentResetPrevSpecialModeRef.current = specialMode;
   }, [query, settingsVersion, appSettings, closeRefreshTick, updateIntent]);
 
   // R-1 フェーズD-3: /recent（recentMode）専用の「recentResults が変化する
@@ -1437,9 +1522,16 @@ export function useSearch(
   // インデックス書き込みのままなので、そちらのみ引き続きこの effect 内で
   // setSelectedRaw(0) を呼ぶ（詳細は SelectIntent 型のコメントを参照）。
   useEffect(() => {
+    // このeffect自身が最後に実行された時点で通常検索コンテキストだったかどうか
+    // （specialModeのいずれでもなかったか）を読み取ってから、次回のために更新する。
+    // 別モードから通常検索コンテキストへ戻った直後の一度きりのresults消去
+    // （下のappSettings.fileSearchEnabled分岐を参照）に使う。
+    const wasNormalSearchContext = wasNormalSearchContextRef.current;
+    wasNormalSearchContextRef.current = !specialMode;
+
     if (clipboardMode) {
       setResults([]);
-      setFileSearchLoading(false);
+      abandonSearchOnModeExit();
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1447,7 +1539,7 @@ export function useSearch(
     if (prefixCommandMode) {
       setSelectedRaw(0);
       setResults([]);
-      setFileSearchLoading(false);
+      abandonSearchOnModeExit();
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1457,7 +1549,7 @@ export function useSearch(
       // アクションが引き続き参照するため、ここではクリアしない。
       setSelectedRaw(0);
       setResults([]);
-      setFileSearchLoading(false);
+      abandonSearchOnModeExit();
       setCalcResult(null);
       return;
     }
@@ -1470,7 +1562,7 @@ export function useSearch(
       // 個別のガードは不要になった（詳細は「ウィンドウを閉じる系アクションの共通設計」節）。
       console.debug(`[recent] applying recentResults to results (count=${recentResults.length})`);
       setResults(recentResults);
-      setFileSearchLoading(false);
+      abandonSearchOnModeExit();
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1481,7 +1573,7 @@ export function useSearch(
       // 空にするだけでよい（selected の解決も intent + favoriteSelectionItems の
       // 組み合わせで別途行う。詳細は選択解決用 useLayoutEffect を参照）。
       setResults([]);
-      setFileSearchLoading(false);
+      abandonSearchOnModeExit();
       setCalcResult(null);
       setPathPasteCandidate(null);
       return;
@@ -1513,6 +1605,15 @@ export function useSearch(
     }
 
     if (appSettings.fileSearchEnabled) {
+      // 別モードから通常検索コンテキストへ戻った直後（wasNormalSearchContextが
+      // false）だけ、保持していた results（別モードの一覧だったかもしれない）を
+      // 空にする。最新結果が確定するまでファイル結果を表示しない（外部設計「選択
+      // モデル」表2「別のモードから通常検索へ移行」を参照）。通常検索コンテキスト
+      // 内に留まったままの検索文字列変更では、直前に完了した結果をそのまま
+      // 表示し続ける（setResults([]) を呼ばない）。
+      if (!wasNormalSearchContext) {
+        setResults([]);
+      }
       // ウィンドウを閉じる直前の setQuery("") による変化でもここで呼ぶ。ウィンドウが
       // 非表示になった後（invoke の解決を待つ間、既にユーザーからは見えない）に
       // 完了するため体感上のコストはなく、代わりに次に空クエリのまま再表示した際、
@@ -1535,21 +1636,21 @@ export function useSearch(
       console.debug(
         `[search] search_files queued (query="${query}", generation=${generation}, closeRefreshTick=${closeRefreshTick}, excludeCount=${excludePaths.length})`
       );
-      // 検索文字列が変わった時点で、旧結果を一覧から直ちに除去し「検索中…」を
-      // 表示する（表1「検索中に表示する行と操作」を参照）。実行中のRust側処理へは
-      // 軽量コマンドで即座に新しい世代を通知し、実際の invoke 発行はキュー
-      // （searchQueueRef）に積むだけにとどめる。実行中の呼び出しが無ければ
-      // 直ちに runQueuedSearchRef を起動する。
+      // 直前に完了したファイル検索結果は消去せずそのまま表示し続ける（一覧内に
+      // 「検索中…」の状態行は追加しない）。実行中のRust側処理へは軽量コマンドで
+      // 即座に新しい世代を通知し、実際の invoke 発行はキュー（searchQueueRef）に
+      // 積むだけにとどめる。実行中の呼び出しが無ければ直ちに runQueuedSearchRef を
+      // 起動する。100ms監視はアイドル状態からの遷移時だけ開始し、既に検索中なら
+      // 再起動しない（startSearchBusy内部でガードする）。
       invoke("set_search_generation", { generation }).catch(() => {});
-      setResults([]);
-      setFileSearchLoading(true);
       searchQueueRef.current = { generation, query, excludePaths };
+      startSearchBusy();
       if (!searchInFlightRef.current) {
         runQueuedSearchRef.current();
       }
     } else {
       setResults([]);
-      setFileSearchLoading(false);
+      endSearchBusy();
     }
   }, [
     query,
@@ -1567,6 +1668,10 @@ export function useSearch(
     closeRefreshTick,
     beginAsyncCall,
     isLatestAsyncCall,
+    specialMode,
+    abandonSearchOnModeExit,
+    startSearchBusy,
+    endSearchBusy,
   ]);
 
   // 起動回数・最終起動時刻を更新し、settings.json の "frecency" キーへ即時永続化する。
@@ -2407,7 +2512,21 @@ export function useSearch(
       : clipboardMode
         ? clipboardSelectionItems
         : rows;
-    const resolved = resolveSelected(intent, items, selectedFallbackRef.current);
+    // issue 0030再実装：通常検索（favoriteMode/clipboardMode/recentModeのいずれでも
+    // ない、items===rows のケース）に限り、識別子が見つからない場合は「直前の
+    // インデックス」ではなく「先頭の選択可能項目（0）」へ移す（外部設計「選択モデル」
+    // 表2「識別子が存在しなければ...先頭の選択可能項目へ移す」を参照）。この
+    // フォールバック変更は通常検索のファイル結果置換・固定候補の増減にだけ適用し、
+    // クリップボード履歴・お気に入り画面・メモ画面・/recentが共有する既存の
+    // 「まだ届いていないだけとみなし直前の表示を維持する」フォールバックは変更しない
+    // （呼び出し側でfallback値を出し分けるだけで、resolveSelected自体のシグネチャ・
+    // 挙動は変えない）。
+    const normalSearchFallback = !favoriteMode && !clipboardMode && !recentMode;
+    const resolved = resolveSelected(
+      intent,
+      items,
+      normalSearchFallback ? 0 : selectedFallbackRef.current
+    );
     if (intent.type === "key") {
       const found = items.some((item) => item.key === intent.key);
       if (found) {
@@ -2532,7 +2651,7 @@ export function useSearch(
     query,
     setQuery,
     results,
-    fileSearchLoading,
+    searchSpinnerVisible,
     selected,
     setSelected,
     selectFromHover,

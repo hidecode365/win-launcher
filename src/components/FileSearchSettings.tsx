@@ -148,7 +148,7 @@ export function FileSearchSettings({
       />
       <SettingsIndent className="flex-1 flex flex-col min-h-0">
         <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">最大表示件数</div>
+          <div className="text-sm font-medium text-gray-800 mb-1">検索上限件数</div>
           <input
             type="number"
             min={1}
@@ -174,7 +174,7 @@ export function FileSearchSettings({
         {/* 行が画面幅いっぱいに広がると、フォルダ名（左端）と操作アイコン（右端）が
             離れすぎて対応が取りにくくなるため、一覧に最大幅を設定して抑える */}
         <div className="max-w-md text-xs text-gray-400">
-          検索フォルダは上から順に検索されます。最大表示件数に達すると後続のフォルダは検索されないため、優先したいフォルダを上へ並べてください。
+          設定した検索条件に一致するファイル・フォルダを、検索フォルダの上から順に検索します。「検索上限件数」に達すると検索を終了し、後続のフォルダは検索されません。優先したいフォルダを上へ並べてください。
         </div>
         <div className="flex-1 overflow-y-auto max-w-md">
           {folders.length === 0 && (
