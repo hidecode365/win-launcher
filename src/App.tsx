@@ -735,7 +735,12 @@ export default function App() {
       } else if (e.ctrlKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
         e.stopPropagation();
-        if (ocrEditOpen) {
+        if (showSettings) {
+          // 400工程レビュー指摘：設定画面表示中はCtrl+Dを無効にする（何もしない）。
+          // 設定画面には絞り込み文字列が存在せず、背後の検索クエリを変更する意味が
+          // ないため、OCR画面と同様に完全無効とする。フッターのキー操作チップも
+          // SettingsPanel.tsx側で表示しない。
+        } else if (ocrEditOpen) {
           // 無効：何もしない（背後の検索クエリを含め一切変更しない）。
         } else if (clipboardEditOpen || recentEditOpen) {
           localQueryClearHandlerRef.current?.();

@@ -304,7 +304,6 @@ export function SettingsPanel({
       </div>
 
       <FooterBar version={version}>
-        <KeyHint keys="Ctrl+D" label="クリア" />
         <KeyHint keys="Esc" label={overlayActive ? "キャンセル" : "閉じる"} />
       </FooterBar>
     </div>

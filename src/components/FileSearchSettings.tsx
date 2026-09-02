@@ -210,7 +210,19 @@ export function FileSearchSettings({
           {folders.map((f) => (
             <div
               key={f.path}
-              className="flex items-center py-2 gap-3"
+              // 400工程レビュー指摘：フォルダ名と右側の操作アイコンの対応を把握
+              // しやすくするため、行全体（ドラッグハンドル・チェックボックス・
+              // パス表示・操作アイコンを含む）をホバー時に控えめにハイライトする
+              // （既存の一覧行の共有ホバー表現＝`manageTreeRowClass`/`IconSlot`が
+              // 用いる「行は不透明の淡色背景、行内アイコンは半透明オーバーレイ」の
+              // 二階調の考え方を踏襲。詳細はDESIGN_LOG.md issue 0030「検索フォルダ行
+              // のホバー表示」を参照）。行の不透明背景（bg-gray-100）とアイコン自身の
+              // 不透明背景（同じbg-gray-100）が同色で重なると、アイコン単体への
+              // ホバーが行のハイライトに埋もれてしまうため、下記の情報・詳細設定
+              // アイコンは半透明の黒オーバーレイ（hover:bg-black/[6%]）へ変更し、
+              // 行の背景の上でも常に一段暗く見えるようにしている（削除アイコンは
+              // 元々red系で色相が異なるため据え置き）。
+              className="flex items-center py-2 gap-3 hover:bg-gray-100 transition-colors"
               onDragOver={(e) => {
                 if (!dragFromPathRef.current) return;
                 e.preventDefault();
@@ -250,7 +262,7 @@ export function FileSearchSettings({
                 <button
                   type="button"
                   onClick={() => setInfoTarget(f)}
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-black/[6%]"
                 >
                   <svg
                     className="w-4 h-4"
@@ -271,7 +283,7 @@ export function FileSearchSettings({
                 <button
                   type="button"
                   onClick={() => setDetailTarget(f)}
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-black/[6%]"
                 >
                   <svg
                     className="w-4 h-4"

@@ -1495,6 +1495,35 @@ export function useSearch(
     intentResetPrevSpecialModeRef.current = specialMode;
   }, [query, settingsVersion, appSettings, closeRefreshTick, updateIntent]);
 
+  // 400工程レビュー指摘（issue 0030④）：通常検索の同一コンテキスト内で検索文字列が
+  // 変化し、ピン止めブロック等の固定候補が即座に更新されて rows が変化した直後、
+  // 直前に完了したファイル検索結果への置換がまだ完了していない一瞬の間に、選択が
+  // 保持中の（まだ置換されていない）旧ファイル結果の先頭へ一時的に移動して見える
+  // 不具合があった（例：ピン止め行を選択中に検索文字列を入力すると、ピン止め
+  // ブロックが消えた瞬間、選択が保持中の直前結果の先頭ファイルへ一瞬移動してから
+  // 新しい一覧へ切り替わる）。
+  //
+  // 原因は、選択解決用 useLayoutEffect（下の selectedFallbackRef を参照する効果）が
+  // rows の変化のたびに「識別子が見つからなければ先頭の選択可能項目へ移動する」
+  // フォールバックを適用しており、この rows の変化には（a）検索結果の置換完了と
+  // （b）固定候補の即時更新の両方が含まれてしまっていたこと。外部設計は（a）の
+  // 「最新結果への置換完了時」だけにこの移動を行うと定めている。
+  //
+  // 検索ディスパッチ本体（searchBusyRef を立てる useEffect）は通常の useEffect で
+  // あり、同一コミット内では useLayoutEffect より後に実行されるため、選択解決用
+  // useLayoutEffect の初回実行時点では searchBusyRef.current がまだ false のまま
+  // （＝検索が実行中であることをまだ検知できない）という React のコミット順序上の
+  // 制約がある。そのため、検索ディスパッチとは別に、選択解決用 useLayoutEffect より
+  // 前に宣言したこの useLayoutEffect で searchBusyRef を先に立てておく
+  // （useLayoutEffect 同士は宣言順に実行されるため、これが選択解決用より確実に
+  // 先に走る）。startSearchBusy 自身は既に実行中なら何もしないガードを持つため、
+  // 後続の検索ディスパッチ側から再度呼んでも二重にはならない。
+  useLayoutEffect(() => {
+    if (!specialMode && appSettings.fileSearchEnabled) {
+      startSearchBusy();
+    }
+  }, [query, settingsVersion, appSettings, closeRefreshTick]);
+
   // R-1 フェーズD-3: /recent（recentMode）専用の「recentResults が変化する
   // たび無条件に intent を top へ戻す」effect は撤去した。これは D-2 の対象
   // 範囲（通常モード＋clipboardMode）に含まれず、旧設計の残骸として見落と
@@ -2521,7 +2550,18 @@ export function useSearch(
     // 「まだ届いていないだけとみなし直前の表示を維持する」フォールバックは変更しない
     // （呼び出し側でfallback値を出し分けるだけで、resolveSelected自体のシグネチャ・
     // 挙動は変えない）。
-    const normalSearchFallback = !favoriteMode && !clipboardMode && !recentMode;
+    //
+    // 400工程レビュー指摘（issue 0030④）：searchBusyRef.current が true の間（検索が
+    // 実行中または待機中で、画面には直前に完了した保持結果がまだ表示されている間）
+    // は、通常検索でも「先頭の選択可能項目（0）」への移動を行わず、他モードと同じ
+    // 「直前のインデックスを維持する」フォールバックを使う。外部設計は「識別子が
+    // 存在しなければ先頭の選択可能項目へ移す」判断を「最新結果への置換完了時」に
+    // だけ行うと定めており、置換未完了のまま rows が変化した瞬間（ピン止め等の
+    // 固定候補は即時更新されるため、ファイル結果の置換完了より先に rows だけが
+    // 変わりうる）に適用すると、保持中の（まだ置換されていない）旧ファイル結果の
+    // 先頭へ選択が一時的に移動して見える不具合になる。
+    const normalSearchFallback =
+      !favoriteMode && !clipboardMode && !recentMode && !searchBusyRef.current;
     const resolved = resolveSelected(
       intent,
       items,
