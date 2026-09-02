@@ -40,13 +40,19 @@ const DEFAULT_MEMO_KEYWORD: &str = "memo";
 const DEFAULT_RECENT_MAX_AGE_DAYS: u32 = 180;
 const DEFAULT_RECENT_MAX_RESULTS: u32 = 50;
 const CLIPBOARD_THUMBNAIL_MAX_WIDTH: u32 = 320;
-// 通常ファイル検索の最大表示件数のデフォルト値（設定画面から1〜200件で変更可能。
-// `AppSettings.search_max_results`）。
-const DEFAULT_SEARCH_MAX_RESULTS: u32 = 50;
+// 通常ファイル検索の検索上限件数のデフォルト値（設定画面から1〜200件で変更可能。
+// `AppSettings.search_max_results`）。設定ファイルに検索上限件数が未保存の場合にのみ
+// 適用する（`#[serde(default = ...)]`経由）。既存の保存済み値は、このデフォルト値の
+// 変更だけでは上書きしない（400工程レビューでデフォルトを50件から20件へ変更）。
+const DEFAULT_SEARCH_MAX_RESULTS: u32 = 20;
 // 検索フォルダ情報ダイアログが走査する最大階層数（対象フォルダ直下を1階層目とする）。
 // これを超える構造は「20階層以上」として扱う（外部設計書「検索フォルダの並び順と
 // 情報表示」節を参照）。
 const SEARCH_FOLDER_INFO_MAX_DEPTH: u32 = 20;
+// 検索フォルダ情報ダイアログの除外ファイル一覧の最大表示件数。201件目以降は収集を
+// 打ち切り、`excluded_files_truncated`で超過を通知する（20階層の走査自体は打ち切らず
+// 継続する。外部設計書「除外ファイル一覧ダイアログ」節を参照）。
+const EXCLUDED_FILES_MAX: usize = 200;
 
 // アプリ専用のログ用ディレクトリ（`app_log_dir()`）配下に置くログファイル名。
 const RECENT_DEBUG_LOG_FILENAME: &str = "recent_debug.log";
@@ -769,6 +775,14 @@ fn set_folder_settings(
     Ok(folders)
 }
 
+/// 除外ファイル一覧（`SearchFolderInfo::excluded_files`）の1件分。
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ExcludedFile {
+    name: String,
+    path: String,
+}
+
 /// 検索フォルダ情報ダイアログの集計結果。
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -785,6 +799,16 @@ struct SearchFolderInfo {
     /// `true` の場合、サブフォルダまたはファイルの一部を読み取れなかった
     /// （対象フォルダ自体は確認できている）。
     partial_error: bool,
+    /// 現在の検索階層数または拡張子フィルターにより`filtered_file_count`に含まれな
+    /// かったファイル（フォルダ・読み取り不能項目は含めない）。走査順のまま、最大
+    /// `EXCLUDED_FILES_MAX`件で打ち切る。情報ダイアログの走査と同時に取得し、
+    /// 「除外されたファイル」リンク押下時の追加走査は行わない。
+    excluded_files: Vec<ExcludedFile>,
+    /// `true` の場合、除外ファイルが`EXCLUDED_FILES_MAX`件を超えており
+    /// `excluded_files`は先頭`EXCLUDED_FILES_MAX`件で打ち切られている。
+    /// `excluded_files.len() == EXCLUDED_FILES_MAX`だけでは「ちょうど上限件数」と
+    /// 「超過して打ち切り」を区別できないため、別フィールドとして持つ。
+    excluded_files_truncated: bool,
 }
 
 /// 検索フォルダ情報ダイアログ用の1回の走査で、最大階層数・全ファイル数・現在の
@@ -839,6 +863,8 @@ fn get_search_folder_info(
     let mut total_file_count: u32 = 0;
     let mut filtered_file_count: u32 = 0;
     let mut partial_error = false;
+    let mut excluded_files: Vec<ExcludedFile> = Vec::new();
+    let mut excluded_files_truncated = false;
 
     for entry in iter {
         if !FOLDER_INFO_GENERATION.is_current(generation) {
@@ -861,10 +887,17 @@ fn get_search_folder_info(
         }
         if entry.file_type().is_file() {
             total_file_count += 1;
-            if depth <= folder_max_depth
-                && passes_extension_filter(entry.path(), &extension_filter_mode, active_extensions)
-            {
+            let passes = depth <= folder_max_depth
+                && passes_extension_filter(entry.path(), &extension_filter_mode, active_extensions);
+            if passes {
                 filtered_file_count += 1;
+            } else if excluded_files.len() < EXCLUDED_FILES_MAX {
+                excluded_files.push(ExcludedFile {
+                    name: entry.file_name().to_string_lossy().to_string(),
+                    path: entry.path().to_string_lossy().to_string(),
+                });
+            } else {
+                excluded_files_truncated = true;
             }
         }
     }
@@ -875,6 +908,8 @@ fn get_search_folder_info(
         total_file_count,
         filtered_file_count,
         partial_error,
+        excluded_files,
+        excluded_files_truncated,
     })
 }
 

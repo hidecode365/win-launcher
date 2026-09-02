@@ -50,6 +50,12 @@ export interface FolderEntry extends FolderDetailSettings {
   enabled: boolean;
 }
 
+// 除外ファイル一覧（SearchFolderInfo.excludedFiles）の1件分。
+export interface ExcludedFile {
+  name: string;
+  path: string;
+}
+
 // Rust の `get_search_folder_info` コマンドの戻り値（検索フォルダ情報ダイアログ）。
 // maxDepthReached は対象フォルダ直下を1階層目とした最大階層数（1〜20）。
 // maxDepthExceedsMax が true の場合、実際の構造は20階層を超えるため表示は
@@ -58,12 +64,19 @@ export interface FolderEntry extends FolderDetailSettings {
 // 拡張子フィルター）を適用したファイル数（フォルダは含めない）。partialError が
 // true の場合、対象フォルダ自体は確認できたがサブフォルダ・ファイルの一部を
 // 読み取れなかった（詳細は CLAUDE.md「検索フォルダ情報ダイアログ」節を参照）。
+// excludedFiles は検索階層数または拡張子フィルターで filteredFileCount に含まれ
+// なかったファイル（フォルダ・読み取り不能項目は含まない、走査順、最大200件）。
+// excludedFilesTruncated が true の場合、除外ファイルは200件を超えており
+// excludedFiles は先頭200件で打ち切られている（`excludedFiles.length === 200`
+// だけでは「ちょうど200件」と区別できないため、別フィールドとして持つ）。
 export interface SearchFolderInfo {
   maxDepthReached: number;
   maxDepthExceedsMax: boolean;
   totalFileCount: number;
   filteredFileCount: number;
   partialError: boolean;
+  excludedFiles: ExcludedFile[];
+  excludedFilesTruncated: boolean;
 }
 
 // ピン止め・お気に入り・メモの3機能を単一のツリー構造で管理する共通ノード。

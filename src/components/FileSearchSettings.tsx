@@ -72,7 +72,15 @@ export function FileSearchSettings({
     null
   );
   const [detailTarget, setDetailTarget] = useState<FolderEntry | null>(null);
-  const [infoTarget, setInfoTarget] = useState<FolderEntry | null>(null);
+  const [infoTarget, setInfoTargetState] = useState<FolderEntry | null>(null);
+  // 「除外されたファイル」サブモーダルの開閉状態。フォルダ情報ダイアログを開き直す・
+  // 閉じるたびに必ずリセットする（setInfoTarget経由に一本化し、別フォルダの情報へ
+  // 切り替えた際に前のフォルダの開閉状態が残らないようにする）。
+  const [excludedFilesOpen, setExcludedFilesOpen] = useState(false);
+  const setInfoTarget = (target: FolderEntry | null) => {
+    setInfoTargetState(target);
+    setExcludedFilesOpen(false);
+  };
 
   const [maxResultsInput, setMaxResultsInput, maxResultsDirty] =
     useSettingsDraft(String(searchMaxResults));
@@ -101,6 +109,13 @@ export function FileSearchSettings({
       detailTarget !== null || infoTarget !== null || pendingRemovePath !== null
     );
     onRegisterEscapeHandler(() => {
+      // 除外ファイル一覧モーダルは常に最優先で閉じる（フォルダ情報ダイアログの
+      // 上に重ねて表示しているため）。以降は既存の優先順位のまま
+      // （詳細設定→フォルダ情報→削除確認）。
+      if (excludedFilesOpen) {
+        setExcludedFilesOpen(false);
+        return true;
+      }
       if (detailTarget) {
         setDetailTarget(null);
         return true;
@@ -119,7 +134,14 @@ export function FileSearchSettings({
       onRegisterEscapeHandler(null);
       onOverlayActiveChange(false);
     };
-  }, [detailTarget, infoTarget, onOverlayActiveChange, onRegisterEscapeHandler, pendingRemovePath]);
+  }, [
+    detailTarget,
+    infoTarget,
+    excludedFilesOpen,
+    onOverlayActiveChange,
+    onRegisterEscapeHandler,
+    pendingRemovePath,
+  ]);
 
   const handleSaveFolderDetail = async (
     detail: FolderDetailSettings
@@ -171,12 +193,15 @@ export function FileSearchSettings({
           className="mt-8 flex-1 flex flex-col min-h-0"
           contentClassName="mt-3 flex-1 flex flex-col min-h-0 gap-2"
         >
-        {/* 行が画面幅いっぱいに広がると、フォルダ名（左端）と操作アイコン（右端）が
-            離れすぎて対応が取りにくくなるため、一覧に最大幅を設定して抑える */}
-        <div className="max-w-md text-xs text-gray-400">
-          設定した検索条件に一致するファイル・フォルダを、検索フォルダの上から順に検索します。「検索上限件数」に達すると検索を終了し、後続のフォルダは検索されません。優先したいフォルダを上へ並べてください。
+        {/* 400工程レビューで、ウィンドウ幅に合わせて検索フォルダ領域を広げる指摘を
+            受けたため、以前ここにあった max-w-md（フォルダ名と操作アイコンの対応が
+            取りにくくなるのを防ぐ目的）は外した。広げた幅でも行ごとの対応が分かる
+            よう、代わりに divide-y（下記）で行区切りを表示する。 */}
+        <div className="text-xs text-gray-400">
+          <div>検索ボックスに入力した条件に一致するファイル・フォルダを、検索フォルダの上から順に検索します。</div>
+          <div>「検索上限件数」に達すると検索を終了し、後続のフォルダは検索されません。優先したいフォルダを上へ並べてください。</div>
         </div>
-        <div className="flex-1 overflow-y-auto max-w-md">
+        <div className="flex-1 overflow-y-auto divide-y divide-gray-200/60">
           {folders.length === 0 && (
             <div className="py-3 text-sm text-gray-400">
               フォルダが登録されていません
@@ -352,7 +377,12 @@ export function FileSearchSettings({
       )}
 
       {infoTarget && (
-        <FolderInfoModal folder={infoTarget} onClose={() => setInfoTarget(null)} />
+        <FolderInfoModal
+          folder={infoTarget}
+          onClose={() => setInfoTarget(null)}
+          excludedFilesOpen={excludedFilesOpen}
+          onExcludedFilesOpenChange={setExcludedFilesOpen}
+        />
       )}
     </div>
   );

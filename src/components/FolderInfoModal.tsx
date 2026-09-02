@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderEntry, SearchFolderInfo } from "../types";
+import { ExcludedFilesModal } from "./ExcludedFilesModal";
 
 // 情報取得は通常ファイル検索と別の実行状態・世代管理で動かす（CLAUDE.md「検索
 // フォルダ情報ダイアログ」節を参照）。generationRef はこのモーダル専用のローカル
@@ -25,9 +26,17 @@ function formatMaxDepth(info: SearchFolderInfo): string {
 export function FolderInfoModal({
   folder,
   onClose,
+  excludedFilesOpen,
+  onExcludedFilesOpenChange,
 }: {
   folder: FolderEntry;
   onClose: () => void;
+  // 「除外されたファイル」サブモーダルの開閉状態。呼び出し元（FileSearchSettings.tsx）が
+  // 保持し、Escapeの優先順位チェーン（一覧モーダル→フォルダ情報ダイアログの順に
+  // 閉じる）へ組み込む。このコンポーネント自身はローカルstateを持たない
+  // （詳細は CLAUDE.md「除外ファイル一覧ダイアログ」節を参照）。
+  excludedFilesOpen: boolean;
+  onExcludedFilesOpenChange: (open: boolean) => void;
 }) {
   const [info, setInfo] = useState<SearchFolderInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +87,9 @@ export function FolderInfoModal({
           </div>
         ) : (
           <div className="mt-4 pt-3 border-t border-gray-200/60 space-y-3">
+            <div className="text-xs text-gray-400">
+              集計対象は対象フォルダ直下を1階層目とした20階層までです。
+            </div>
             <InfoRow
               label="最大フォルダ階層数"
               value={loading || !info ? "確認中…" : formatMaxDepth(info)}
@@ -101,6 +113,16 @@ export function FolderInfoModal({
           </div>
         )}
 
+        {!loading && !error && info && (
+          <button
+            type="button"
+            onClick={() => onExcludedFilesOpenChange(true)}
+            className="mt-3 text-sm text-blue-600 hover:text-blue-700"
+          >
+            除外されたファイル
+          </button>
+        )}
+
         <div className="mt-4 flex justify-end">
           <button
             type="button"
@@ -111,6 +133,14 @@ export function FolderInfoModal({
           </button>
         </div>
       </div>
+
+      {excludedFilesOpen && info && (
+        <ExcludedFilesModal
+          files={info.excludedFiles}
+          truncated={info.excludedFilesTruncated}
+          onClose={() => onExcludedFilesOpenChange(false)}
+        />
+      )}
     </div>
   );
 }
