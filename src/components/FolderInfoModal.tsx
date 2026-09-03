@@ -74,14 +74,8 @@ export function FolderInfoModal({
   }, [folder.path]);
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center px-4 bg-black/30 backdrop-blur-sm">
-      {/* 400工程レビュー指摘：フォルダ情報ダイアログの幅を、他のモーダルと共通の
-          基準幅（w-96=24rem）の約1.5倍（36rem）へ拡張する。ウィンドウは640px幅まで
-          縮小できるため（tauri.conf.jsonのminWidth）、`max-w-full`で親（設定画面の
-          コンテンツ領域）の幅を超えないようにし、狭い画面でもはみ出さず自動的に
-          縮む。他のモーダル（ExcludedFilesModal・FolderDetailSettingsModal等）の
-          基準幅はこの変更の対象外。 */}
-      <div className="w-[36rem] max-w-full rounded-xl bg-white p-5 shadow-2xl">
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+      <div className="w-96 rounded-xl bg-white p-5 shadow-2xl">
         <div className="text-sm font-medium text-gray-800">フォルダ情報</div>
         <div className="mt-0.5 text-xs text-gray-400 break-all">
           {folder.path}

@@ -23,8 +23,15 @@ export function ExcludedFilesModal({
   return (
     // FolderInfoModal（z-10）の上に重ねるため z-20。背景ディムは重ねて表示され、
     // 下のフォルダ情報ダイアログはそのまま保持される（隠さず、操作対象からも外す）。
-    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/30 backdrop-blur-sm">
-      <div className="w-96 max-h-[85%] flex flex-col rounded-xl bg-white p-5 shadow-2xl">
+    <div className="absolute inset-0 z-20 flex items-center justify-center px-4 bg-black/30 backdrop-blur-sm">
+      {/* 400工程レビュー指摘（是正）：POの意図は「除外されたファイル」一覧モーダルを
+          従来幅（w-96=24rem）の約1.5倍（36rem）へ拡大することであり、フォルダ情報
+          ダイアログ（FolderInfoModal）側ではない。フォルダ情報ダイアログは従来幅
+          （w-96）へ戻し、この一覧モーダルだけを拡大する。ウィンドウは640px幅まで
+          縮小できるため（tauri.conf.jsonのminWidth）、`max-w-full`で親（設定画面の
+          コンテンツ領域）の幅を超えないようにし、外側に`px-4`を加えて狭い画面でも
+          左右の余白を確保する。 */}
+      <div className="w-[36rem] max-w-full max-h-[85%] flex flex-col rounded-xl bg-white p-5 shadow-2xl">
         <div className="text-sm font-medium text-gray-800 flex-shrink-0">
           除外されたファイル
         </div>

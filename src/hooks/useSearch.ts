@@ -2551,21 +2551,40 @@ export function useSearch(
     // （呼び出し側でfallback値を出し分けるだけで、resolveSelected自体のシグネチャ・
     // 挙動は変えない）。
     //
-    // 400工程レビュー指摘（issue 0030④）：searchBusyRef.current が true の間（検索が
-    // 実行中または待機中で、画面には直前に完了した保持結果がまだ表示されている間）
-    // は、通常検索でも「先頭の選択可能項目（0）」への移動を行わず、他モードと同じ
-    // 「直前のインデックスを維持する」フォールバックを使う。外部設計は「識別子が
-    // 存在しなければ先頭の選択可能項目へ移す」判断を「最新結果への置換完了時」に
-    // だけ行うと定めており、置換未完了のまま rows が変化した瞬間（ピン止め等の
-    // 固定候補は即時更新されるため、ファイル結果の置換完了より先に rows だけが
-    // 変わりうる）に適用すると、保持中の（まだ置換されていない）旧ファイル結果の
-    // 先頭へ選択が一時的に移動して見える不具合になる。
-    const normalSearchFallback =
-      !favoriteMode && !clipboardMode && !recentMode && !searchBusyRef.current;
+    // 400工程再調査（issue 0030④、f28d351の修正では解消しなかったため根本原因から
+    // 再調査）：
+    //
+    // 【f28d351時点の誤り】searchBusyRef.current が true の間は「先頭の選択可能項目
+    // （0）」ではなく selectedFallbackRef.current（直前に解決した“数値インデックス”）
+    // を使うよう変更したが、これは不十分だった。rows はピン止めブロックなど固定候補の
+    // 増減で「先頭側の要素が丸ごと増減する」形で変化する（ファイル検索の完了を待たず
+    // 即時更新されるため）。この場合、直前のインデックスをそのまま新しい rows に
+    // 適用しても、そのインデックス位置には元と無関係な別の行（保持中の旧ファイル
+    // 検索結果のどれか）が来るだけで、0を使うのと同様に「無関係な行が一瞬選択される」
+    // 見た目になる。数値インデックスは rows の先頭側の増減に対して意味を保たない
+    // （identifier一致による検索であれば増減後も同じ行を追跡できるが、fallbackは
+    // 一致しなかった場合の値であり、この場合は数値そのものに意味がない）。
+    //
+    // 【今回の修正】識別子が見つからず、かつ searchBusyRef.current が true（＝直前に
+    // 完了したファイル検索結果がまだ画面にholdされたままで、最新結果への置換が未完了）
+    // の間は、具体的な行を一切選ばない（-1＝選択なし）。-1は本アプリの選択状態が
+    // 既存で許容している値であり、`rows[-1]` は undefined となるため
+    // `App.tsx`の`selectedRow = search.rows[search.selected] ?? null`がnullを返し、
+    // ResultList.tsx の `isSelected = index === selected` はどの行とも一致しない
+    // （ハイライトなし）。Enter確定は`selectedRow`がnullの間は何も実行しない
+    // （外部設計「選択可能な項目がなければEnterは何もしない」と整合）。↑↓キーも
+    // `Math.min(selected+1, len-1)`/`Math.max(selected-1, 0)`で-1から0へ正しく
+    // クランプされる（App.tsx既存ロジック、今回変更なし）。
+    // 検索が完了し searchBusyRef.current が false に戻った時点（＝results置換が
+    // 確定しrowsが最終形になった時点）で、この効果が rows の変化を検知して再実行され、
+    // そこで初めて「先頭の選択可能項目（0）」へのフォールバックを適用する。この結果、
+    // 置換完了前に無関係な行が可視的に選択されることがなくなる。
+    const normalSearchDomain = !favoriteMode && !clipboardMode && !recentMode;
+    const normalSearchFallbackValue = searchBusyRef.current ? -1 : 0;
     const resolved = resolveSelected(
       intent,
       items,
-      normalSearchFallback ? 0 : selectedFallbackRef.current
+      normalSearchDomain ? normalSearchFallbackValue : selectedFallbackRef.current
     );
     if (intent.type === "key") {
       const found = items.some((item) => item.key === intent.key);
@@ -2580,7 +2599,7 @@ export function useSearch(
         );
       } else {
         console.debug(
-          `[selectIntent] key="${intent.key}" not found (itemsCount=${items.length}). Keeping selected=${resolved}.`
+          `[selectIntent] key="${intent.key}" not found (itemsCount=${items.length}). fallback resolved to selected=${resolved} (normalSearchDomain=${normalSearchDomain}, searchBusy=${searchBusyRef.current}).`
         );
       }
     }
