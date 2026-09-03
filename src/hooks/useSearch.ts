@@ -847,6 +847,15 @@ export function useSearch(
     !recentMode &&
     !favoriteMode;
 
+  // PO実機報告（query空⇔非空の切替時のちらつき）を受けた表示用の間接値。
+  // `rows` はこちらを参照し、ライブな `pinnedVisible` を直接は参照しない。
+  // 両者が一致する定常状態では素通りし、pinnedVisible が変化した瞬間（クロッシング
+  // 中）だけ、新しい内容が確定するまで追従を保留する（同期条件は下の専用
+  // useLayoutEffectを参照）。ピン止め自体の中身（pinnedFiles）はlive値のまま
+  // rowsが参照するため、間接化するのは可視性フラグ1つだけ（ピン止めの追加/解除/
+  // 並び替えは従来どおり即座に反映される）。
+  const [displayedPinnedVisible, setDisplayedPinnedVisible] = useState(pinnedVisible);
+
   // ピン止め・お気に入り・メモの生ノード配列（隣接リスト方式。詳細は
   // 00-requirements.md/CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
   // frecency と同様、useCallback の古いクロージャに残った state を参照してしまうのを
@@ -943,6 +952,11 @@ export function useSearch(
     fetchRecentFiles("mode-enter");
   }, [recentMode, fetchRecentFiles]);
 
+  // セッション内で get_pinned_files が一度でも成功したか。displayedPinnedVisible
+  // 同期用useLayoutEffectが「絞り込み→通常」方向のクロッシングを解消してよいかの
+  // 判定に使う（ピン止めデータが一度も取得されないまま表示してしまうのを防ぐ）。
+  const pinnedEverFetchedRef = useRef(false);
+
   // ピン止めブロックのデータ（アイコン付きファイル一覧）と実体有無を取得する。
   // get_pinned_files → check_paths_exist の順に呼び、両方の結果を同一の世代 ID
   // （"pinned" キー）で保護する。存在確認のタイミングは 00-requirements.md
@@ -955,6 +969,7 @@ export function useSearch(
       .then((files) => {
         if (!isLatestAsyncCall("pinned", callId)) return;
         setPinnedFiles(files);
+        pinnedEverFetchedRef.current = true;
         return invoke<boolean[]>("check_paths_exist", {
           paths: files.map((f) => f.path),
         }).then((existsList) => {
@@ -1777,23 +1792,29 @@ export function useSearch(
             )
         );
       } else {
-        // ピン止め：ピン止めブロックが実際に画面へ表示される場合（pinnedVisible。
-        // 検索ボックスが空で、clipboardMode・recentMode いずれでもない場合のみ true）
-        // のみ、この行は新規ピンとして常にブロック末尾（order 最大）へ追加され、
-        // "pinned:<path>" kind の行として rows に現れる。
-        // pinnedVisible が false の場合（検索ボックスに文字が入力されている通常の
-        // ファイル検索結果、または /recent モードなど）は、ピン止めブロック自体が
-        // 表示されないため行は移動せず、これまで通り "file:<path>" kind の行の
-        // ままその場に留まる（00-requirements.md「検索ボックスに文字が入力されている
-        // ときの表示」「/recent からのピン止め」を参照）。/recent 専用の分岐を
-        // 個別に設けず、既存の pinnedVisible をそのまま再利用することで、通常検索・
-        // /recent のどちらで「ピン止めブロックが見えない状態でのピン止め」が
-        // 起きても同じロジックで正しく選択が維持される。
+        // ピン止め：ピン止めブロックが実際に rows へ現れる場合（displayedPinnedVisible。
+        // 検索ボックスが空で、clipboardMode・recentMode いずれでもない場合に加えて、
+        // query空⇔非空のクロッシング中でないことも要求される）のみ、この行は
+        // 新規ピンとして常にブロック末尾（order 最大）へ追加され、"pinned:<path>"
+        // kind の行として rows に現れる。displayedPinnedVisible が false の場合
+        // （検索ボックスに文字が入力されている通常のファイル検索結果、/recent
+        // モード、またはクロッシング中でまだピン止めブロックが表示に反映されて
+        // いない場合など）は、ピン止めブロック自体が表示されないため行は移動せず、
+        // これまで通り "file:<path>" kind の行のままその場に留まる（00-requirements.md
+        // 「検索ボックスに文字が入力されているときの表示」「/recent からのピン止め」を
+        // 参照）。/recent 専用の分岐を個別に設けず、既存の displayedPinnedVisible を
+        // そのまま再利用することで、通常検索・/recent のどちらで「ピン止めブロックが
+        // 見えない状態でのピン止め」が起きても同じロジックで正しく選択が維持される。
+        // ライブな pinnedVisible ではなく displayedPinnedVisible を使う理由：rows が
+        // 実際に参照するのは displayedPinnedVisible であり（rows 自身の宣言を参照）、
+        // クロッシング中にライブな pinnedVisible を使うと rows の実際の構成と矛盾した
+        // キーを intent に積んでしまい、resolveSelected が見つけられず選択を一時的に
+        // 見失う（-1経由でタイムアウト後に先頭へ）ため。
         // 実際に rows へ反映されるのは set_favorites・fetchPinnedFiles の
         // IPC往復後になるため、selected への直接書き込みは行わず、対象の識別子を
         // intent に積むだけにする（rows が再構築され次第、intent 解決用
         // useLayoutEffect が選択する）。
-        const targetKey = pinnedVisible
+        const targetKey = displayedPinnedVisible
           ? `pinned:${file.path}`
           : `file:${file.path}`;
         updateIntent(
@@ -1827,7 +1848,7 @@ export function useSearch(
         })
         .catch(console.error);
     },
-    [fetchPinnedFiles, updateIntent, pinnedVisible]
+    [fetchPinnedFiles, updateIntent, displayedPinnedVisible]
   );
 
   // パス貼り付け候補は「一操作を選び切って完了する」入口のため、通常行のアイコン操作
@@ -2444,7 +2465,10 @@ export function useSearch(
   const rows = useMemo<ResultRow[]>(() => {
     const list: ResultRow[] = [];
 
-    if (pinnedVisible) {
+    // ライブな pinnedVisible ではなく displayedPinnedVisible を参照する（query空⇔
+    // 非空の切替時のちらつき解消。詳細は displayedPinnedVisible 自身の宣言コメントと
+    // それを同期する専用useLayoutEffectを参照）。
+    if (displayedPinnedVisible) {
       for (const file of pinnedFiles) {
         list.push({
           kind: "pinned",
@@ -2507,7 +2531,7 @@ export function useSearch(
 
     return list;
   }, [
-    pinnedVisible,
+    displayedPinnedVisible,
     pinnedFiles,
     pinnedExistence,
     pathPasteCandidate,
@@ -2517,6 +2541,45 @@ export function useSearch(
     isPinned,
     isFavorited,
   ]);
+
+  // PO実機報告（query空⇔非空の切替時のちらつき）を受けた、displayedPinnedVisible を
+  // ライブな pinnedVisible へ追従させる専用useLayoutEffect。issue 0030④
+  // （commit 4ce0053）で確立した「useLayoutEffectは宣言順に実行される」手法を踏襲し、
+  // 早期searchBusy起動effect（上方、query変化検知effectの直後）より後、選択解決用
+  // useLayoutEffect（下）より前に宣言することで、この効果の実行時点で
+  // searchBusyRef.current が確定済みの値であることを保証する。
+  //
+  // displayedPinnedVisible と pinnedVisible が一致している定常状態（大半のケース）
+  // では何もしない。両者が食い違った瞬間（クロッシング中）だけ、以下の条件が
+  // 揃うまで追従を保留し、揃った時点で一度に切り替える：
+  // - 通常検索→絞り込み検索（pinnedVisible: true→false）：新しい絞り込み結果への
+  //   置換が確定する（searchBusyRef.current が false に戻る）まで、ピン止め
+  //   ブロックを表示し続ける
+  // - 絞り込み検索→通常検索（pinnedVisible: false→true）：新しいfrecency一覧への
+  //   置換が確定し、かつピン止めデータがセッション内で一度でも取得済み
+  //   （pinnedEverFetchedRef）になるまで、ピン止めブロックを表示しない
+  //
+  // ラピッドタイピング（新結果到着前にquery空→非空→空を連続変更する等）でも、
+  // displayedPinnedVisible と pinnedVisible が再び一致すればこの効果は即座に
+  // no-opになり、余分な中間状態を作らない。
+  //
+  // 絶対にやらないこと：displayedPinnedVisible を query-or-settings-change
+  // リセットトリガー（上方の specialMode 判定を使う効果）や早期searchBusy起動
+  // effect の依存配列へ追加しない。「操作の副作用として変化する値をリセット
+  // トリガーに混入させない」という既存原則（result-list-and-selection.md
+  // #reset-triggers）に反するため。
+  useLayoutEffect(() => {
+    if (displayedPinnedVisible === pinnedVisible) return;
+    if (pinnedVisible) {
+      if (!searchBusyRef.current && pinnedEverFetchedRef.current) {
+        setDisplayedPinnedVisible(true);
+      }
+    } else {
+      if (!searchBusyRef.current) {
+        setDisplayedPinnedVisible(false);
+      }
+    }
+  }, [pinnedVisible, results, pinnedFiles]);
 
   // R-1 フェーズD-2: 通常モード（rows）／clipboardMode（clipboardSelectionItems）
   // の選択（selected）を intent から導出し、反映する唯一の箇所。rows は
@@ -2669,7 +2732,7 @@ export function useSearch(
   // 不要になるため削除してよい。
   useEffect(() => {
     const expectedLength =
-      (pinnedVisible ? pinnedFiles.length : 0) +
+      (displayedPinnedVisible ? pinnedFiles.length : 0) +
       (pathPasteCandidate ? (pathPasteCandidate.isDir ? 4 : 3) : 0) +
       (calcResult !== null ? 1 : 0) +
       (urlConvertResult !== null ? 1 : 0) +
@@ -2677,7 +2740,8 @@ export function useSearch(
     if (rows.length !== expectedLength) {
       console.debug(
         `[rows] length mismatch: rows.length=${rows.length}, expected=${expectedLength} ` +
-          `(pinnedVisible=${pinnedVisible}, pinnedFiles=${pinnedFiles.length}, ` +
+          `(pinnedVisible=${pinnedVisible}, displayedPinnedVisible=${displayedPinnedVisible}, ` +
+          `pinnedFiles=${pinnedFiles.length}, ` +
           `pathPasteCandidate=${pathPasteCandidate !== null}, calcResult=${calcResult !== null}, ` +
           `urlConvertResult=${urlConvertResult !== null}, results=${results.length})`
       );
@@ -2688,7 +2752,7 @@ export function useSearch(
           .join(",")})`
       );
     }
-  }, [rows, pinnedVisible, pinnedFiles, pathPasteCandidate, calcResult, urlConvertResult, results]);
+  }, [rows, pinnedVisible, displayedPinnedVisible, pinnedFiles, pathPasteCandidate, calcResult, urlConvertResult, results]);
 
   // 検索ビュー上でSearchBoxをふさぐ/disabledにするオーバーレイstateの一覧。
   // App.tsx側の「検索ボックス再フォーカスeffect」「SearchBoxのdisabled判定」
