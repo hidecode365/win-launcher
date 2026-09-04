@@ -740,7 +740,18 @@ export function useSearch(
   // 1. 直近のキーボード操作から HOVER_SUPPRESS_AFTER_KEYBOARD_MS 以内（従来からの判定）
   // 2. mouseenter 発火時点の座標が、直近に実際のマウス移動で観測された座標と
   //    実質的に同じ（＝カーソル自体は静止しており、一覧の再描画・スクロールで
-  //    たまたまその行がカーソル直下に来ただけ）
+  //    たまたまその行がカーソル直下に来ただけ）。実際のマウス移動が本セッション
+  //    （ウィンドウ表示後）で一度も記録されていない（lastMousePosRef.current が
+  //    null の）場合も、比較対象の基準値が無いという理由だけで2の判定をすり抜けさせず
+  //    「静止扱い（抑止する）」を既定にする。本アプリはキーボード駆動が主用途
+  //    （Alt+Space起動→入力→Enter）で、マウスを一度も動かさないままウィンドウ内で
+  //    一覧が大きく再構成されることが珍しくなく、この場合ブラウザは実際のポインター
+  //    移動を伴わずに mouseenter を発火させうる。null を「静止していない」（＝抑止し
+  //    ない）として扱うと、この事後的な mouseenter がキーボードで維持していた正しい
+  //    選択を無条件に上書きしてしまう（issue 0030・400工程で特定した不具合）。
+  //    null を「静止扱い」にしても、ユーザーが実際にマウスを動かして意図的にホバー
+  //    する操作は、その移動によって直前に lastMousePosRef が更新されるため妨げない
+  //    （初回の1回だけ抑止され、直後の移動で正しく機能する）。
   const selectFromHover = useCallback(
     (index: number, clientX: number, clientY: number) => {
       if (Date.now() - lastKeyboardNavAtRef.current < HOVER_SUPPRESS_AFTER_KEYBOARD_MS) {
@@ -748,9 +759,8 @@ export function useSearch(
       }
       const last = lastMousePosRef.current;
       const cursorStationary =
-        last !== null &&
-        Math.abs(last.x - clientX) < 1 &&
-        Math.abs(last.y - clientY) < 1;
+        last === null ||
+        (Math.abs(last.x - clientX) < 1 && Math.abs(last.y - clientY) < 1);
       if (cursorStationary) {
         return;
       }
@@ -795,7 +805,9 @@ export function useSearch(
   }, [updateIntent]);
 
   // マウスホバーによる通常モード／clipboardMode の選択。抑止判定（直近のキーボード
-  // 操作からの経過時間、カーソル静止判定）は生インデックス版の selectFromHover と同一。
+  // 操作からの経過時間、カーソル静止判定。lastMousePosRef.current が null の場合を
+  // 「静止扱い」とする理由は selectFromHover の宣言コメントを参照）は生インデックス版の
+  // selectFromHover と同一。
   const selectRowFromHover = useCallback(
     (key: string, clientX: number, clientY: number) => {
       if (Date.now() - lastKeyboardNavAtRef.current < HOVER_SUPPRESS_AFTER_KEYBOARD_MS) {
@@ -803,9 +815,8 @@ export function useSearch(
       }
       const last = lastMousePosRef.current;
       const cursorStationary =
-        last !== null &&
-        Math.abs(last.x - clientX) < 1 &&
-        Math.abs(last.y - clientY) < 1;
+        last === null ||
+        (Math.abs(last.x - clientX) < 1 && Math.abs(last.y - clientY) < 1);
       if (cursorStationary) {
         return;
       }
