@@ -17,7 +17,7 @@ export function WebSearchRow({
   return (
     <SelectableRow
       index={index}
-      className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+      className={`w-full flex items-center px-4 py-2.5 text-left ${
         active ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
       }`}
       onClick={onClick}

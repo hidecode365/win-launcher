@@ -1,7 +1,12 @@
 export type ManageTreeRowVariant = "fixed" | "folder" | "item";
 
+// 一覧行の選択ハイライト・ホバーには色のトランジションを掛けない。掛けると、
+// 一覧が再構成されて選択行が入れ替わった瞬間に前の行の色が残ってフェードするため、
+// 「一瞬どこも選択されていない」ように見えてちらつく（PO実機確認により全画面で
+// 統一して削除）。行以外（ボタン・行内アイコン・フォルダ開閉の回転等）の
+// トランジションは、ユーザー操作へ直接応答する演出のため従来どおり残す。
 const MANAGE_TREE_ROW_BASE =
-  "flex w-full items-center pr-ui-row-x text-left transition-colors";
+  "flex w-full items-center pr-ui-row-x text-left";
 
 const MANAGE_TREE_ROW_VARIANTS: Record<ManageTreeRowVariant, string> = {
   fixed: `${MANAGE_TREE_ROW_BASE} h-10`,

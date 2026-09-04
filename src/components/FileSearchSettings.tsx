@@ -222,7 +222,7 @@ export function FileSearchSettings({
               // アイコンは半透明の黒オーバーレイ（hover:bg-black/[6%]）へ変更し、
               // 行の背景の上でも常に一段暗く見えるようにしている（削除アイコンは
               // 元々red系で色相が異なるため据え置き）。
-              className="flex items-center py-2 gap-3 hover:bg-gray-100 transition-colors"
+              className="flex items-center py-2 gap-3 hover:bg-gray-100"
               onDragOver={(e) => {
                 if (!dragFromPathRef.current) return;
                 e.preventDefault();

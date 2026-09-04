@@ -117,7 +117,7 @@ export function ResultList({
             <SelectableRow
               key={cmd.keyword}
               index={i}
-              className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+              className={`w-full flex items-center px-4 py-2.5 text-left ${
                 i === selected
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"
@@ -209,7 +209,7 @@ export function ResultList({
                       dragFromIndexRef.current = null;
                       if (from !== null) onReorderPinned(from, index);
                     }}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected
                         ? "bg-blue-500 text-white"
                         : "text-gray-700 hover:bg-gray-100"
@@ -318,7 +318,7 @@ export function ResultList({
                     key={row.key}
                     role="button"
                     data-index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected
                         ? "bg-blue-500 text-white"
                         : "text-gray-700 hover:bg-gray-100"
@@ -363,7 +363,7 @@ export function ResultList({
                     key={row.key}
                     role="button"
                     data-index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected
                         ? "bg-blue-500 text-white"
                         : "text-gray-700 hover:bg-gray-100"
@@ -407,7 +407,7 @@ export function ResultList({
                   <SelectableRow
                     key={row.key}
                     index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
                     }`}
                     onClick={onTogglePinFromPaste}
@@ -429,7 +429,7 @@ export function ResultList({
                   <SelectableRow
                     key={row.key}
                     index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
                     }`}
                     onClick={onToggleFavoriteFromPaste}
@@ -452,7 +452,7 @@ export function ResultList({
                     key={row.key}
                     role="button"
                     data-index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected
                         ? "bg-blue-500 text-white"
                         : "text-gray-700 hover:bg-gray-100"
@@ -482,7 +482,7 @@ export function ResultList({
                     key={row.key}
                     role="button"
                     data-index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected
                         ? "bg-blue-500 text-white"
                         : "text-gray-700 hover:bg-gray-100"
@@ -536,7 +536,7 @@ export function ResultList({
                     key={row.key}
                     role="button"
                     data-index={index}
-                    className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+                    className={`w-full flex items-center px-4 py-2.5 text-left ${
                       isSelected
                         ? "bg-blue-500 text-white"
                         : "text-gray-700 hover:bg-gray-100"

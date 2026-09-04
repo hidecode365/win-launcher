@@ -51,7 +51,7 @@ export function ClipboardPanel({
             <SelectableRow
               key={entry.id}
               index={i}
-              className={`w-full flex items-center px-3 py-2 text-left transition-colors ${
+              className={`w-full flex items-center px-3 py-2 text-left ${
                 i === selected
                   ? "bg-blue-500 text-white"
                   : "text-gray-700 hover:bg-gray-100"

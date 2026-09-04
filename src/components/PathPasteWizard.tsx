@@ -70,7 +70,7 @@ export function PathPasteWizard({
           <SelectableRow
             key={folder.path}
             index={i}
-            className={`w-full flex items-center px-4 py-2.5 text-left transition-colors ${
+            className={`w-full flex items-center px-4 py-2.5 text-left ${
               i === selected
                 ? "bg-blue-500 text-white"
                 : "text-gray-700 hover:bg-gray-100"
