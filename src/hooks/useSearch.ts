@@ -2,7 +2,6 @@ import {
   MutableRefObject,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -20,6 +19,7 @@ import {
   SelectableItem,
   SelectIntent,
   SELECT_INTENT_TIMEOUT_MS,
+  WEB_SEARCH_ROW_KEY,
 } from "../lib/selectIntent";
 import {
   AppSettings,
@@ -401,7 +401,12 @@ export function useSearch(
 ) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FileEntry[]>([]);
-  const [selected, setSelectedRaw] = useState(0);
+  // selectedRaw は「直前のレンダーで確定した選択インデックス」を保持する state。
+  // 画面へ渡す最終的な selected は、rows/intent からレンダー中に導出する
+  // （導出箇所は rows の useMemo 直後。理由はそこのコメントを参照）。
+  // prefixCommandMode／pathPasteWizardMode は intent を使わない旧経路のため、
+  // それらのモード中はこの state が直接書き込まれ、そのまま selected になる。
+  const [selectedRaw, setSelectedRaw] = useState(0);
   const [calcResult, setCalcResult] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<SystemCommand | null>(
     null
@@ -617,6 +622,16 @@ export function useSearch(
     excludePaths: string[];
   } | null>(null);
 
+  // 現在の results が「どの検索文字列に対する結果か」を保持する。setResults(...)
+  // で実際にファイル検索結果を反映する箇所（下の runQueuedSearchRef 内）とだけ
+  // 同期して更新する（レンダー中に読む側は displayedPinnedVisibleRef の同期処理
+  // コメントを参照）。searchBusyRef は useLayoutEffect（コミット後）でしか
+  // 更新されないため、クエリ変更直後の最初のレンダー中に読むと必ず「1つ前の
+  // クエリの時点の値」を読んでしまう。resultsQueryRef は setResults と同じ
+  // 同期処理（Promiseコールバック内）で更新するため、この値が変化した結果を
+  // 反映するレンダーでは、レンダー中に読んでも既に更新済みであることが保証される。
+  const resultsQueryRef = useRef(query);
+
   // 検索欄周囲のスピナー表示。「検索中…」の一覧行は廃止し、直前に完了した
   // ファイル検索結果は最新世代が確定するまでそのまま表示し続ける（外部設計
   // 「通常ファイル検索の候補収集と更新制御」図2を参照）。searchBusyRef は
@@ -672,6 +687,7 @@ export function useSearch(
           // 到着時点で表示中の直前結果と一括置換する（結果が空でも同様。
           // 選択識別子の維持・先頭フォールバックは rows の変化を検知する
           // 既存の useLayoutEffect が resolveSelected 経由で行う）。
+          resultsQueryRef.current = query;
           setResults(sortByFrecency(files, frecency));
         }
       })
@@ -680,6 +696,7 @@ export function useSearch(
         if (isLatestAsyncCall("search", generation)) {
           // エラー時も保持結果を消去する（表1「最新世代が空結果または
           // エラーで完了した場合は...消去する」を参照）。
+          resultsQueryRef.current = query;
           setResults([]);
         }
       })
@@ -847,6 +864,19 @@ export function useSearch(
     : null;
   const favoriteMode = favoriteFilterText !== null;
 
+  // Web検索行（「Googleで〇〇を検索」）の表示条件。かつては App.tsx 側で同じ式を
+  // 組み立てていたが、選択の解決（レンダー中の導出）がこの条件を知る必要があるため
+  // こちらへ移し、App.tsx はこの値を受け取って使う（同じ述語を2箇所で維持しない）。
+  // issue 0024：`/recent` ではWeb検索候補を表示しない（04-history-lists.md
+  // 「最近使ったファイル一覧」節）。recentMode は query が常に非空（"/recent..."）に
+  // なるため、この除外が無いと意図せずWeb検索行が選択可能になる。
+  const webSearchVisible =
+    appSettings.webSearchEnabled &&
+    query.trim().length > 0 &&
+    !clipboardMode &&
+    !recentMode &&
+    !pathPasteWizardMode;
+
   // ピン止めブロックの表示条件（検索ボックスが空、機能ON、他の排他モードでない）。
   // calcMode/prefixCommandMode は入力文字種上クエリが空の間は構造的に成立しない
   // （isCalcExpression は空文字を false、buildPrefixCommandCandidates は "/" で
@@ -861,11 +891,18 @@ export function useSearch(
   // PO実機報告（query空⇔非空の切替時のちらつき）を受けた表示用の間接値。
   // `rows` はこちらを参照し、ライブな `pinnedVisible` を直接は参照しない。
   // 両者が一致する定常状態では素通りし、pinnedVisible が変化した瞬間（クロッシング
-  // 中）だけ、新しい内容が確定するまで追従を保留する（同期条件は下の専用
-  // useLayoutEffectを参照）。ピン止め自体の中身（pinnedFiles）はlive値のまま
-  // rowsが参照するため、間接化するのは可視性フラグ1つだけ（ピン止めの追加/解除/
-  // 並び替えは従来どおり即座に反映される）。
-  const [displayedPinnedVisible, setDisplayedPinnedVisible] = useState(pinnedVisible);
+  // 中）だけ、新しい内容が確定するまで追従を保留する（同期条件・同期方法は
+  // pinnedEverFetchedRef 宣言の直後を参照）。ピン止め自体の中身（pinnedFiles）は
+  // live値のまま rows が参照するため、間接化するのは可視性フラグ1つだけ（ピン止めの
+  // 追加/解除/並び替えは従来どおり即座に反映される）。
+  //
+  // 更新は専用の useLayoutEffect ではなくレンダー中に行う（下記）。effect 内の
+  // setState は同じコミットの rows 計算に反映されず次のレンダーへ持ち越されるため、
+  // 「results確定」コミットと「ピン止めがrowsに混ざる」コミットが1回分ズレ、
+  // 間にピン止め抜きの一覧が一瞬だけ描画される不具合が実機ログで確認された
+  // （PO実機報告、issue 0030）。
+  const [displayedPinnedVisibleState, setDisplayedPinnedVisible] =
+    useState(pinnedVisible);
 
   // ピン止め・お気に入り・メモの生ノード配列（隣接リスト方式。詳細は
   // 00-requirements.md/CLAUDE.md「ピン止め・お気に入り・メモ機能」節を参照）。
@@ -963,10 +1000,54 @@ export function useSearch(
     fetchRecentFiles("mode-enter");
   }, [recentMode, fetchRecentFiles]);
 
-  // セッション内で get_pinned_files が一度でも成功したか。displayedPinnedVisible
-  // 同期用useLayoutEffectが「絞り込み→通常」方向のクロッシングを解消してよいかの
-  // 判定に使う（ピン止めデータが一度も取得されないまま表示してしまうのを防ぐ）。
+  // セッション内で get_pinned_files が一度でも成功したか。下の displayedPinnedVisible
+  // 同期処理が「絞り込み→通常」方向のクロッシングを解消してよいかの判定に使う
+  // （ピン止めデータが一度も取得されないまま表示してしまうのを防ぐ）。
   const pinnedEverFetchedRef = useRef(false);
+
+  // displayedPinnedVisible をレンダー中に更新する。pinnedVisible と一致している
+  // 定常状態（大半のケース）では何もしない。両者が食い違った瞬間（クロッシング中）
+  // だけ、以下の条件が揃うまで追従を保留し、揃った時点で一度に切り替える：
+  // - 通常検索→絞り込み検索（pinnedVisible: true→false）：新しい絞り込み結果への
+  //   置換が確定する（resultsQueryRef.current が現在の query と一致する）まで、
+  //   ピン止めブロックを表示し続ける
+  // - 絞り込み検索→通常検索（pinnedVisible: false→true）：新しいfrecency一覧への
+  //   置換が確定し、かつピン止めデータがセッション内で一度でも取得済み
+  //   （pinnedEverFetchedRef）になるまで、ピン止めブロックを表示しない
+  //
+  // 鮮度シグナルは意図的に2つに分けている（統合した抽象名を作らない）。
+  // - `pinnedEverFetchedRef.current`：query非依存。一度取得できていればよい
+  //   （ピン止めの中身は query に左右されないため）
+  // - `resultsQueryRef.current === query`：query依存。現在の query に対応する
+  //   完了が必要
+  // この2つは意味が異なるため、1つの `isSettled` のような名前へ畳むと、将来
+  // 別の非同期ソースを追加した際にどちらの性質が必要かを取り違える。
+  //
+  // 「置換が確定したか」の判定に searchBusyRef.current ではなく resultsQueryRef を
+  // 使う理由：searchBusyRef は effect（コミット後）でしか更新されないため、
+  // クエリが変化した直後の最初のレンダー中に読むと「1つ前のクエリの時点の値」を
+  // 読んでしまい、即座に「確定済み」と誤判定する（実機ログで確認済み）。
+  // resultsQueryRef は setResults と同じPromiseコールバック内で同期更新するため、
+  // レンダー中に読んでも「そのレンダーが反映している results が実際にどの query の
+  // ものか」を正確に表す。
+  const resultsFreshForCurrentQuery = resultsQueryRef.current === query;
+  let displayedPinnedVisible = displayedPinnedVisibleState;
+  if (displayedPinnedVisibleState !== pinnedVisible) {
+    if (pinnedVisible) {
+      if (resultsFreshForCurrentQuery && pinnedEverFetchedRef.current) {
+        displayedPinnedVisible = true;
+      }
+    } else if (resultsFreshForCurrentQuery) {
+      displayedPinnedVisible = false;
+    }
+  }
+  if (displayedPinnedVisible !== displayedPinnedVisibleState) {
+    // レンダーフェーズの setState（react.dev が認める派生 state の更新パターン）。
+    // このレンダー自体は既に上で導出した最新値（displayedPinnedVisible）を使って
+    // rows を組み立てるため、切り替えは常に rows・selected と同一コミットで起きる。
+    // setState は次のレンダー以降のためにその値を保存するだけ。
+    setDisplayedPinnedVisible(displayedPinnedVisible);
+  }
 
   // ピン止めブロックのデータ（アイコン付きファイル一覧）と実体有無を取得する。
   // get_pinned_files → check_paths_exist の順に呼び、両方の結果を同一の世代 ID
@@ -1520,35 +1601,6 @@ export function useSearch(
     }
     intentResetPrevSpecialModeRef.current = specialMode;
   }, [query, settingsVersion, appSettings, closeRefreshTick, updateIntent]);
-
-  // 400工程レビュー指摘（issue 0030④）：通常検索の同一コンテキスト内で検索文字列が
-  // 変化し、ピン止めブロック等の固定候補が即座に更新されて rows が変化した直後、
-  // 直前に完了したファイル検索結果への置換がまだ完了していない一瞬の間に、選択が
-  // 保持中の（まだ置換されていない）旧ファイル結果の先頭へ一時的に移動して見える
-  // 不具合があった（例：ピン止め行を選択中に検索文字列を入力すると、ピン止め
-  // ブロックが消えた瞬間、選択が保持中の直前結果の先頭ファイルへ一瞬移動してから
-  // 新しい一覧へ切り替わる）。
-  //
-  // 原因は、選択解決用 useLayoutEffect（下の selectedFallbackRef を参照する効果）が
-  // rows の変化のたびに「識別子が見つからなければ先頭の選択可能項目へ移動する」
-  // フォールバックを適用しており、この rows の変化には（a）検索結果の置換完了と
-  // （b）固定候補の即時更新の両方が含まれてしまっていたこと。外部設計は（a）の
-  // 「最新結果への置換完了時」だけにこの移動を行うと定めている。
-  //
-  // 検索ディスパッチ本体（searchBusyRef を立てる useEffect）は通常の useEffect で
-  // あり、同一コミット内では useLayoutEffect より後に実行されるため、選択解決用
-  // useLayoutEffect の初回実行時点では searchBusyRef.current がまだ false のまま
-  // （＝検索が実行中であることをまだ検知できない）という React のコミット順序上の
-  // 制約がある。そのため、検索ディスパッチとは別に、選択解決用 useLayoutEffect より
-  // 前に宣言したこの useLayoutEffect で searchBusyRef を先に立てておく
-  // （useLayoutEffect 同士は宣言順に実行されるため、これが選択解決用より確実に
-  // 先に走る）。startSearchBusy 自身は既に実行中なら何もしないガードを持つため、
-  // 後続の検索ディスパッチ側から再度呼んでも二重にはならない。
-  useLayoutEffect(() => {
-    if (!specialMode && appSettings.fileSearchEnabled) {
-      startSearchBusy();
-    }
-  }, [query, settingsVersion, appSettings, closeRefreshTick]);
 
   // R-1 フェーズD-3: /recent（recentMode）専用の「recentResults が変化する
   // たび無条件に intent を top へ戻す」effect は撤去した。これは D-2 の対象
@@ -2553,140 +2605,79 @@ export function useSearch(
     isFavorited,
   ]);
 
-  // PO実機報告（query空⇔非空の切替時のちらつき）を受けた、displayedPinnedVisible を
-  // ライブな pinnedVisible へ追従させる専用useLayoutEffect。issue 0030④
-  // （commit 4ce0053）で確立した「useLayoutEffectは宣言順に実行される」手法を踏襲し、
-  // 早期searchBusy起動effect（上方、query変化検知effectの直後）より後、選択解決用
-  // useLayoutEffect（下）より前に宣言することで、この効果の実行時点で
-  // searchBusyRef.current が確定済みの値であることを保証する。
-  //
-  // displayedPinnedVisible と pinnedVisible が一致している定常状態（大半のケース）
-  // では何もしない。両者が食い違った瞬間（クロッシング中）だけ、以下の条件が
-  // 揃うまで追従を保留し、揃った時点で一度に切り替える：
-  // - 通常検索→絞り込み検索（pinnedVisible: true→false）：新しい絞り込み結果への
-  //   置換が確定する（searchBusyRef.current が false に戻る）まで、ピン止め
-  //   ブロックを表示し続ける
-  // - 絞り込み検索→通常検索（pinnedVisible: false→true）：新しいfrecency一覧への
-  //   置換が確定し、かつピン止めデータがセッション内で一度でも取得済み
-  //   （pinnedEverFetchedRef）になるまで、ピン止めブロックを表示しない
-  //
-  // ラピッドタイピング（新結果到着前にquery空→非空→空を連続変更する等）でも、
-  // displayedPinnedVisible と pinnedVisible が再び一致すればこの効果は即座に
-  // no-opになり、余分な中間状態を作らない。
-  //
-  // 絶対にやらないこと：displayedPinnedVisible を query-or-settings-change
-  // リセットトリガー（上方の specialMode 判定を使う効果）や早期searchBusy起動
-  // effect の依存配列へ追加しない。「操作の副作用として変化する値をリセット
-  // トリガーに混入させない」という既存原則（result-list-and-selection.md
-  // #reset-triggers）に反するため。
-  useLayoutEffect(() => {
-    if (displayedPinnedVisible === pinnedVisible) return;
-    if (pinnedVisible) {
-      if (!searchBusyRef.current && pinnedEverFetchedRef.current) {
-        setDisplayedPinnedVisible(true);
-      }
-    } else {
-      if (!searchBusyRef.current) {
-        setDisplayedPinnedVisible(false);
-      }
-    }
-  }, [pinnedVisible, results, pinnedFiles]);
-
   // R-1 フェーズD-2: 通常モード（rows）／clipboardMode（clipboardSelectionItems）
-  // の選択（selected）を intent から導出し、反映する唯一の箇所。rows は
-  // useMemo であり、この効果はそれより後で定義する必要がある（rows を
-  // 依存配列・クロージャの両方で参照するため）。
+  // ／favoriteMode（favoriteTree）の選択（selected）を intent から導出し、
+  // 反映する唯一の箇所。rows は useMemo であり、この導出はそれより後に書く必要が
+  // ある（rows を参照するため）。
   //
-  // useLayoutEffect を使う理由：ピン止め追加・並び替え直後、setPinnedFiles
-  // （楽観的反映）や fetchPinnedFiles の完了で rows が更新された瞬間に、
-  // ブラウザが描画する前に selected を確定させたい（useEffect だと描画後に
-  // 走るため、一瞬だけ古い選択が見えてから正しい選択に切り替わる、という
-  // ちらつきが理論上発生しうる）。
+  // 【この導出をレンダー中に行う理由（構造上の要点）】
+  // かつてこの処理は useLayoutEffect（コミット後に実行）で行っていたが、
+  // 「一覧内容（rows）はレンダー中に確定するのに、選択（selected）はコミット後に
+  // 事後計算される」という分離そのものが、issue 0030 の一連のちらつき不具合の
+  // 構造的な原因だった。両者が別コミットで確定するため、その間に「新しい一覧＋
+  // 古い（あるいは未解決の）選択」という中間状態がユーザーへ描画されうる。
+  // 個別のゲート（searchBusyRef を見た -1 フォールバック、effect の宣言順に
+  // 依存した早期 useLayoutEffect 等）を後付けで足して個々の症状を潰してきたが、
+  // ゲートごとに鮮度シグナルと更新タイミングが異なるため互いに干渉し、
+  // 新しい中間状態が次々と露出する「モグラ叩き」になっていた。
   //
-  // fallback（見つからない場合に維持する値）は selectedFallbackRef が保持する。
-  // 直前にこの効果自身が解決した値を常に書き戻しているため、prefixCommandMode/
-  // pathPasteWizardMode の raw な書き込みとは独立している（それらの間は
-  // rows/clipboardSelectionItems 自体が空になるため、この効果は実質的に
-  // 「今の値をそのまま返す」no-op になる）。
-  const selectedFallbackRef = useRef(0);
-  useLayoutEffect(() => {
-    const items: SelectableItem[] = favoriteMode
-      ? favoriteTree
-      : clipboardMode
-        ? clipboardSelectionItems
+  // レンダー中に導出し、結果が現在の selected と異なる場合だけ setState する
+  // （react.dev が「レンダー中に前回値と比較して state を更新する」派生 state の
+  // 公式パターンとして認めている書き方）。React はレンダー中の同一コンポーネントへの
+  // setState を検知すると、DOM へコミットする前にそのレンダーを破棄して同じパスを
+  // 再実行するため、中間状態はユーザーへ一度も描画されない。結果として rows と
+  // selected は常に同一コミットで整合し、「内容確定」と「選択確定」の分離が
+  // 構造的に解消される。
+  //
+  // これにより次の機構が不要になり削除した：選択解決用 useLayoutEffect 本体、
+  // searchBusyRef を選択解決より先に立てるためだけの早期 useLayoutEffect、
+  // 未確定中に選択なしを表す -1 フォールバック、selectedFallbackRef。
+  //
+  // fallback（識別子が見つからない場合の値）の出し分けは従来どおり：
+  // 通常検索ドメインは「先頭の選択可能項目（0）」へ移し（外部設計「選択モデル」
+  // 表2）、clipboardMode／favoriteMode は「まだ届いていないだけとみなし直前の
+  // 表示を維持する」既存挙動（＝直前の selected）のまま変更しない。
+  // prefixCommandMode／pathPasteWizardMode は intent を使わない生インデックス
+  // 書き込みの旧経路のままのため、この導出の対象から除外する（それらのモード中は
+  // rows/clipboardSelectionItems が空になり、無条件に導出すると生の書き込みを
+  // 打ち消してしまう）。
+  // 通常モードの選択対象一覧には、rows に含まれないWeb検索行を識別子として末尾へ
+  // 加える（描画側の +1 特例は従来どおり。詳細は WEB_SEARCH_ROW_KEY の宣言を参照）。
+  // これによりWeb検索行も他の行と同じ識別子ベースの解決対象になり、生インデックスの
+  // 書き込みがレンダー導出に打ち消される問題が起きない。
+  const selectionItems: SelectableItem[] = favoriteMode
+    ? favoriteTree
+    : clipboardMode
+      ? clipboardSelectionItems
+      : webSearchVisible
+        ? [...rows, { key: WEB_SEARCH_ROW_KEY }]
         : rows;
-    // issue 0030再実装：通常検索（favoriteMode/clipboardMode/recentModeのいずれでも
-    // ない、items===rows のケース）に限り、識別子が見つからない場合は「直前の
-    // インデックス」ではなく「先頭の選択可能項目（0）」へ移す（外部設計「選択モデル」
-    // 表2「識別子が存在しなければ...先頭の選択可能項目へ移す」を参照）。この
-    // フォールバック変更は通常検索のファイル結果置換・固定候補の増減にだけ適用し、
-    // クリップボード履歴・お気に入り画面・メモ画面・/recentが共有する既存の
-    // 「まだ届いていないだけとみなし直前の表示を維持する」フォールバックは変更しない
-    // （呼び出し側でfallback値を出し分けるだけで、resolveSelected自体のシグネチャ・
-    // 挙動は変えない）。
-    //
-    // 400工程再調査（issue 0030④、f28d351の修正では解消しなかったため根本原因から
-    // 再調査）：
-    //
-    // 【f28d351時点の誤り】searchBusyRef.current が true の間は「先頭の選択可能項目
-    // （0）」ではなく selectedFallbackRef.current（直前に解決した“数値インデックス”）
-    // を使うよう変更したが、これは不十分だった。rows はピン止めブロックなど固定候補の
-    // 増減で「先頭側の要素が丸ごと増減する」形で変化する（ファイル検索の完了を待たず
-    // 即時更新されるため）。この場合、直前のインデックスをそのまま新しい rows に
-    // 適用しても、そのインデックス位置には元と無関係な別の行（保持中の旧ファイル
-    // 検索結果のどれか）が来るだけで、0を使うのと同様に「無関係な行が一瞬選択される」
-    // 見た目になる。数値インデックスは rows の先頭側の増減に対して意味を保たない
-    // （identifier一致による検索であれば増減後も同じ行を追跡できるが、fallbackは
-    // 一致しなかった場合の値であり、この場合は数値そのものに意味がない）。
-    //
-    // 【今回の修正】識別子が見つからず、かつ searchBusyRef.current が true（＝直前に
-    // 完了したファイル検索結果がまだ画面にholdされたままで、最新結果への置換が未完了）
-    // の間は、具体的な行を一切選ばない（-1＝選択なし）。-1は本アプリの選択状態が
-    // 既存で許容している値であり、`rows[-1]` は undefined となるため
-    // `App.tsx`の`selectedRow = search.rows[search.selected] ?? null`がnullを返し、
-    // ResultList.tsx の `isSelected = index === selected` はどの行とも一致しない
-    // （ハイライトなし）。Enter確定は`selectedRow`がnullの間は何も実行しない
-    // （外部設計「選択可能な項目がなければEnterは何もしない」と整合）。↑↓キーも
-    // `Math.min(selected+1, len-1)`/`Math.max(selected-1, 0)`で-1から0へ正しく
-    // クランプされる（App.tsx既存ロジック、今回変更なし）。
-    // 検索が完了し searchBusyRef.current が false に戻った時点（＝results置換が
-    // 確定しrowsが最終形になった時点）で、この効果が rows の変化を検知して再実行され、
-    // そこで初めて「先頭の選択可能項目（0）」へのフォールバックを適用する。この結果、
-    // 置換完了前に無関係な行が可視的に選択されることがなくなる。
+  let selected = selectedRaw;
+  if (!prefixCommandMode && !pathPasteWizardMode) {
     const normalSearchDomain = !favoriteMode && !clipboardMode && !recentMode;
-    const normalSearchFallbackValue = searchBusyRef.current ? -1 : 0;
-    const resolved = resolveSelected(
+    selected = resolveSelected(
       intent,
-      items,
-      normalSearchDomain ? normalSearchFallbackValue : selectedFallbackRef.current
+      selectionItems,
+      normalSearchDomain ? 0 : selectedRaw
     );
+  }
+  if (selected !== selectedRaw) {
+    // レンダーフェーズの setState（上記コメント参照）。次のレンダーで
+    // selectedRaw === selected となり、この分岐は自然に収束する。
+    setSelectedRaw(selected);
+    // 400_テスト・バグ修正の調査用ログ（本番ビルドでは Terser が除去する）。
+    // 選択が実際に動いたレンダーだけに出力する（毎レンダー出すと大量になる）。
     if (intent.type === "key") {
-      const found = items.some((item) => item.key === intent.key);
-      if (found) {
-        const kind = favoriteMode
-          ? (items[resolved] as FavoriteTreeRow).kind
-          : !clipboardMode
-            ? (items[resolved] as ResultRow).kind
-            : "clipboard";
-        console.debug(
-          `[selectIntent] resolved key="${intent.key}" at index=${resolved} (kind=${kind})`
-        );
-      } else {
-        console.debug(
-          `[selectIntent] key="${intent.key}" not found (itemsCount=${items.length}). fallback resolved to selected=${resolved} (normalSearchDomain=${normalSearchDomain}, searchBusy=${searchBusyRef.current}).`
-        );
-      }
+      const found = selectionItems.some((item) => item.key === intent.key);
+      console.debug(
+        found
+          ? `[selectIntent] resolved key="${intent.key}" at index=${selected} (items=${selectionItems.length})`
+          : `[selectIntent] key="${intent.key}" not found (items=${selectionItems.length}). fallback selected=${selected}`
+      );
+    } else {
+      console.debug(`[selectIntent] intent=top -> selected=${selected}`);
     }
-    selectedFallbackRef.current = resolved;
-    setSelectedRaw(resolved);
-  }, [
-    intent,
-    rows,
-    clipboardMode,
-    clipboardSelectionItems,
-    favoriteMode,
-    favoriteTree,
-  ]);
+  }
 
   // intent.type === "key" かつ expiresAt が過ぎても対象が見つからない場合、
   // タイムアウトして intent を {type:'top'} に書き換える（これも「intent の
@@ -2787,6 +2778,7 @@ export function useSearch(
     results,
     searchSpinnerVisible,
     selected,
+    webSearchVisible,
     setSelected,
     selectFromHover,
     selectRowByKeyboard,

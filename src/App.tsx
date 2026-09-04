@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Store } from "@tauri-apps/plugin-store";
 import { logUiEvent } from "./lib/uiDebugLog";
+import { WEB_SEARCH_ROW_KEY } from "./lib/selectIntent";
 import { useSettings } from "./hooks/useSettings";
 import { useHotkey } from "./hooks/useHotkey";
 import { PREFIX_CHAR, useSearch } from "./hooks/useSearch";
@@ -1081,17 +1082,9 @@ export default function App() {
           ? search.wizardFolders.length
           : 0
         : search.rows.length;
-  // issue 0024：最近使ったファイル画面ではWeb検索候補を表示しない
-  // （04-history-lists.md「最近使ったファイル一覧」節）。recentMode は query が
-  // 常に非空（"/recent..."）になるため、この除外が無いと意図せずWeb検索行が
-  // 選択可能になってしまう（実装時に発見した既存の潜在的な不整合。詳細は
-  // docs/internal-design/recent-files.md を参照）。
-  const webSearchVisible =
-    settings.appSettings.webSearchEnabled &&
-    search.query.trim().length > 0 &&
-    !search.clipboardMode &&
-    !search.recentMode &&
-    !search.pathPasteWizardMode;
+  // Web検索行の表示条件は useSearch.ts 側で算出する（選択のレンダー導出がこの条件を
+  // 必要とするため。同じ述語をここでも組み立てると二重管理になる）。
+  const webSearchVisible = search.webSearchVisible;
   const listLength = baseLength + (webSearchVisible ? 1 : 0);
 
   // 通常モードで現在選択中の行（rows[selected]）。rows に該当する行がない場合
@@ -1128,9 +1121,12 @@ export default function App() {
         return;
       }
       if (webSearchVisible && nextIndex === baseLength) {
-        // Web検索行は rows に含まれない（フェーズEの対象）。今回は現状の
-        // 生インデックス書き込みのまま維持する。
-        search.setSelected(nextIndex);
+        // Web検索行は rows に含まれない（描画上の +1 特例はフェーズEの対象として
+        // 据え置き）。ただし選択だけは他の行と同じ識別子ベースの経路へ乗せる
+        // （通常モードの選択はレンダー中に intent から導出するため、生インデックスを
+        // 書き込むと次のレンダーで打ち消される。詳細は selectIntent.ts の
+        // WEB_SEARCH_ROW_KEY の宣言を参照）。
+        search.selectRowByKeyboard(WEB_SEARCH_ROW_KEY);
         return;
       }
       const row = search.rows[nextIndex];

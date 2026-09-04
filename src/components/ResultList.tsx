@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
 import { logUiEvent } from "../lib/uiDebugLog";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
+import { WEB_SEARCH_ROW_KEY } from "../lib/selectIntent";
 import { Tooltip } from "./Tooltip";
 import { SelectableRow } from "./SelectableRow";
 import {
@@ -621,7 +622,13 @@ export function ResultList({
               active={selected === baseLength}
               index={baseLength}
               onClick={() => onOpenWebSearch(query)}
-              onMouseEnter={(e) => onSelect(baseLength, e.clientX, e.clientY)}
+              // 通常モードの選択はレンダー中に intent から導出するため、生インデックス
+              // （onSelect）ではなく識別子で選択する（詳細は selectIntent.ts の
+              // WEB_SEARCH_ROW_KEY の宣言を参照）。上の prefixCommandMode 側の
+              // Web検索行は intent を使わない旧経路のため onSelect のまま。
+              onMouseEnter={(e) =>
+                onSelectRowByKey(WEB_SEARCH_ROW_KEY, e.clientX, e.clientY)
+              }
             />
           )}
         </>

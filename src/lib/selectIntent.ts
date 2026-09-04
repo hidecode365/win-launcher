@@ -37,3 +37,13 @@ export function resolveSelected(
 // 復元待ち（intent.type === "key" かつ expiresAt 付き）が一定時間 items 上で
 // 解決しない場合にあきらめるまでの猶予（ms）。
 export const SELECT_INTENT_TIMEOUT_MS = 1000;
+
+// Web検索行（「Googleで〇〇を検索」）の選択識別子。この行は `rows: ResultRow[]` には
+// 含まれず、一覧の末尾へ +1 される特例として描画される（[web-search-row-exception]
+// を参照）。描画上の特例はそのままだが、**選択の解決だけは他の行と同じ識別子ベースの
+// 経路に乗せる**。通常モードの選択は「intent と現在の一覧からレンダー中に導出する」
+// 方式のため、生インデックスを直接書き込むと次のレンダーの導出で打ち消されてしまう
+// （かつて選択解決がコミット後の useLayoutEffect だった頃は、依存配列が変化しない限り
+// 再実行されず生の書き込みが生き残っていた）。この識別子を選択対象一覧の末尾へ
+// 加えることで、Web検索行も他の行と同じ resolveSelected の解決対象になる。
+export const WEB_SEARCH_ROW_KEY = "webSearch";
