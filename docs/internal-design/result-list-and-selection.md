@@ -34,9 +34,11 @@ function resolveSelected(
 }
 ```
 
-外部設計書の「識別子が見つからない場合も現在の表示を維持する」という原則は、`resolveSelected` の第3引数 `fallback`（直前に導出できた選択インデックス）をそのまま返す実装として表現されている。`fallback` の実際の値は `selectedFallbackRef`（直前の解決結果を保持する `useRef`）から渡す。維持を打ち切るタイムアウトの実装は [reset-triggers](#reset-triggers) の7・8を参照。
+外部設計書の「識別子が見つからない場合も現在の表示を維持する」という原則は、`resolveSelected` の第3引数 `fallback`（識別子が見つからない場合に返す値）をそのまま返す実装として表現されている。`fallback` の実際の値は選択ドメインごとに異なる（通常モードは常に `0`＝先頭の選択可能項目、`clipboardMode`／`favoriteMode` は直前の `selectedRaw`）。理由・詳細は [fallback-unsafe-across-structural-change](#fallback-unsafe-across-structural-change) を参照。維持を打ち切るタイムアウトの実装は [reset-triggers](#reset-triggers) の7・8を参照。
 
-`selected` への書き込みは、`intent`／`rows`／`clipboardSelectionItems` の変化を検知する1本の `useLayoutEffect`（`resolveSelected` を呼んで `setSelectedRaw` する箇所）だけになっている。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。`useLayoutEffect` を使う理由は、ブラウザが描画する前に選択を確定させ、「一瞬正しい選択が見えた直後に別の値に上書きされる」ちらつきを構造的に防ぐため。
+`selected` は書き込み可能な state ではなく、`rows`（`useMemo`）確定直後にレンダー中で `intent` から導出する値である。導出結果が直前のレンダーの `selectedRaw` と異なる場合だけ、レンダー中に `setSelectedRaw` を呼ぶ（react.dev が認める「レンダー中に前回値と比較して派生 state を更新する」パターン。Reactはレンダー中の `setState` を検知するとそのレンダーをコミットせず同一パスを直ちに再実行するため、中間状態は一度もDOMへ描画されない）。それ以外のすべての操作（クエリ変更・↑↓・ホバー・ピン止め追加/解除・D&D）は `intent` を更新するだけにとどめる。**`rows` と `selected` が必ず同一コミットで確定するため、「一覧内容が新しいのに選択がまだ古い／未解決」という中間状態がユーザーへ見える余地が構造的に無くなる。**
+
+（旧設計との違い）かつては上記の導出をコミット後の `useLayoutEffect` で行っていた（「ブラウザが描画する前に選択を確定させる」ことでちらつきを防ぐ設計）。しかし `rows` の確定（レンダー中）と `selected` の確定（コミット後）が別のタイミングに分離されていること自体が、issue 0030 の一連のちらつき不具合の構造的な原因だったと判明し、`selected` をレンダー中の導出へ置き換えることで `useLayoutEffect` そのものが不要になった（詳細な経緯は [fallback-unsafe-async-select-jump](#fallback-unsafe-async-select-jump) を参照）。
 
 適用範囲の定義（どの選択ドメインが intent 方式に乗るか）は外部設計書 `external-design/02-list-and-selection.md#list-structure-layers` が正本。実装上の対応は以下のとおり：`useSearch.ts` 内の単一の `intent`/`selected` が「通常モード（`rows`）」「`clipboardMode`（`clipboardSelectionItems`）」「`favoriteMode`（`favoriteTree`）」の3ドメインをモード判定で切り替えて共有する。一方、お気に入り管理画面は `useFavoriteEditSelection.ts`、メモ画面とメモ管理画面はそれぞれの `useTreeEditSelection.ts` 呼び出しが、同じ `resolveSelected` の実装を再利用しつつ**独立した** `intent`/`selected` を持つ（お気に入り管理画面がかつて持っていた仮想ルート行はissue 0026で撤去済み。詳細は [favorites-data-model.md](favorites-data-model.md#favorite-edit-virtual-root-row-removed) を参照）。Web検索行の +1 特例は [web-search-row-exception](#web-search-row-exception) を参照。
 
@@ -90,7 +92,13 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 
 通常モード（`rows`）はこの前提が成り立たない。`rows` はファイル検索結果（`results`。非同期にしか確定せず、検索中は直前の完了結果を保持し続ける）と、ピン止め・数式計算・URLエンコード/デコード・パス貼り付け候補などの固定候補（`pinnedVisible`・`calcResult` 等。検索文字列の変化に対して同期的・即時に増減する）を、同じ配列の異なる位置（固定候補は先頭側）へ連結して作る。固定候補が増減すると、後続のファイル検索結果側の要素は配列内で位置がずれる。この状態で「識別子が見つからない」場合に直前のインデックスをそのまま fallback に使うと、ずれた配列の同じ数値位置にたまたま存在する無関係な要素（保持中の直前検索結果のどれか）を指してしまい、可視的に無関係な行が一瞬選択される（詳細・実例は[経緯](#fallback-unsafe-async-select-jump)を参照）。
 
-このため、**「識別子が見つからない場合に fallback として渡す値」を選ぶ際は、items配列が「非同期にしか確定しない部分」と「同期的に即時更新される部分」を同じ配列内に混在させていないか（特に、後者の増減が前者の要素の位置をずらす配置になっていないか）を必ず確認すること。** 混在している場合、直前のインデックスは安全な fallback にならない。この場合は数値インデックスを流用せず、`-1`（選択なし）を返し、非同期部分が確定してから改めて解決させる。本アプリの `selected: number` は既存の設計で `-1` を安全に許容する：`rows[-1]` は `undefined` となるため `selectedRow = rows[selected] ?? null`（`App.tsx`）が `null` を返し、`ResultList.tsx` の `isSelected = index === selected` はどの行とも一致せずハイライトなしになり、Enter は「選択可能な項目がなければ何もしない」の既存分岐がそのまま働き、↑↓キーは `Math.min(selected+1, len-1)`/`Math.max(selected-1, 0)` で `0` へ正しくクランプされる。**このいずれも `selected` を消費する側に新しい `-1` 分岐を追加する必要がない**（`?? null`・`===` 一致比較・`Math.min`/`Math.max` によるクランプが、既存のまま `-1` を意図通り扱う）。
+このため、**「識別子が見つからない場合に fallback として渡す値」を選ぶ際は、items配列が「非同期にしか確定しない部分」と「同期的に即時更新される部分」を同じ配列内に混在させていないか（特に、後者の増減が前者の要素の位置をずらす配置になっていないか）を必ず確認すること。** 混在している場合、直前のインデックスは安全な fallback にならない。
+
+**通常モード（`rows`）の現在の実装は、直前のインデックスを流用する代わりに、fallback を常に `0`（先頭の選択可能項目）に固定している。** これが安全な理由は「fallback を `0` にしても安全な状態になるまで、ピン止めブロックの出入りを `rows` へ反映させるタイミング自体を遅らせている」ことにある：ピン止めブロックの出入り（`pinnedVisible` の変化）は、ファイル検索結果（`results`）が現在の検索文字列に対して確定するまで `displayedPinnedVisible`（[selection-is-derived](#selection-is-derived) 節の `rows` 構築を参照）によって `rows` へ反映されない。したがって、ピン止め識別子が `rows` から実際に消える時点では、後続のファイル検索結果側は既に現在の検索文字列に対応する内容になっており、`0` を選んでも無関係な保持中の旧結果を指すことはない。
+
+**この保護は `pinnedVisible` の出入りにのみ適用される。** 数式計算・URLエンコード/デコード・パス貼り付け候補（`calcResult`・`urlConvertResult`・`pathPasteCandidate`）は、`pinnedVisible` と同じく検索文字列に対して同期的・即時に増減するが、`displayedPinnedVisible` に相当する「ファイル検索結果の確定を待ってから `rows` へ反映する」仕組みを持たない。したがって、これらの識別子を選択中に該当候補が消える場合（例：入力中の文字列が数式・実在パスとして成立しなくなる遷移）、fallback の `0` がその時点でまだ現在の検索文字列に追いついていないファイル検索結果を指す可能性が理論上残る。この経路は実機で未確認・未報告の理論上のリスクであり、2026-09-08時点でPOはこの残存リスクを許容する判断を行った（`displayedPinnedVisible` と同種の確定待ちバッファをこれら3種の固定候補へ拡張する対応は現時点で不採用）。将来これらの固定候補の消失に起因する可視的な不具合が実機で確認された場合、この節を起点に対応を検討すること。
+
+（旧設計との違い）`994d725` 以前は、この判定を「fallback を `-1`（選択なし）にし、非同期部分が確定してから改めて解決させる」という別の方式で行っていた。`rows[-1]` は `undefined` となるため `selectedRow = rows[selected] ?? null`（`App.tsx`）が `null` を返し、`ResultList.tsx` の `isSelected = index === selected` はどの行とも一致せずハイライトなしになり、Enter は「選択可能な項目がなければ何もしない」の既存分岐がそのまま働き、↑↓キーは `Math.min(selected+1, len-1)`/`Math.max(selected-1, 0)` で `0` へ正しくクランプされる、という性質を利用していた（`selected` を消費する側に `-1` 専用の分岐を追加する必要がなかった）。**`994d725` でこの `-1` フォールバック・`selectedFallbackRef` は削除され、通常モードで `selected` が `-1` になる経路は無くなった。** 上記の `-1` の扱いは、現在は使われていない過去の実装の記録として残す。
 
 <a id="adding-a-row-kind"></a>
 
@@ -108,11 +116,13 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 
 ### Web検索行の baseLength 特例（意図的な未統合）
 
-Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含まれておらず、`App.tsx` 側で `baseLength`（= `rows.length`）への+1という特例で扱われている（`selected === baseLength` の判定、`handleKeyDown` での switch 手前での分岐等）。
+Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含まれておらず、描画・キーボード操作は `App.tsx` 側で `baseLength`（= `rows.length`）への+1という特例で扱われている（`selected === baseLength` の判定、`handleKeyDown` での switch 手前での分岐等）。**この描画上の+1特例は現在も維持している。**
 
 これは R-1 のフェーズC の時点で意図的に見送った設計判断であり、バグではない。理由：Web検索行は `prefixCommandMode` の候補一覧と通常モードの一覧の両方に共通して末尾へ付く横断的な行であり、「通常モードのみ」という R-1 のスコープに単純には収まらないため。
 
-将来この行が原因の不具合（選択がずれる、行が消える等）が疑われた場合は、まずこの+1特例の算出箇所（`App.tsx` 内の `baseLength`・`handleKeyDown` のWeb検索行分岐）を確認すること。`rows`/`resolveSelected` の仕組みには含まれていないため、`rows` 側の調査をしても見つからない。対応する場合は R-1 フェーズE（未着手）として着手する。現時点では優先度が低く保留中。
+**選択の解決だけは `994d725` で識別子ベースへ統合した。** 通常モードの選択（[selection-is-derived](#selection-is-derived) 節のレンダー中導出）が対象とする `selectionItems` に、`rows` とは別に識別子 `WEB_SEARCH_ROW_KEY`（`selectIntent.ts`）を末尾へ加えて渡すことで、Web検索行も他の行と同じ `resolveSelected` の解決対象になっている。選択のレンダー中導出への移行前は、この行の選択が `onMouseEnter`/↑↓経由の生インデックス書き込み（`setSelected(nextIndex)`）で行われていたが、生インデックスの書き込みは次のレンダーでの導出結果に打ち消されてしまうため、識別子ベースへ切り替えた（`selectRowByKeyboard(WEB_SEARCH_ROW_KEY)`／`onSelectRowByKey(WEB_SEARCH_ROW_KEY, ...)` を使う）。**ただし `prefixCommandMode` 側の候補一覧が独自に持つWeb検索行は対象外**（`prefixCommandMode` 自体が intent 方式を使わない生インデックス書き込みの旧経路のままのため、この行は従来どおり `onSelect` を使う）。
+
+将来この行が原因の不具合（選択がずれる、行が消える等）が疑われた場合は、まず描画側の+1特例の算出箇所（`App.tsx` 内の `baseLength`・`handleKeyDown` のWeb検索行分岐）と、選択解決側の `WEB_SEARCH_ROW_KEY` の扱い（`useSearch.ts` の `selectionItems` 構築箇所）の両方を確認すること。`rows` 自体には含まれていないため、`rows` 側だけを調査しても見つからない。描画を `rows` へ正式統合するかどうかの検討は、引き続き R-1 フェーズE（未着手）として扱う。現時点では優先度が低く保留中。
 
 <a id="hover-suppression"></a>
 
@@ -338,6 +348,8 @@ useEffect(() => { if (resetWhen !== undefined) reset(); }, [resetWhen, reset]);
 2. 検索ディスパッチ本体（`searchBusyRef` を立てる本来の処理）は通常の `useEffect` であり、同一コミット内では `useLayoutEffect` より後に実行されるため、選択解決用 `useLayoutEffect` の初回実行時点では `searchBusyRef.current` がまだ `false` のまま（＝検索が実行中であることをまだ検知できない）という React のコミット順序上の制約があった。選択解決用 `useLayoutEffect` より前に宣言した専用の `useLayoutEffect` で `searchBusyRef` を先に立てることで解消した（`useLayoutEffect` 同士は宣言順に実行されるため、これが選択解決用より確実に先に走る。`startSearchBusy` 自身が多重起動防止のガードを持つため、後続の検索ディスパッチ側の呼び出しと二重にはならない）。
 
 **再発防止の検証項目**：通常検索で、ピン止め行など非先頭の行を選択した状態から検索文字列を変更する操作を複数回行い、最新結果への置換が完了するまでの間、無関係な行（変更前のクエリに対する保持結果の先頭等）が一瞬でも選択・ハイライトされないことを確認する。あわせて、置換完了時点で識別子が新しい一覧に存在する場合は選択が維持され、存在しない場合は先頭の選択可能項目へ移ることを確認する。
+
+**この節は過去の中間設計の記録である。** 上記「対応」（`searchBusyRef`＋`-1`フォールバック、選択解決用`useLayoutEffect`より前に宣言した早期`useLayoutEffect`）は、この節の時点ではちらつきを解消しなかった（`8719d50`のホバー抑止修正後も残存が確認された）。根本原因は本節の対応でも解消しきれておらず、`rows`（レンダー中確定）と`selected`（コミット後事後確定）が別コミットで確定するという構造そのものにあると判明し、`994d725`で選択をレンダー中の導出へ置き換える構造改修に至った。現在の設計は[selection-is-derived](#selection-is-derived)・[fallback-unsafe-across-structural-change](#fallback-unsafe-across-structural-change)を参照。上記「直接原因」「対応」中の`searchBusyRef`／`-1`／早期`useLayoutEffect`は、いずれも`994d725`で撤去され現在は存在しない実装であり、現在の設計ではない。
 
 ## 今後の指針
 
