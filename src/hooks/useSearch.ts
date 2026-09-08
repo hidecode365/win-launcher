@@ -1030,7 +1030,28 @@ export function useSearch(
   // resultsQueryRef は setResults と同じPromiseコールバック内で同期更新するため、
   // レンダー中に読んでも「そのレンダーが反映している results が実際にどの query の
   // ものか」を正確に表す。
-  const resultsFreshForCurrentQuery = resultsQueryRef.current === query;
+  //
+  // issue 0030 400工程追加調査（/recentへのピン止めブロック混入）：clipboardMode・
+  // recentMode・favoriteMode・pathPasteWizardModeは、通常検索コンテキストを離れる
+  // 際にabandonSearchOnModeExit()を呼ぶだけでresultsQueryRefを更新しない（実際の
+  // search_files呼び出し自体を発行しないため）。このため、pinnedVisibleがtrue→false
+  // に変化した直後にこれらのモードへ直接遷移すると、resultsQueryRef.currentが新しい
+  // queryへ一致することが金輪際なく、クロッシングが永久に解決しない。特にrecentMode
+  // はrows/ResultListを通常検索と共有描画する（recentResultsをresultsへ同期的に
+  // コピーするだけで、resultsQueryRefは更新しない）ため、displayedPinnedVisibleが
+  // trueのまま固着すると、ピン止めブロックが`/recent`へ表示され続ける不具合になる
+  // （PO実機報告）。これら4モード中は実行中の通常検索自体が存在しないため、
+  // 「結果の鮮度を待つ」ゲート自体が意味を持たない。無条件で鮮度ありとして扱い、
+  // pinnedVisible（これら4モードでは常にfalse）へ即座に追従させる。
+  // prefixCommandModeはこの時点でまだ宣言されていない（下方の
+  // prefixCommandCandidates依存の算出）ため対象に含めていない。ResultList.tsxは
+  // prefixCommandMode中はrows.mapへ分岐せず描画しないため可視的な影響は無く、
+  // 通常検索へ戻った時点で実際のsearch_files発行によりresultsQueryRefが追いつき
+  // 自然に解決する（意図的な対象外）。
+  const inNonFileSearchMode =
+    clipboardMode || recentMode || favoriteMode || pathPasteWizardMode;
+  const resultsFreshForCurrentQuery =
+    inNonFileSearchMode || resultsQueryRef.current === query;
   let displayedPinnedVisible = displayedPinnedVisibleState;
   if (displayedPinnedVisibleState !== pinnedVisible) {
     if (pinnedVisible) {

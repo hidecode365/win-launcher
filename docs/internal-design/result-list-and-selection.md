@@ -351,6 +351,24 @@ useEffect(() => { if (resetWhen !== undefined) reset(); }, [resetWhen, reset]);
 
 **この節は過去の中間設計の記録である。** 上記「対応」（`searchBusyRef`＋`-1`フォールバック、選択解決用`useLayoutEffect`より前に宣言した早期`useLayoutEffect`）は、この節の時点ではちらつきを解消しなかった（`8719d50`のホバー抑止修正後も残存が確認された）。根本原因は本節の対応でも解消しきれておらず、`rows`（レンダー中確定）と`selected`（コミット後事後確定）が別コミットで確定するという構造そのものにあると判明し、`994d725`で選択をレンダー中の導出へ置き換える構造改修に至った。現在の設計は[selection-is-derived](#selection-is-derived)・[fallback-unsafe-across-structural-change](#fallback-unsafe-across-structural-change)を参照。上記「直接原因」「対応」中の`searchBusyRef`／`-1`／早期`useLayoutEffect`は、いずれも`994d725`で撤去され現在は存在しない実装であり、現在の設計ではない。
 
+<a id="pinned-block-leak-into-special-mode"></a>
+
+### `/recent` へピン止めブロックが混入したまま消えない（issue 0030 400工程追加調査）
+
+**症状**：ピン止めブロックが表示されている通常検索の空クエリ画面から `/recent` へ直接遷移すると、ピン止めブロックが独立したセクションとして `/recent` の一覧内に残り続け、消えない（各行のピン留め済みアイコン自体の表示は正しい。混入するのは行アイコンではなく `kind: "pinned"` の独立ブロックの方）。
+
+**直接原因**：`displayedPinnedVisible`（[fallback-unsafe-across-structural-change](#fallback-unsafe-across-structural-change)を参照）の「絞り込み確定」判定は `resultsQueryRef.current === query` を鮮度ゲートとして使う。`resultsQueryRef.current` は通常のファイル検索（`search_files`）のPromiseコールバック内でのみ更新される。ところが `clipboardMode`・`recentMode`・`favoriteMode`・`pathPasteWizardMode` は、通常検索コンテキストを離れる際に `abandonSearchOnModeExit()`（`searchQueueRef`のクリア・`searchBusyRef`の解除のみ行い、`resultsQueryRef`には触れない）を呼んで即座に `return` し、実際の `search_files` 呼び出し自体を一切発行しない。したがって、ピン止めブロックが表示された状態（`pinnedVisible: true`）から直接これら4モードへ遷移すると、`pinnedVisible` は即座に `false` になるのに `resultsQueryRef.current` は新しい `query` へ永遠に一致せず、クロッシングが解決しないまま `displayedPinnedVisible` が `true` に固着する。
+
+`recentMode` は `rows`／`ResultList.tsx` を通常検索と共有描画し（`recentResults` を同期的に `results` へコピーするだけで独自の一覧コンポーネントを持たない）、`rows` は `displayedPinnedVisible` を無条件に信頼してピン止め行を組み込むため、この固着が `/recent` 画面上でそのまま可視化される。他の3モード（`clipboardMode`／`favoriteMode`／`pathPasteWizardMode`）は `rows` を描画に使わない専用コンポーネント（`ClipboardPanel`／`FavoriteListPanel`／`PathPasteWizard`）を持つため、同じ固着が起きても画面上には現れない（横並び調査で確認済み）。ただし、これらのモードから通常検索へ戻った直後、新しいクエリに対する実際の `search_files` が完了するまでの間は理論上同種の固着が残っており、稀に一瞬だけピン止めブロックが誤って残る／消えるフラッシュを起こしうる（`resultsQueryRef` が実際の検索で更新され次第、自然に解決する一過性の事象であり、`recentMode` のような永続的な混入ではない）。
+
+**横並び調査**：`displayedPinnedVisible`／`pinnedVisible` を参照する箇所を全数確認したところ、`ResultList.tsx`（`rows` の描画）・`useSearch.ts` 内の `rows` `useMemo`・ピン止め操作系コールバック（`togglePin` 等）以外に参照は無く、他コンポーネント（`ClipboardPanel.tsx`／`FavoriteListPanel`／`MemoManageView.tsx`／`PathPasteWizard.tsx`／OCR画面）はいずれもこれらの値を参照しないことを確認した（`grep`で機械的に確認）。したがって可視的な症状は `rows` を共有描画する `/recent` に限定される。
+
+**対応**：`resultsFreshForCurrentQuery` の算出に、`clipboardMode`／`recentMode`／`favoriteMode`／`pathPasteWizardMode`（いずれか一つでも真なら）を無条件に「鮮度あり」とみなす分岐を追加した（`useSearch.ts`）。これら4モード中は実行中の通常検索自体が存在しないため、「結果の鮮度を待つ」ゲートの前提が最初から成立しない。`prefixCommandMode` は同種の早期return構造を持つが、宣言順の都合（`prefixCommandCandidates` 依存で本行より後に算出される）でこの分岐には含めていない。`rows` を描画に使わないため可視的な影響が無く、通常検索へ戻った時点で自然に解決するため、対象外とする判断自体は意図的である。
+
+既存の「ピン止めブロックは通常検索の空クエリだけで表示する」契約・`/recent`行のピンアイコン・トグル・最近順・重複判定・通常検索側のクロッシング動作はいずれも変更していない。
+
+**再発防止の検証項目**：ピン止め済み項目がある状態で、①通常検索の空クエリ画面（ピン止めブロック表示中）から `/recent` へ直接遷移し、ピン止め専用ブロックが表示されないこと、②同じ遷移をクリップボード履歴・お気に入り画面・パス貼り付けウィザードへの遷移でも行い、遷移先に無関係な混入が無いこと、③`/recent`から通常検索の空クエリへ戻った際にピン止めブロックが正しく再表示されることを確認する。
+
 ## 今後の指針
 
 - `selected` に相当する値を新設する場合、書き込み可能な state にしない。「意図」と「現在の候補一覧」から導出する設計を優先する
@@ -361,3 +379,4 @@ useEffect(() => { if (resetWhen !== undefined) reset(); }, [resetWhen, reset]);
 - 結果行のルート要素は `<div role="button">` のまま維持し、`<button>` に戻さない。新しい操作ボタンを行に追加する場合はこの構造の上に乗せる。**この規約は `ResultList.tsx` の `rows.map` 由来の行に限らず、選択可能な一覧行を描画するコンポーネント全て（プレフィックスコマンド候補・Web検索行・パス貼り付けウィザードのフォルダ選択候補・クリップボード履歴一覧等）に適用する**（[row-focus-retention-bug](#row-focus-retention-bug) を参照）。新しい一覧・候補リストを追加する場合、行が複数の内部操作ボタンやドラッグ&ドロップ等の個別事情を持たないなら、まず共通ラッパー `SelectableRow`（[selectable-row-wrapper](#selectable-row-wrapper)）が使えないか検討し、使えない場合のみ `<div role="button">` を直接書く
 - 結果行に区切り線（`border-b`/`border-t`）は使わない。区切りが必要になった場合は背景色差のみで表現する
 - 一覧・ツリーの行操作（開閉トグル・リネーム開始等）を window レベルの `keydown` リスナーでEnterを処理する画面を新設する場合、`event.target instanceof HTMLButtonElement` の間はガードして行操作を発火させない。行内・ヘッダーの操作ボタン（`IconSlot` 等）へTabでフォーカスした状態のEnterは、ボタン自身の `click`（ブラウザ標準の確定経路）に一本化し、window レベル側と二重発火させない（[window-level-enter-vs-focused-button-bug](#window-level-enter-vs-focused-button-bug)を参照）
+- ある非同期処理（`search_files`等）の完了時にしか更新されない「鮮度シグナル」（`resultsQueryRef`等）を、他の表示状態（`displayedPinnedVisible`等）の確定ゲートとして使う場合、その非同期処理自体を発行しないモード・分岐（`abandonSearchOnModeExit`のような早期returnを含む）でそのシグナルがどう振る舞うかを必ず個別に確認すること。「その非同期処理が原理的に発生しない状況」では鮮度ゲートが永久に満たされず、ゲートに依存する表示が固着したまま残る（[pinned-block-leak-into-special-mode](#pinned-block-leak-into-special-mode)を参照）。新しいモード・早期returnを追加する際は、既存の鮮度ゲートを一覧化し、そのモード中は「ゲートを無条件で満たす」か「そもそもゲート付きの表示に到達しない」かのいずれかを確認する
