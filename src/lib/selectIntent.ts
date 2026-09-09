@@ -47,3 +47,8 @@ export const SELECT_INTENT_TIMEOUT_MS = 1000;
 // 再実行されず生の書き込みが生き残っていた）。この識別子を選択対象一覧の末尾へ
 // 加えることで、Web検索行も他の行と同じ resolveSelected の解決対象になる。
 export const WEB_SEARCH_ROW_KEY = "webSearch";
+
+// 検索上限到達時の非選択案内行（issue 0031）の識別子。Web検索行（rowsに含まれない
+// ものを選択対象一覧へ加える例外）とは逆方向の例外で、この行は rows（表示用配列）
+// には含まれるが、選択対象一覧（selectionItems）には決して含めない。
+export const SEARCH_TRUNCATED_NOTICE_KEY = "searchTruncatedNotice";

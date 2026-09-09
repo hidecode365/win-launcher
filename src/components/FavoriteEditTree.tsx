@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
+import { useVisibleRangeIconFetch } from "../hooks/useVisibleRangeIconFetch";
+import { SHELL_ICON_LOOKAHEAD } from "../hooks/useShellIconCache";
 import {
   computeTreeMoveTarget,
   dropPositionFromRatio,
@@ -383,6 +385,8 @@ export function FavoriteEditTree({
   onStartCreateFolder,
   onCancelCreateFolder,
   onLaunchFile,
+  getShellIcon,
+  requestShellIcons,
 }: {
   tree: FavoriteEditTreeRow[];
   // tree 上の選択インデックス。フォルダ見出し行・アイテム行のいずれも対象
@@ -429,8 +433,24 @@ export function FavoriteEditTree({
   // 起動する（ダブルクリック＝リネームと約200〜250msで判別する。下記
   // CLICK_LAUNCH_DELAY_MS・pendingClickTimerRef を参照）。
   onLaunchFile: (path: string) => void;
+  // issue 0031：Shellアイコンの表示範囲優先取得（ResultList.tsx と共有するキャッシュ）。
+  getShellIcon: (path: string) => string | null | undefined;
+  requestShellIcons: (paths: string[]) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // issue 0031：表示中の行＋直後8行のパスだけをアイコン取得キューへ渡す。
+  // アイコンを持つのは item 行（ファイル）のみ（folder 行はアイコン不要）。
+  useVisibleRangeIconFetch(
+    containerRef,
+    tree.length,
+    (index) => {
+      const row = tree[index];
+      if (!row || row.kind !== "item") return null;
+      return row.file.path;
+    },
+    requestShellIcons,
+    SHELL_ICON_LOOKAHEAD
+  );
   // シングルクリックでの起動予約タイマー（ダブルクリックで取り消す）。
   const pendingClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -790,9 +810,9 @@ export function FavoriteEditTree({
                     !row.exists ? "opacity-50" : ""
                   }`}
                 >
-                  {item.icon ? (
+                  {getShellIcon(item.path) ?? item.icon ? (
                     <img
-                      src={item.icon}
+                      src={getShellIcon(item.path) ?? item.icon ?? undefined}
                       alt=""
                       className={CONTENT_ROW_ICON_CLASS}
                     />

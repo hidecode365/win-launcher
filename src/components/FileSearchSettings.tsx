@@ -3,6 +3,7 @@ import { FolderDetailSettings, FolderEntry } from "../types";
 import { useTruncatedPath } from "../hooks/useTruncatedPath";
 import { useSettingsDraft } from "../hooks/useSettingsDraft";
 import { FeatureToggle } from "./FeatureToggle";
+import { FolderChevron } from "./FavoriteTreeVisuals";
 import { FolderDetailSettingsModal } from "./FolderDetailSettingsModal";
 import { FolderInfoModal } from "./FolderInfoModal";
 import { SettingsGroup } from "./SettingsGroup";
@@ -85,6 +86,10 @@ export function FileSearchSettings({
   const [maxResultsInput, setMaxResultsInput, maxResultsDirty] =
     useSettingsDraft(String(searchMaxResults));
   const [maxResultsError, setMaxResultsError] = useState<string | null>(null);
+  // issue 0031：検索上限件数は通常利用の画面から詳細設定へ隠す（要件定義05
+  // 「「検索上限件数」欄は、初期状態で閉じた「詳細設定」内に配置する」）。開閉状態は
+  // タブ切替のたびに閉じた状態へ戻ってよい一時的なUI状態のため、永続化しない。
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const handleMaxResultsChange = (value: string) => {
     setMaxResultsInput(value);
@@ -170,23 +175,35 @@ export function FileSearchSettings({
       />
       <SettingsIndent className="flex-1 flex flex-col min-h-0">
         <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">検索上限件数</div>
-          <input
-            type="number"
-            min={1}
-            max={200}
-            value={maxResultsInput}
-            onChange={(e) => handleMaxResultsChange(e.target.value)}
-            className={draftInputClassName(maxResultsDirty)}
-          />
-          <div className="text-xs text-gray-400 mt-1">1〜200件</div>
-          <div className="mt-2">
-            <SettingsSaveBar
-              isDirty={maxResultsDirty}
-              onSave={handleSaveMaxResults}
-              error={maxResultsError}
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((prev) => !prev)}
+            className="flex items-center gap-1 text-sm font-medium text-gray-700"
+          >
+            <FolderChevron collapsed={!advancedOpen} />
+            詳細設定
+          </button>
+          {advancedOpen && (
+            <div className="mt-2 ml-5">
+              <div className="text-sm font-medium text-gray-800 mb-1">検索上限件数</div>
+              <input
+                type="number"
+                min={1}
+                max={400}
+                value={maxResultsInput}
+                onChange={(e) => handleMaxResultsChange(e.target.value)}
+                className={draftInputClassName(maxResultsDirty)}
+              />
+              <div className="text-xs text-gray-400 mt-1">デフォルト100件・1〜400件</div>
+              <div className="mt-2">
+                <SettingsSaveBar
+                  isDirty={maxResultsDirty}
+                  onSave={handleSaveMaxResults}
+                  error={maxResultsError}
+                />
+              </div>
+            </div>
+          )}
         </div>
         <SettingsGroup
           title="検索フォルダ"

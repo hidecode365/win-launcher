@@ -40,11 +40,15 @@ const DEFAULT_MEMO_KEYWORD: &str = "memo";
 const DEFAULT_RECENT_MAX_AGE_DAYS: u32 = 180;
 const DEFAULT_RECENT_MAX_RESULTS: u32 = 50;
 const CLIPBOARD_THUMBNAIL_MAX_WIDTH: u32 = 320;
-// 通常ファイル検索の検索上限件数のデフォルト値（設定画面から1〜200件で変更可能。
+// 通常ファイル検索の検索上限件数のデフォルト値（設定画面から1〜400件で変更可能。
 // `AppSettings.search_max_results`）。設定ファイルに検索上限件数が未保存の場合にのみ
 // 適用する（`#[serde(default = ...)]`経由）。既存の保存済み値は、このデフォルト値の
-// 変更だけでは上書きしない（400工程レビューでデフォルトを50件から20件へ変更）。
-const DEFAULT_SEARCH_MAX_RESULTS: u32 = 20;
+// 変更だけでは上書きしない（issue 0031 200工程でデフォルトを20件から100件、許容範囲を
+// 1〜200件から1〜400件へ変更。外部設計03「ファイル検索全体設定と検索フォルダ順序」・
+// 要件定義01/05を正本とする）。
+const DEFAULT_SEARCH_MAX_RESULTS: u32 = 100;
+// 検索上限件数の許容範囲（`set_search_max_results`の検証、外部設計03参照）。
+const SEARCH_MAX_RESULTS_RANGE: std::ops::RangeInclusive<u32> = 1..=400;
 // 検索フォルダ情報ダイアログが走査する最大階層数（対象フォルダ直下を1階層目とする）。
 // これを超える構造は「20階層以上」として扱う（外部設計書「検索フォルダの並び順と
 // 情報表示」節を参照）。
@@ -319,6 +323,18 @@ struct FileEntry {
     name: String,
     path: String,
     icon: Option<String>,
+}
+
+/// issue 0031：候補収集とShellアイコン取得の分離により、`search_files`は
+/// アイコンなしの候補（`FileEntry.icon`は常に`None`）と、検索上限到達により
+/// 打ち切ったかどうかを分けて返す。アイコンは別途`get_icons_for_paths`で
+/// 表示範囲だけを対象に取得する（`external-design/06-shell-icon-performance.md`
+/// 「Shellアイコンの表示範囲優先取得」を参照）。
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SearchOutcome {
+    files: Vec<FileEntry>,
+    truncated: bool,
 }
 
 #[cfg(windows)]
@@ -1257,8 +1273,10 @@ pub(crate) fn guess_is_dir_by_extension(path: &str) -> bool {
 }
 
 /// ピン止めブロック表示用に、「ピン止め」予約フォルダ直下（`file` 型）のノードだけを
-/// `order` 順に抽出し、ファイル検索結果と同じ `FileEntry`（シェルアイコン付き）へ
-/// 変換して返す。件数上限は設けない（通常ファイル検索の最大表示件数設定とは独立させる）。
+/// `order` 順に抽出し、ファイル検索結果と同じ `FileEntry`へ変換して返す。件数上限は
+/// 設けない（通常ファイル検索の最大表示件数設定とは独立させる）。issue 0031：
+/// Shellアイコンはここでは取得しない（`icon`は常に`None`）。表示範囲のアイコンは
+/// `get_icons_for_paths`で別途取得する。
 #[tauri::command]
 fn get_pinned_files(app: AppHandle) -> Vec<FileEntry> {
     let mut pinned: Vec<FavoriteNode> = load_favorites(&app)
@@ -1266,20 +1284,12 @@ fn get_pinned_files(app: AppHandle) -> Vec<FileEntry> {
         .filter(|f| f.parent_id == PINNED_FOLDER_ID && f.node_type == FavoriteNodeType::File)
         .collect();
     pinned.sort_by_key(|f| f.order);
-    let mut drive_cache = shell_icon::DriveTypeCache::new();
     pinned
         .into_iter()
-        .map(|f| {
-            let icon = shell_icon::resolve_icon(
-                &f.value,
-                guess_is_dir_by_extension(&f.value),
-                &mut drive_cache,
-            );
-            FileEntry {
-                name: f.name,
-                path: f.value,
-                icon,
-            }
+        .map(|f| FileEntry {
+            name: f.name,
+            path: f.value,
+            icon: None,
         })
         .collect()
 }
@@ -2234,8 +2244,8 @@ fn set_file_search_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings,
 
 #[tauri::command]
 fn set_search_max_results(app: AppHandle, max_results: u32) -> Result<AppSettings, String> {
-    if !(1..=200).contains(&max_results) {
-        return Err("1件以上200件以下の整数を指定してください".to_string());
+    if !SEARCH_MAX_RESULTS_RANGE.contains(&max_results) {
+        return Err("1件以上400件以下の整数を指定してください".to_string());
     }
     let mut settings = load_app_settings(&app);
     settings.search_max_results = max_results;
@@ -2927,19 +2937,21 @@ fn paste_clipboard_image(id: String, cache: tauri::State<ClipboardImageCache>) -
 ///
 /// `generation` は呼び出し元（フロントエンド）が発行する世代番号。実行開始時点で
 /// `SEARCH_GENERATION` へ設定（＝自分を最新として宣言）したうえで、検索フォルダの
-/// 処理前後・フォルダ走査中の各エントリの処理境界・Shellアイコン取得前後・結果への
-/// 追加前の各所で `SEARCH_GENERATION` と一致するかを確認する。新しい世代が割り込んで
-/// いた場合はその時点で残りの処理を行わず終了する（cooperative cancellation。詳細は
+/// 処理前後・フォルダ走査中の各エントリの処理境界の各所で `SEARCH_GENERATION` と
+/// 一致するかを確認する。新しい世代が割り込んでいた場合はその時点で残りの処理を
+/// 行わず終了する（cooperative cancellation。詳細は
 /// `external-design/05-file-search-and-shell-icons.md#file-search-loading-state` を参照）。
-/// 開始済みの同期I/O（`WalkDir`の1エントリ分の読み取り・Shellアイコン取得）自体は
-/// 強制停止しない。
+/// 開始済みの同期I/O（`WalkDir`の1エントリ分の読み取り）自体は強制停止しない。
+/// issue 0031：Shellアイコン取得はこの関数から分離した（`icon`は常に`None`を返す）。
+/// アイコン取得の世代管理・破棄はフロントエンド側（表示範囲アイコン取得のキュー）が
+/// 別途担う（`external-design/06-shell-icon-performance.md`を参照）。
 #[tauri::command]
 fn search_files(
     app: AppHandle,
     generation: u64,
     query: String,
     exclude_paths: Vec<String>,
-) -> Vec<FileEntry> {
+) -> SearchOutcome {
     SEARCH_GENERATION.set(generation);
 
     let settings = load_app_settings(&app);
@@ -2951,15 +2963,18 @@ fn search_files(
         .collect();
 
     let mut results = Vec::new();
+    let mut truncated = false;
     if enabled_dirs.is_empty() {
-        return results;
+        return SearchOutcome { files: results, truncated };
     }
 
     let exclude_set: HashSet<String> = exclude_paths.into_iter().collect();
     let query_lower = query.to_lowercase();
-    let mut drive_cache = shell_icon::DriveTypeCache::new();
 
-    'outer: for dir in &enabled_dirs {
+    // issue 0031：候補収集からShellアイコン取得を分離した（アイコンは
+    // `get_icons_for_paths`で表示範囲だけを別途取得する）ため、ここでは
+    // `DriveTypeCache`を持たない（アイコン解決を行わないため不要）。
+    'outer: for (dir_index, dir) in enabled_dirs.iter().enumerate() {
         if !SEARCH_GENERATION.is_current(generation) {
             break 'outer;
         }
@@ -3004,27 +3019,38 @@ fn search_files(
             if query_lower.is_empty() || name.to_lowercase().contains(&query_lower) {
                 let path = entry.path().to_string_lossy().to_string();
                 // ピン止め済みパスの除外（呼び出し元がクエリ空時のみ渡す。詳細は
-                // 関数doc・「ピン止め・お気に入り・メモ機能」節を参照）。アイコン取得
-                // （比較的コストのある処理）より前に判定し、除外対象では行わない。
+                // 関数doc・「ピン止め・お気に入り・メモ機能」節を参照）。
                 if exclude_set.contains(&path) {
                     continue;
                 }
-                if !SEARCH_GENERATION.is_current(generation) {
-                    break 'outer;
-                }
-                let icon = shell_icon::resolve_icon(&path, is_dir, &mut drive_cache);
-                if !SEARCH_GENERATION.is_current(generation) {
-                    break 'outer;
-                }
-                results.push(FileEntry { name, path, icon });
                 if results.len() >= max_results {
+                    // issue 0031 検索打ち切り案内行のB近似：現在の検索フォルダの
+                    // 残りエントリの範囲内で、既存の一致判定だけを使って(N+1)件目に
+                    // 該当する候補の有無を確認する（一覧へは追加せず、アイコンも
+                    // 取得しない）。見つかった時点で打ち切り状態が確定するため、
+                    // 後続の検索フォルダへは進まない（DESIGN_LOG.md
+                    // 「検索打ち切り案内行」を参照）。
+                    truncated = true;
                     break 'outer;
                 }
+                if !SEARCH_GENERATION.is_current(generation) {
+                    break 'outer;
+                }
+                results.push(FileEntry { name, path, icon: None });
             }
+        }
+        // 現在の検索フォルダを使い切った時点で既に上限に達している場合、B近似の
+        // 後半：後続の検索フォルダが設定上残っているかどうかだけを確認する
+        // （ファイルシステムへは一切触れない）。残っていれば打ち切りとみなし
+        // （誤検知の可能性を許容する近似）、これが最後の有効フォルダであれば
+        // 打ち切りではないと確定できる。
+        if results.len() >= max_results && dir_index + 1 < enabled_dirs.len() {
+            truncated = true;
+            break 'outer;
         }
     }
 
-    results
+    SearchOutcome { files: results, truncated }
 }
 
 /// `cmd /C start "" <path>` は cmd.exe が `/C` 以降の引数を連結して1つの

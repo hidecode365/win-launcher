@@ -1,7 +1,17 @@
 export interface FileEntry {
   name: string;
   path: string;
+  // issue 0031：Shellアイコン取得を候補収集から分離したため、`search_files`・
+  // `get_pinned_files`・`get_recent_files`はいずれも常に`null`を返す。実際の
+  // アイコンは`get_icons_for_paths`（表示範囲分だけ）で別途取得する。
   icon: string | null;
+}
+
+// Rust の `search_files` コマンドの戻り値（issue 0031）。候補一覧と、検索上限件数に
+// 到達し後続の検索対象を走査せず打ち切ったかどうかを分けて返す。
+export interface SearchOutcome {
+  files: FileEntry[];
+  truncated: boolean;
 }
 
 // Rust の `get_recent_files` コマンドの戻り値。path は .lnk 由来ならリンク先の
@@ -187,7 +197,9 @@ export interface AppSettings {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   hotkey: "Alt+Space",
   fileSearchEnabled: true,
-  searchMaxResults: 50,
+  // issue 0031：Rust側 DEFAULT_SEARCH_MAX_RESULTS と揃える（実際に適用される
+  // デフォルト値はRust側が正本。ここは実設定が届くまでの初期表示用フォールバック）。
+  searchMaxResults: 100,
   calcEnabled: true,
   systemCommandEnabled: true,
   shutdownKeyword: "shutdown",
@@ -316,7 +328,11 @@ export type ResultRow =
   | { kind: "pathPasteFavorite"; key: string; candidate: PastedPathInfo; favorited: boolean }
   | { kind: "calc"; key: string; result: string }
   | { kind: "urlConvert"; key: string; result: UrlConvertResult }
-  | { kind: "file"; key: string; file: FileEntry; pinned: boolean; favorited: boolean };
+  | { kind: "file"; key: string; file: FileEntry; pinned: boolean; favorited: boolean }
+  // issue 0031：検索上限到達時の非選択案内行。rows の末尾（ファイル検索結果の
+  // さらに後ろ）にだけ現れる。選択・Enter・ホバー・件数カウントの対象外
+  // （外部設計02「非選択の情報行」・05「検索上限到達時の案内行」を参照）。
+  | { kind: "searchTruncatedNotice"; key: string; limit: number };
 
 // `/favorite` モードの一覧の1行分。フォルダ見出し行（folder）とアイテム行（item）の
 // 判別可能 Union（詳細は 00-requirements.md「お気に入り機能」節「/favorite モード」・

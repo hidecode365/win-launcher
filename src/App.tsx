@@ -1073,6 +1073,9 @@ export default function App() {
   // 検索画面のResultList・SearchBoxのキー操作は search.favoriteMode が真の
   // 状態では描画・実行されない（旧・検索画面内の閲覧専用パネルは撤去済み）。
   // そのため以下の各値・分岐から search.favoriteMode 依存の枝は取り除いている。
+  // issue 0031：通常モードでは search.rows.length ではなく
+  // search.selectableRowsCount を使う（末尾の検索上限到達案内行は選択対象でも
+  // Web検索行の位置計算の基準でもないため、含めない）。
   const baseLength = search.clipboardMode
     ? clipboard.clipboardEntries.length
     : search.prefixCommandMode
@@ -1081,7 +1084,7 @@ export default function App() {
         ? search.wizardStep === "folderSelect"
           ? search.wizardFolders.length
           : 0
-        : search.rows.length;
+        : search.selectableRowsCount;
   // Web検索行の表示条件は useSearch.ts 側で算出する（選択のレンダー導出がこの条件を
   // 必要とするため。同じ述語をここでも組み立てると二重管理になる）。
   const webSearchVisible = search.webSearchVisible;
@@ -1399,6 +1402,8 @@ export default function App() {
           onClose={closeFavoriteEdit}
           onOpenSettings={openSettings}
           version={appVersion}
+          getShellIcon={search.getShellIcon}
+          requestShellIcons={search.requestShellIcons}
         />
       </>
     );
@@ -1478,6 +1483,8 @@ export default function App() {
           onLaunchFile: search.launchFile,
           onOpenWebSearch: search.openWebSearch,
           onCopyUrlConvertResult: search.copyUrlConvertResult,
+          getShellIcon: search.getShellIcon,
+          requestShellIcons: search.requestShellIcons,
         }}
         selectionAvailable={baseLength > 0}
         onClose={closeRecentEdit}
@@ -1606,6 +1613,8 @@ export default function App() {
           onLaunchFile={search.launchFile}
           onOpenWebSearch={search.openWebSearch}
           onCopyUrlConvertResult={search.copyUrlConvertResult}
+          getShellIcon={search.getShellIcon}
+          requestShellIcons={search.requestShellIcons}
         />
       )}
 

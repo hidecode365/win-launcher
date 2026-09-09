@@ -2,6 +2,8 @@ import { useRef } from "react";
 import { formatWithCommas } from "../lib/format";
 import { logUiEvent } from "../lib/uiDebugLog";
 import { useScrollSelectedIntoView } from "../hooks/useScrollSelectedIntoView";
+import { useVisibleRangeIconFetch } from "../hooks/useVisibleRangeIconFetch";
+import { SHELL_ICON_LOOKAHEAD } from "../hooks/useShellIconCache";
 import { WEB_SEARCH_ROW_KEY } from "../lib/selectIntent";
 import { Tooltip } from "./Tooltip";
 import { SelectableRow } from "./SelectableRow";
@@ -66,6 +68,8 @@ export function ResultList({
   onLaunchFile,
   onOpenWebSearch,
   onCopyUrlConvertResult,
+  getShellIcon,
+  requestShellIcons,
 }: {
   // 通常モード（prefixCommandMode を除く）の結果一覧。並び順の正本は
   // useSearch.ts の rows（詳細は CLAUDE.md「結果行のフラット配列化（R-1）」節を
@@ -105,10 +109,34 @@ export function ResultList({
   onLaunchFile: (path: string) => void;
   onOpenWebSearch: (query: string) => void;
   onCopyUrlConvertResult: (text: string) => void;
+  // issue 0031：Shellアイコンの表示範囲優先取得（共有キャッシュ。useSearch.ts の
+  // shellIconCache をそのまま受け取る）。
+  getShellIcon: (path: string) => string | null | undefined;
+  requestShellIcons: (paths: string[]) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useScrollSelectedIntoView(containerRef, selected);
   const dragFromIndexRef = useRef<number | null>(null);
+
+  // issue 0031：表示中の行＋直後8行のパスだけをアイコン取得キューへ渡す。
+  // アイコンを持つのは pinned/file 行のみ（他の行種別は候補ではなくファイル
+  // パスを持たない）。
+  // prefixCommandMode中はrows自体を描画しない（候補一覧はShellアイコンを
+  // 使わない固定SVGのため、そもそも取得不要）。itemCountを0にしてhookを
+  // 無効化する（実際にDOM上へ描画されている[data-index]要素と rows の対応が
+  // 崩れている状態で誤ったパスを要求しないようにするため）。
+  useVisibleRangeIconFetch(
+    containerRef,
+    prefixCommandMode ? 0 : rows.length,
+    (index) => {
+      const row = rows[index];
+      if (!row) return null;
+      if (row.kind === "pinned" || row.kind === "file") return row.file.path;
+      return null;
+    },
+    requestShellIcons,
+    SHELL_ICON_LOOKAHEAD
+  );
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto">
@@ -245,9 +273,9 @@ export function ResultList({
                         !exists ? "opacity-50" : ""
                       }`}
                     >
-                      {item.icon ? (
+                      {getShellIcon(item.path) ?? item.icon ? (
                         <img
-                          src={item.icon}
+                          src={getShellIcon(item.path) ?? item.icon ?? undefined}
                           alt=""
                           className="w-4 h-4 mr-3 flex-shrink-0"
                         />
@@ -548,9 +576,9 @@ export function ResultList({
                     {/* ピン止めブロックのドラッグハンドルと横位置を揃えるための空スペーサー
                         （このモードでは描画しない）。 */}
                     {pinIconVisible && <span className={DRAG_HANDLE_GUTTER_CLASS} />}
-                    {item.icon ? (
+                    {getShellIcon(item.path) ?? item.icon ? (
                       <img
-                        src={item.icon}
+                        src={getShellIcon(item.path) ?? item.icon ?? undefined}
                         alt=""
                         className="w-4 h-4 mr-3 flex-shrink-0"
                       />
@@ -606,6 +634,21 @@ export function ResultList({
                         />
                       )}
                     </div>
+                  </div>
+                );
+              }
+              // issue 0031：検索上限到達時の非選択案内行。件数・選択・ホバー・
+              // Enter/クリックの対象にせず、Shellアイコンも取得しない
+              // （data-index は他行との位置整合のためだけに付け、選択解決の対象には
+              // ならない。selectableRows/selectionItems 側で既に除外済み）。
+              case "searchTruncatedNotice": {
+                return (
+                  <div
+                    key={row.key}
+                    data-index={index}
+                    className="w-full flex items-center px-4 py-2.5 text-left text-xs text-gray-400"
+                  >
+                    検索上限（{row.limit}件）に達したため、検索を打ち切りました。より多くの候補を確認するには、検索条件を絞り込んでください。
                   </div>
                 );
               }

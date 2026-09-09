@@ -19,8 +19,10 @@ import {
   SelectableItem,
   SelectIntent,
   SELECT_INTENT_TIMEOUT_MS,
+  SEARCH_TRUNCATED_NOTICE_KEY,
   WEB_SEARCH_ROW_KEY,
 } from "../lib/selectIntent";
+import { useShellIconCache } from "./useShellIconCache";
 import {
   AppSettings,
   CreateFolderResult,
@@ -38,6 +40,7 @@ import {
   RecentFile,
   RegisterFolderOption,
   ResultRow,
+  SearchOutcome,
   SystemCommand,
   UrlConvertResult,
 } from "../types";
@@ -401,6 +404,17 @@ export function useSearch(
 ) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FileEntry[]>([]);
+  // issue 0031：直近の search_files 応答が「検索上限件数に到達し、後続の検索対象を
+  // 走査せず打ち切った」状態かどうか（B近似の判定結果。DESIGN_LOG.md「検索打ち切り
+  // 案内行」を参照）。results と同じタイミングでのみ更新し、他のモードでは意味を
+  // 持たないため rows 構築時に通常検索ドメインに限定して参照する。
+  const [searchTruncated, setSearchTruncated] = useState(false);
+
+  // issue 0031：通常検索・ピン止め・お気に入り・`/recent`の4経路が共有する
+  // Shellアイコン取得キャッシュ（表示範囲優先取得）。詳細はフック自身の宣言コメントを
+  // 参照。`shellIconCache`自体は他のstateと異なりレンダー間で共有される単一の
+  // インスタンスであればよいため、依存配列へは含めない。
+  const shellIconCache = useShellIconCache();
   // selectedRaw は「直前のレンダーで確定した選択インデックス」を保持する state。
   // 画面へ渡す最終的な selected は、rows/intent からレンダー中に導出する
   // （導出箇所は rows の useMemo 直後。理由はそこのコメントを参照）。
@@ -681,23 +695,27 @@ export function useSearch(
     searchQueueRef.current = null;
     searchInFlightRef.current = true;
     const { generation, query, excludePaths } = next;
-    invoke<FileEntry[]>("search_files", { generation, query, excludePaths })
-      .then((files) => {
+    invoke<SearchOutcome>("search_files", { generation, query, excludePaths })
+      .then(({ files, truncated }) => {
         if (isLatestAsyncCall("search", generation)) {
           // 到着時点で表示中の直前結果と一括置換する（結果が空でも同様。
           // 選択識別子の維持・先頭フォールバックは rows の変化を検知する
           // 既存の useLayoutEffect が resolveSelected 経由で行う）。
           resultsQueryRef.current = query;
           setResults(sortByFrecency(files, frecency));
+          // issue 0031：空結果・エラー時は案内行を表示しない契約のため、truncated
+          // はこの成功分岐でだけ更新する（.catch側は下で常にfalseへ戻す）。
+          setSearchTruncated(truncated);
         }
       })
       .catch((err) => {
         console.error(err);
         if (isLatestAsyncCall("search", generation)) {
           // エラー時も保持結果を消去する（表1「最新世代が空結果または
-          // エラーで完了した場合は...消去する」を参照）。
+          // エラーで完了した場合は...消去する」を参照）。案内行もあわせて消す。
           resultsQueryRef.current = query;
           setResults([]);
+          setSearchTruncated(false);
         }
       })
       .finally(() => {
@@ -1114,12 +1132,11 @@ export function useSearch(
   const [favoriteExistence, setFavoriteExistence] = useState<
     Record<string, boolean>
   >({});
-  // お気に入りは通常検索・ピン止めと異なり既存のShellアイコン取得経路を持たないため、
-  // `get_icons_for_paths`（汎用バッチ取得コマンド）で別途取得する（詳細は CLAUDE.md
-  // 「Shellアイコン表示」節を参照。既存のピン止め・通常検索の経路は無理に共有しない）。
-  const [favoriteIcons, setFavoriteIcons] = useState<
-    Record<string, string | null>
-  >({});
+  // issue 0031：お気に入りのShellアイコンは、表示範囲優先取得の共有キャッシュ
+  // （shellIconCache、宣言は下方）から取得する。以前はここで`get_icons_for_paths`を
+  // ツリー全件分まとめて呼んでいたが、表示中の行だけを優先して取得する設計へ変更した
+  // ため、この一括取得は撤去した（詳細はDESIGN_LOG.md「Shellアイコンの表示範囲優先
+  // 取得と検索打ち切り案内」を参照）。
 
   // お気に入り編集ビュー専用の絞り込み文字列（軸4g）。/favorite ブラウジング側の
   // favoriteFilterText はメイン検索ボックスの query から導出される値だが、編集
@@ -1136,20 +1153,16 @@ export function useSearch(
           setRawFavoriteNodes(nodes);
           const fileNodes = nodes.filter((n) => n.type === "file");
           const paths = fileNodes.map((n) => n.value);
-          return Promise.all([
-            invoke<boolean[]>("check_paths_exist", { paths }),
-            invoke<(string | null)[]>("get_icons_for_paths", { paths }),
-          ]).then(([existsList, iconsList]) => {
-            if (!isLatestAsyncCall("favorite", callId)) return;
-            const existsMap: Record<string, boolean> = {};
-            const iconsMap: Record<string, string | null> = {};
-            fileNodes.forEach((n, i) => {
-              existsMap[n.value] = existsList[i] ?? true;
-              iconsMap[n.value] = iconsList[i] ?? null;
-            });
-            setFavoriteExistence(existsMap);
-            setFavoriteIcons(iconsMap);
-          });
+          return invoke<boolean[]>("check_paths_exist", { paths }).then(
+            (existsList) => {
+              if (!isLatestAsyncCall("favorite", callId)) return;
+              const existsMap: Record<string, boolean> = {};
+              fileNodes.forEach((n, i) => {
+                existsMap[n.value] = existsList[i] ?? true;
+              });
+              setFavoriteExistence(existsMap);
+            }
+          );
         })
         .catch((err) => {
           console.error(`[favorite] fetch failed (source=${source}):`, err);
@@ -1397,8 +1410,11 @@ export function useSearch(
           kind: "item",
           key: favoriteItemRowKey(node.id),
           node,
+          // issue 0031：iconは常にnull（構造上のプレースホルダ）。実際の表示アイコンは
+          // 描画側（FavoriteEditTree.tsx）が共有アイコンキャッシュから表示範囲分だけ
+          // 取得する。
           depth,
-          file: { name: node.name, path: node.value, icon: favoriteIcons[node.value] ?? null },
+          file: { name: node.name, path: node.value, icon: null },
           exists: favoriteExistence[node.value] ?? true,
           ...siblingEdgeInfo(node),
         });
@@ -1406,7 +1422,7 @@ export function useSearch(
       // clipboard/command 型は今回未実装のため対象外（メモ機能実装時に追加）。
     });
     return rows;
-  }, [rawFavoriteNodes, favoriteFilterText, favoriteExistence, favoriteIcons]);
+  }, [rawFavoriteNodes, favoriteFilterText, favoriteExistence]);
 
   // お気に入り編集ビュー専用の絞り込み済みツリー（軸4g）。上の favoriteTree
   // （/favorite ブラウジング用）と異なる点は2つ：
@@ -1499,7 +1515,9 @@ export function useSearch(
             key: favoriteItemRowKey(node.id),
             node,
             depth,
-            file: { name: node.name, path: node.value, icon: favoriteIcons[node.value] ?? null },
+            // issue 0031：iconは常にnull。実際の表示アイコンは描画側
+            // （FavoriteEditTree.tsx）が共有アイコンキャッシュから取得する。
+            file: { name: node.name, path: node.value, icon: null },
             exists: favoriteExistence[node.value] ?? true,
             ...siblingEdgeInfo(node),
           });
@@ -1508,7 +1526,7 @@ export function useSearch(
     };
     walk(FAVORITES_FOLDER_ID, 0, false);
     return rows;
-  }, [rawFavoriteNodes, favoriteEditFilterText, favoriteExistence, favoriteIcons]);
+  }, [rawFavoriteNodes, favoriteEditFilterText, favoriteExistence]);
 
   // favoriteTree からアイテム行のみを抜き出したもの。軸1で↑↓キーによる選択移動・
   // intent ベースの選択解決（resolveSelected）の対象一覧は favoriteTree（フォルダ
@@ -2613,6 +2631,25 @@ export function useSearch(
       });
     }
 
+    // issue 0031：検索上限到達時の非選択案内行。通常ファイル検索結果の末尾に
+    // だけ置く。`searchTruncated`はrecentMode等でも古い値を保持し続けうるため
+    // （recentModeはsearch_files自体を発行しない）、通常検索ドメイン
+    // （favoriteMode/clipboardMode/recentModeのいずれでもない）に限定する
+    // （displayedPinnedVisibleの同期処理と同種の「特殊モードへ古い値が漏れる」
+    // 問題を避けるための明示的なガード）。
+    if (
+      searchTruncated &&
+      !favoriteMode &&
+      !clipboardMode &&
+      !recentMode
+    ) {
+      list.push({
+        kind: "searchTruncatedNotice",
+        key: SEARCH_TRUNCATED_NOTICE_KEY,
+        limit: appSettings.searchMaxResults,
+      });
+    }
+
     return list;
   }, [
     displayedPinnedVisible,
@@ -2624,6 +2661,11 @@ export function useSearch(
     results,
     isPinned,
     isFavorited,
+    searchTruncated,
+    favoriteMode,
+    clipboardMode,
+    recentMode,
+    appSettings.searchMaxResults,
   ]);
 
   // R-1 フェーズD-2: 通常モード（rows）／clipboardMode（clipboardSelectionItems）
@@ -2666,13 +2708,22 @@ export function useSearch(
   // 加える（描画側の +1 特例は従来どおり。詳細は WEB_SEARCH_ROW_KEY の宣言を参照）。
   // これによりWeb検索行も他の行と同じ識別子ベースの解決対象になり、生インデックスの
   // 書き込みがレンダー導出に打ち消される問題が起きない。
+  //
+  // issue 0031：検索上限到達時の非選択案内行（kind: "searchTruncatedNotice"）は
+  // rows（表示用配列）には含まれるが、選択対象一覧からは除外する（外部設計02
+  // 「非選択の情報行」）。表示用配列の長さと選択可能項目の長さを同一視しないため、
+  // ここで rows とは別の selectableRows を作る。
+  const selectableRows =
+    rows.length > 0 && rows[rows.length - 1].kind === "searchTruncatedNotice"
+      ? rows.slice(0, -1)
+      : rows;
   const selectionItems: SelectableItem[] = favoriteMode
     ? favoriteTree
     : clipboardMode
       ? clipboardSelectionItems
       : webSearchVisible
-        ? [...rows, { key: WEB_SEARCH_ROW_KEY }]
-        : rows;
+        ? [...selectableRows, { key: WEB_SEARCH_ROW_KEY }]
+        : selectableRows;
   let selected = selectedRaw;
   if (!prefixCommandMode && !pathPasteWizardMode) {
     const normalSearchDomain = !favoriteMode && !clipboardMode && !recentMode;
@@ -2754,12 +2805,15 @@ export function useSearch(
   // 実行時に確認する。フェーズB以降で rows への移行が完了したら、このチェック自体
   // 不要になるため削除してよい。
   useEffect(() => {
+    const showTruncatedNotice =
+      searchTruncated && !favoriteMode && !clipboardMode && !recentMode;
     const expectedLength =
       (displayedPinnedVisible ? pinnedFiles.length : 0) +
       (pathPasteCandidate ? (pathPasteCandidate.isDir ? 4 : 3) : 0) +
       (calcResult !== null ? 1 : 0) +
       (urlConvertResult !== null ? 1 : 0) +
-      results.length;
+      results.length +
+      (showTruncatedNotice ? 1 : 0);
     if (rows.length !== expectedLength) {
       console.debug(
         `[rows] length mismatch: rows.length=${rows.length}, expected=${expectedLength} ` +
@@ -2775,7 +2829,20 @@ export function useSearch(
           .join(",")})`
       );
     }
-  }, [rows, pinnedVisible, displayedPinnedVisible, pinnedFiles, pathPasteCandidate, calcResult, urlConvertResult, results]);
+  }, [
+    rows,
+    pinnedVisible,
+    displayedPinnedVisible,
+    pinnedFiles,
+    pathPasteCandidate,
+    calcResult,
+    urlConvertResult,
+    results,
+    searchTruncated,
+    favoriteMode,
+    clipboardMode,
+    recentMode,
+  ]);
 
   // 検索ビュー上でSearchBoxをふさぐ/disabledにするオーバーレイstateの一覧。
   // App.tsx側の「検索ボックス再フォーカスeffect」「SearchBoxのdisabled判定」
@@ -2799,6 +2866,12 @@ export function useSearch(
     results,
     searchSpinnerVisible,
     selected,
+    // issue 0031：通常モードで「Web検索行の+1特例」等が基準にすべき、選択可能な
+    // rows の件数（末尾の検索上限到達案内行を除く）。App.tsx の baseLength はこれを
+    // 使う（rows.length をそのまま使うと案内行の分だけ1つ多く数えてしまう）。
+    selectableRowsCount: selectableRows.length,
+    getShellIcon: shellIconCache.getIcon,
+    requestShellIcons: shellIconCache.requestIcons,
     webSearchVisible,
     setSelected,
     selectFromHover,

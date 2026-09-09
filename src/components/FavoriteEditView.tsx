@@ -67,6 +67,8 @@ export function FavoriteEditView({
   onClose,
   onOpenSettings,
   version,
+  getShellIcon,
+  requestShellIcons,
 }: {
   tree: FavoriteEditTreeRow[];
   selected: number;
@@ -105,6 +107,9 @@ export function FavoriteEditView({
   onClose: () => void;
   onOpenSettings: () => void;
   version: string;
+  // issue 0031：Shellアイコンの表示範囲優先取得（ResultList.tsx と共有するキャッシュ）。
+  getShellIcon: (path: string) => string | null | undefined;
+  requestShellIcons: (paths: string[]) => void;
 }) {
   useLayoutEffect(() => {
     onRegisterLocalQueryClearHandler(() => onFilterTextChange(""));
@@ -249,6 +254,8 @@ export function FavoriteEditView({
         onStartCreateFolder={onStartCreateFolder}
         onCancelCreateFolder={onCancelCreateFolder}
         onLaunchFile={onLaunchFile}
+        getShellIcon={getShellIcon}
+        requestShellIcons={requestShellIcons}
       />
 
       <FavoriteEditFooter
