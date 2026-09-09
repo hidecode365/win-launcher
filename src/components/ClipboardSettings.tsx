@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FeatureToggle } from "./FeatureToggle";
+import { SettingsField } from "./SettingsField";
 import { SettingsIndent } from "./SettingsIndent";
 import { SettingsSaveBar } from "./SettingsSaveBar";
 import { draftInputClassName } from "./settingsFieldStyles";
@@ -71,23 +72,16 @@ export function ClipboardSettings({
         onChange={onToggle}
       />
       <SettingsIndent>
-        <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">/</span>
-            <input
-              type="text"
-              value={prefixDraft}
-              onChange={(e) => handlePrefixChange(e.target.value)}
-              className={draftInputClassName(prefixDirty)}
-            />
-          </div>
-          <div className="text-xs text-gray-400 mt-1">
-            「/」が自動的に先頭に付与されます
-          </div>
-        </div>
-        <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">最大保持件数</div>
+        <SettingsField label="呼び出しキーワード" hint="「/」が自動的に先頭に付与されます">
+          <span className="text-sm text-gray-400">/</span>
+          <input
+            type="text"
+            value={prefixDraft}
+            onChange={(e) => handlePrefixChange(e.target.value)}
+            className={draftInputClassName(prefixDirty)}
+          />
+        </SettingsField>
+        <SettingsField label="最大保持件数" hint="1〜200件">
           <input
             type="number"
             min={1}
@@ -96,8 +90,8 @@ export function ClipboardSettings({
             onChange={(e) => handleMaxItemsChange(e.target.value)}
             className={draftInputClassName(maxItemsDirty)}
           />
-          <div className="text-xs text-gray-400 mt-1">1〜200件</div>
-        </div>
+          <span className="text-sm text-gray-500">件</span>
+        </SettingsField>
         <SettingsSaveBar isDirty={isDirty} onSave={handleSave} error={error} />
       </SettingsIndent>
     </div>

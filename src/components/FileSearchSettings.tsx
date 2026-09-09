@@ -3,9 +3,9 @@ import { FolderDetailSettings, FolderEntry } from "../types";
 import { useTruncatedPath } from "../hooks/useTruncatedPath";
 import { useSettingsDraft } from "../hooks/useSettingsDraft";
 import { FeatureToggle } from "./FeatureToggle";
-import { FolderChevron } from "./FavoriteTreeVisuals";
 import { FolderDetailSettingsModal } from "./FolderDetailSettingsModal";
 import { FolderInfoModal } from "./FolderInfoModal";
+import { SettingsField } from "./SettingsField";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsIndent } from "./SettingsIndent";
 import { SettingsSaveBar } from "./SettingsSaveBar";
@@ -34,6 +34,30 @@ function FolderPathButton({
     >
       {display}
     </button>
+  );
+}
+
+// 「詳細設定」（検索上限件数）の折りたたみトグル専用のシェブロン。SettingsGroupの
+// 見出し（太字＋横罫線）ほどの視覚的な重みを持たせたくないため、SettingsGroupには
+// 統合せず、この画面専用の軽量なdisclosureとしてローカルに持つ（低頻度設定である
+// ことは「詳細設定」という名称自体で伝わるため、見出し相当の強い表現は避ける）。
+function FileSearchAdvancedChevron({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg
+      className={`w-3 h-3 flex-shrink-0 transition-transform ${
+        collapsed ? "-rotate-90" : ""
+      }`}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 9l-7 7-7-7"
+      />
+    </svg>
   );
 }
 
@@ -174,40 +198,9 @@ export function FileSearchSettings({
         onChange={onToggle}
       />
       <SettingsIndent className="flex-1 flex flex-col min-h-0">
-        <div>
-          <button
-            type="button"
-            onClick={() => setAdvancedOpen((prev) => !prev)}
-            className="flex items-center gap-1 text-sm font-medium text-gray-700"
-          >
-            <FolderChevron collapsed={!advancedOpen} />
-            詳細設定
-          </button>
-          {advancedOpen && (
-            <div className="mt-2 ml-5">
-              <div className="text-sm font-medium text-gray-800 mb-1">検索上限件数</div>
-              <input
-                type="number"
-                min={1}
-                max={400}
-                value={maxResultsInput}
-                onChange={(e) => handleMaxResultsChange(e.target.value)}
-                className={draftInputClassName(maxResultsDirty)}
-              />
-              <div className="text-xs text-gray-400 mt-1">デフォルト100件・1〜400件</div>
-              <div className="mt-2">
-                <SettingsSaveBar
-                  isDirty={maxResultsDirty}
-                  onSave={handleSaveMaxResults}
-                  error={maxResultsError}
-                />
-              </div>
-            </div>
-          )}
-        </div>
         <SettingsGroup
           title="検索フォルダ"
-          className="mt-8 flex-1 flex flex-col min-h-0"
+          className="flex-1 flex flex-col min-h-0"
           contentClassName="mt-3 flex-1 flex flex-col min-h-0 gap-2"
         >
         {/* 400工程レビューで、ウィンドウ幅に合わせて検索フォルダ領域を広げる指摘を
@@ -216,7 +209,7 @@ export function FileSearchSettings({
             よう、代わりに divide-y（下記）で行区切りを表示する。 */}
         <div className="text-xs text-gray-400">
           <div>検索ボックスに入力した条件に一致するファイル・フォルダを、検索フォルダの上から順に検索します。</div>
-          <div>「検索上限件数」に達すると検索を終了し、後続のフォルダは検索されません。優先したいフォルダを上へ並べてください。</div>
+          <div>「検索上限件数」（詳細設定）に達すると検索を終了し、後続のフォルダは検索されません。優先したいフォルダを上へ並べてください。</div>
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-gray-200/60">
           {folders.length === 0 && (
@@ -360,6 +353,50 @@ export function FileSearchSettings({
           ＋ フォルダを追加
         </button>
         </SettingsGroup>
+
+        {/* issue 0031フォローアップ：検索上限件数は低頻度設定のため、主要設定
+            （検索フォルダ）より後ろに置き、SettingsGroupの見出し（太字＋横罫線）は
+            使わない軽量なdisclosureで表現する。低頻度であることは「詳細設定」という
+            名称自体で伝わるため、独立した説明文（「通常は変更する必要はありません」等）
+            は置かない。従属関係はインデントだけで示し、区切り線・背景色は使わない
+            （settings-panel-architecture.md「縦ラインによる区切り・カード背景は
+            使わない」を参照）。 */}
+        <div className="mt-6 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((prev) => !prev)}
+            className="inline-flex items-center gap-1 rounded text-sm text-gray-500 outline-none hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-ui-focus focus-visible:ring-offset-1"
+          >
+            <FileSearchAdvancedChevron collapsed={!advancedOpen} />
+            詳細設定
+          </button>
+          {advancedOpen && (
+            <div className="mt-2 ml-4">
+              <SettingsField
+                label="検索上限件数"
+                hint="検索結果として取得する最大件数（1〜400）"
+                muted
+              >
+                <input
+                  type="number"
+                  min={1}
+                  max={400}
+                  value={maxResultsInput}
+                  onChange={(e) => handleMaxResultsChange(e.target.value)}
+                  className={draftInputClassName(maxResultsDirty)}
+                />
+                <span className="text-sm text-gray-500">件</span>
+              </SettingsField>
+              <div className="mt-2">
+                <SettingsSaveBar
+                  isDirty={maxResultsDirty}
+                  onSave={handleSaveMaxResults}
+                  error={maxResultsError}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </SettingsIndent>
 
       {pendingRemovePath && (

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ExtensionFilterMode, RecentDisplaySettings } from "../types";
 import { ExtensionFilterEditor } from "./ExtensionFilterEditor";
 import { FeatureToggle } from "./FeatureToggle";
+import { SettingsField } from "./SettingsField";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsIndent } from "./SettingsIndent";
 import { SettingsSaveBar } from "./SettingsSaveBar";
@@ -168,23 +169,19 @@ export function RecentFilesSettings({
         onChange={onToggle}
       />
       <SettingsIndent>
-        <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">/</span>
-            <input
-              type="text"
-              value={keywordDraft}
-              onChange={(e) => handleKeywordChange(e.target.value)}
-              className={draftInputClassName(keywordDirty)}
-            />
-          </div>
-          <div className="text-xs text-gray-400 mt-1">
-            「/」が自動的に先頭に付与されます
-          </div>
-        </div>
-        <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">保持期間（日）</div>
+        <SettingsField label="呼び出しキーワード" hint="「/」が自動的に先頭に付与されます">
+          <span className="text-sm text-gray-400">/</span>
+          <input
+            type="text"
+            value={keywordDraft}
+            onChange={(e) => handleKeywordChange(e.target.value)}
+            className={draftInputClassName(keywordDirty)}
+          />
+        </SettingsField>
+        <SettingsField
+          label="保持期間（日）"
+          hint="最終アクセス日時がこの日数より前のファイルは一覧に表示されません（1〜3650日）"
+        >
           <input
             type="number"
             min={1}
@@ -193,12 +190,8 @@ export function RecentFilesSettings({
             onChange={(e) => handleMaxAgeDaysChange(e.target.value)}
             className={draftInputClassName(maxAgeDaysDirty)}
           />
-          <div className="text-xs text-gray-400 mt-1">
-            最終アクセス日時がこの日数より前のファイルは一覧に表示されません（1〜3650日）
-          </div>
-        </div>
-        <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">最大表示件数</div>
+        </SettingsField>
+        <SettingsField label="最大表示件数" hint="1〜200件">
           <input
             type="number"
             min={1}
@@ -207,8 +200,8 @@ export function RecentFilesSettings({
             onChange={(e) => handleMaxResultsChange(e.target.value)}
             className={draftInputClassName(maxResultsDirty)}
           />
-          <div className="text-xs text-gray-400 mt-1">1〜200件</div>
-        </div>
+          <span className="text-sm text-gray-500">件</span>
+        </SettingsField>
         <SettingsGroup title="表示対象設定">
           <FeatureToggle
             label="フォルダを対象に含める"

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FeatureToggle } from "./FeatureToggle";
+import { SettingsField } from "./SettingsField";
 import { SettingsIndent } from "./SettingsIndent";
 import { SettingsSaveBar } from "./SettingsSaveBar";
 import { draftInputClassName } from "./settingsFieldStyles";
@@ -26,19 +27,15 @@ function KeywordField({
   error: string | null;
 }) {
   return (
-    <div>
-      <div className="text-sm font-medium text-gray-800 mb-1">{label}</div>
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-400">/</span>
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={draftInputClassName(isDirty)}
-        />
-      </div>
-      {error && <div className="text-xs text-red-500 mt-1">{error}</div>}
-    </div>
+    <SettingsField label={label} error={error}>
+      <span className="text-sm text-gray-400">/</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={draftInputClassName(isDirty)}
+      />
+    </SettingsField>
   );
 }
 

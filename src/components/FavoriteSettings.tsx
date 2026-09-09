@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FeatureToggle } from "./FeatureToggle";
+import { SettingsField } from "./SettingsField";
 import { SettingsIndent } from "./SettingsIndent";
 import { SettingsSaveBar } from "./SettingsSaveBar";
 import { draftInputClassName } from "./settingsFieldStyles";
@@ -51,21 +52,15 @@ export function FavoriteSettings({
         onChange={onToggle}
       />
       <SettingsIndent>
-        <div>
-          <div className="text-sm font-medium text-gray-800 mb-1">呼び出しキーワード</div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">/</span>
-            <input
-              type="text"
-              value={keywordDraft}
-              onChange={(e) => handleKeywordChange(e.target.value)}
-              className={draftInputClassName(keywordDirty)}
-            />
-          </div>
-          <div className="text-xs text-gray-400 mt-1">
-            「/」が自動的に先頭に付与されます
-          </div>
-        </div>
+        <SettingsField label="呼び出しキーワード" hint="「/」が自動的に先頭に付与されます">
+          <span className="text-sm text-gray-400">/</span>
+          <input
+            type="text"
+            value={keywordDraft}
+            onChange={(e) => handleKeywordChange(e.target.value)}
+            className={draftInputClassName(keywordDirty)}
+          />
+        </SettingsField>
         <SettingsSaveBar isDirty={keywordDirty} onSave={handleSave} error={error} />
       </SettingsIndent>
     </div>
