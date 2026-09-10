@@ -44,6 +44,17 @@ function resolveSelected(
 
 `clipboardMode` の選択対象一覧（`clipboardSelectionItems: SelectableItem[]`）は `useSearch.ts` 内の state だが、実体（`clipboard.clipboardEntries`）は `useClipboard.ts` 側にある。`useSearch` は `useClipboard` の戻り値に依存できない構成（`useClipboard` が `useSearch` の戻り値を入力として受け取るため、循環になる）なので、逆方向に「`useClipboard.ts` 側が `clipboardEntries` の変化を検知して `syncClipboardSelectionItems`（`useSearch` の戻り値）へ push する」という設計にした。
 
+<a id="pinned-visible-confirm-boundary"></a>
+
+### ピン止めブロックの表示をファイル検索結果の確定境界へ同期する（`displayedPinnedVisible`、issue 0030）
+
+ピン止め・数式計算・URLエンコード/デコード・パス貼り付け候補などの固定候補は、ファイル検索の完了を待たず現在の検索文字列へ即時更新するのが原則である（[検索中表示](file-search-and-frecency.md#search-continuity-and-spinner)を参照）。**ただしピン止めブロックのクエリ空・非空切替（`pinnedVisible`の変化）だけは例外で、ファイル検索結果（`results`）が現在の検索文字列に対して確定するまで`rows`への反映を遅らせる。** この遅延させた値を`displayedPinnedVisible`と呼ぶ。
+
+- **理由**：`rows`はファイル検索結果（非同期にしか確定せず、検索中は直前の完了結果を保持し続ける）とピン止めブロック（クエリ変化に対して同期的・即時に増減する）を同じ配列の異なる位置へ連結して作る。ピン止めブロックの出入りを即時に`rows`へ反映すると、後続のファイル検索結果側の要素の配列内位置が、ファイル検索側がまだ古いクエリに対する保持結果のままの状態でずれてしまい、選択解決が「無関係な保持中の旧結果」を一瞬指してしまう（詳細は[fallback-unsafe-across-structural-change](#fallback-unsafe-across-structural-change)を参照。このセクションの`fallback`を常に`0`に固定できる安全性は、この確定境界同期があって初めて成り立つ）
+- **鮮度判定**：`resultsQueryRef.current === query`（現在の`results`がどのクエリに対する結果かを保持するref。`setResults`と同じタイミング＝実際の`search_files`のPromiseコールバック内でのみ更新される）を鮮度ゲートとして使い、一致している間だけ`pinnedVisible`の最新値をそのまま`rows`へ反映する（＝`displayedPinnedVisible = pinnedVisible`）。一致していない間は、直前に`rows`へ反映していた値を据え置く
+- **通常検索以外のモード（`clipboardMode`／`recentMode`／`favoriteMode`／`pathPasteWizardMode`）は、この鮮度ゲートを無条件で満たしたものとして扱う**：これらのモードは通常検索コンテキストを離れる際に`abandonSearchOnModeExit()`を呼ぶだけで実際の`search_files`を発行しないため、`resultsQueryRef`が更新される契機自体が無く、鮮度ゲートが永久に満たされない構造上の欠陥があった（`/recent`はこの固着がそのまま「ピン止めブロックが混入したまま消えない」不具合として可視化された。経緯は[pinned-block-leak-into-special-mode](#pinned-block-leak-into-special-mode)を参照）
+- **新しい「非同期処理の完了時にしか更新されない鮮度シグナル」を他の表示状態の確定ゲートとして使う場合**、その非同期処理自体を発行しないモード・早期return分岐でそのシグナルがどう振る舞うかを個別に確認すること。「その非同期処理が原理的に発生しない状況」では鮮度ゲートが永久に満たされないため、そのモード中は「ゲートを無条件で満たす」か「そもそもゲート付きの表示に到達しない」かのいずれかを確認する
+
 <a id="reset-triggers"></a>
 
 ### intent を {type:'top'} へリセットする唯一の汎用トリガー
@@ -94,7 +105,7 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 
 このため、**「識別子が見つからない場合に fallback として渡す値」を選ぶ際は、items配列が「非同期にしか確定しない部分」と「同期的に即時更新される部分」を同じ配列内に混在させていないか（特に、後者の増減が前者の要素の位置をずらす配置になっていないか）を必ず確認すること。** 混在している場合、直前のインデックスは安全な fallback にならない。
 
-**通常モード（`rows`）の現在の実装は、直前のインデックスを流用する代わりに、fallback を常に `0`（先頭の選択可能項目）に固定している。** これが安全な理由は「fallback を `0` にしても安全な状態になるまで、ピン止めブロックの出入りを `rows` へ反映させるタイミング自体を遅らせている」ことにある：ピン止めブロックの出入り（`pinnedVisible` の変化）は、ファイル検索結果（`results`）が現在の検索文字列に対して確定するまで `displayedPinnedVisible`（[selection-is-derived](#selection-is-derived) 節の `rows` 構築を参照）によって `rows` へ反映されない。したがって、ピン止め識別子が `rows` から実際に消える時点では、後続のファイル検索結果側は既に現在の検索文字列に対応する内容になっており、`0` を選んでも無関係な保持中の旧結果を指すことはない。
+**通常モード（`rows`）の現在の実装は、直前のインデックスを流用する代わりに、fallback を常に `0`（先頭の選択可能項目）に固定している。** これが安全な理由は「fallback を `0` にしても安全な状態になるまで、ピン止めブロックの出入りを `rows` へ反映させるタイミング自体を遅らせている」ことにある：ピン止めブロックの出入り（`pinnedVisible` の変化）は、ファイル検索結果（`results`）が現在の検索文字列に対して確定するまで `displayedPinnedVisible`（[pinned-visible-confirm-boundary](#pinned-visible-confirm-boundary) を参照）によって `rows` へ反映されない。したがって、ピン止め識別子が `rows` から実際に消える時点では、後続のファイル検索結果側は既に現在の検索文字列に対応する内容になっており、`0` を選んでも無関係な保持中の旧結果を指すことはない。
 
 **この保護は `pinnedVisible` の出入りにのみ適用される。** 数式計算・URLエンコード/デコード・パス貼り付け候補（`calcResult`・`urlConvertResult`・`pathPasteCandidate`）は、`pinnedVisible` と同じく検索文字列に対して同期的・即時に増減するが、`displayedPinnedVisible` に相当する「ファイル検索結果の確定を待ってから `rows` へ反映する」仕組みを持たない。したがって、これらの識別子を選択中に該当候補が消える場合（例：入力中の文字列が数式・実在パスとして成立しなくなる遷移）、fallback の `0` がその時点でまだ現在の検索文字列に追いついていないファイル検索結果を指す可能性が理論上残る。この経路は実機で未確認・未報告の理論上のリスクであり、2026-09-08時点でPOはこの残存リスクを許容する判断を行った（`displayedPinnedVisible` と同種の確定待ちバッファをこれら3種の固定候補へ拡張する対応は現時点で不採用）。将来これらの固定候補の消失に起因する可視的な不具合が実機で確認された場合、この節を起点に対応を検討すること。
 
@@ -144,6 +155,8 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 
 1. 直近のキーボード操作から `HOVER_SUPPRESS_AFTER_KEYBOARD_MS`（200ms）以内
 2. `onMouseEnter` 発火時点の座標が、一覧コンテナの `onMouseMove`（`recordMouseMove`）で直近に記録した実際のマウス移動座標とほぼ同じ（＝カーソル自体は静止しており、再描画で該当行がたまたまカーソル直下に来ただけ）
+
+**条件2の基準座標が未記録（`null`）の場合は「静止扱い」（＝抑止する）を既定にする**（issue 0030・400工程で特定・修正）。本アプリはキーボード駆動が主用途（Alt+Space起動→入力→Enter）で、ウィンドウ表示後に一度もマウスを動かさないまま一覧が大きく再構成されることが珍しくない。この場合ブラウザは実際のポインター移動を伴わずに`mouseenter`を発火させうるため、基準座標が無いことを理由に条件2をすり抜けさせる（＝抑止しない）と、この事後的な`mouseenter`がキーボードで維持していた正しい選択を無条件に上書きしてしまう。`null`を「静止扱い」にしても、ユーザーが実際にマウスを動かして意図的にホバーする操作は、その移動で基準座標が更新されるため妨げない（初回の1回だけ抑止され、直後の移動で正しく機能する）。新しく同種のホバー抑止を実装する場合も、基準座標の初期値（`null`）をどちらの扱いにするかを明示的に決めること。
 
 通常の↑↓だけでなく、Ctrl+Shift+矢印による並び替え・再親化もキーボード操作として扱い、移動対象を `selectByKeyboard` に渡す。非同期再取得後に選択を明示復元する経路では、その復元時にも `selectByKeyboard` を使って再描画直後をホバー抑止期間の起点にする。D&D・クリック・作成後の選択はポインター／プログラム起点なので `selectByKey` を使い、この抑止時刻を更新しない。
 
