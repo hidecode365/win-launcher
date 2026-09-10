@@ -73,7 +73,8 @@ export interface ExcludedFile {
 // 20階層までに読み取れたファイル数、filteredFileCount は現在の設定（検索階層数・
 // 拡張子フィルター）を適用したファイル数（フォルダは含めない）。partialError が
 // true の場合、対象フォルダ自体は確認できたがサブフォルダ・ファイルの一部を
-// 読み取れなかった（詳細は CLAUDE.md「検索フォルダ情報ダイアログ」節を参照）。
+// 読み取れなかった（詳細は docs/internal-design/file-search-and-frecency.md の
+// 「検索フォルダ情報ダイアログ」節を参照）。
 // excludedFiles は検索階層数または拡張子フィルターで filteredFileCount に含まれ
 // なかったファイル（フォルダ・読み取り不能項目は含まない、走査順、最大200件）。
 // excludedFilesTruncated が true の場合、除外ファイルは200件を超えており
