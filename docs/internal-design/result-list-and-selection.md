@@ -124,6 +124,18 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 
 将来この行が原因の不具合（選択がずれる、行が消える等）が疑われた場合は、まず描画側の+1特例の算出箇所（`App.tsx` 内の `baseLength`・`handleKeyDown` のWeb検索行分岐）と、選択解決側の `WEB_SEARCH_ROW_KEY` の扱い（`useSearch.ts` の `selectionItems` 構築箇所）の両方を確認すること。`rows` 自体には含まれていないため、`rows` 側だけを調査しても見つからない。描画を `rows` へ正式統合するかどうかの検討は、引き続き R-1 フェーズE（未着手）として扱う。現時点では優先度が低く保留中。
 
+<a id="non-selectable-row"></a>
+
+### 非選択の情報行（`searchTruncatedNotice`。issue 0031）
+
+検索上限件数に到達し後続の検索フォルダを走査せず打ち切った場合（判定方式は[shell-icon-loading.md](shell-icon-loading.md#search-truncated-outcome)を参照）、`rows` の末尾へ `{ kind: "searchTruncatedNotice", key: SEARCH_TRUNCATED_NOTICE_KEY, limit: appSettings.searchMaxResults }` を追加する（通常モードのみ。`favoriteMode`/`clipboardMode`/`recentMode` 中は追加しない）。この行はクリックしても Enter を押しても何も起きない、選択できない案内テキストの行として描画する（`ResultList.tsx` の `case "searchTruncatedNotice"`）。
+
+**`WEB_SEARCH_ROW_KEY` 特例（[web-search-row-exception](#web-search-row-exception)）とは逆方向の非対称**：Web検索行は「`rows` には含まれないが選択できる」行だった。`searchTruncatedNotice` 行は逆に「`rows` には含まれるが選択できない」行である。このため `rows` をそのまま選択解決（[selection-is-derived](#selection-is-derived)）や `baseLength` の算出に使うと、この末尾の1行が選択可能項目として扱われてしまう。
+
+- `useSearch.ts` は `rows` とは別に `selectableRows`（`rows` の末尾が `searchTruncatedNotice` の場合はそれを除いた配列、それ以外は `rows` と同一）を算出し、`selectionItems`（選択解決の対象一覧）の構築には `rows` ではなく `selectableRows` を使う。戻り値には `selectableRowsCount: selectableRows.length` を公開する
+- `App.tsx` の `baseLength`（通常モードの選択可能項目数）は `search.rows.length` ではなく `search.selectableRowsCount` を使う。`rows.length` をそのまま使うと、案内行がある間だけ↑↓キーでの移動可能範囲・Enter起動対象の判定が1行分ずれる
+- 新しく「選択できない情報行」を追加する場合は、この2箇所（`selectableRows` の算出・`baseLength` の参照元）を必ず対応させること。`rows` を直接参照している既存の箇所（`ResultList.tsx` の `rows.map` 描画自体等）は選択できない行も含めて描画してよいため変更不要
+
 <a id="hover-suppression"></a>
 
 ### マウスホバーとキーボード操作の競合回避

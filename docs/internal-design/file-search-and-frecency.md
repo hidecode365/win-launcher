@@ -12,14 +12,9 @@
 - 検索対象フォルダは設定で複数登録可能（有効/無効を個別に切替）
 - 有効なフォルダのみ `walkdir` で再帰走査（シンボリックリンク追跡あり）。最大深さはフォルダごとの詳細設定（`max_depth`。デフォルト3）に従う（詳細は [folder-detail-settings](#folder-detail-settings) を参照）
 - クエリを小文字変換してファイル名に部分一致
-- 全フォルダ合計で最大 50 件に絞って返却
+- 全フォルダ合計で設定可能な検索上限件数（`appSettings.searchMaxResults`。デフォルト100、1〜400。設定UIは「検索フォルダ」タブの「詳細設定」内）に絞って返却する。戻り値は`Vec<FileEntry>`ではなく`SearchOutcome { files, truncated }`で、上限到達により後続の検索対象フォルダを走査せず打ち切ったかどうかを`truncated`で表す（判定方式・フロントエンドでの表示は[shell-icon-loading.md](shell-icon-loading.md#search-truncated-outcome)を参照）
 - 走査ルート自身（`WalkDir` の depth 0 エントリ、＝検索フォルダそのもの）は「フォルダ自体を検索対象に含める」設定に関わらず結果に含めない
-- 各ファイルの Windows シェルアイコン（エクスプローラーと同じアイコン）を取得し、`data:image/png;base64,...` 形式の文字列として結果に含める
-  - Win32 API `SHGetFileInfoW`（`SHGFI_ICON | SHGFI_SMALLICON`）でファイルパスから `HICON` を取得
-  - `GetIconInfo` → `GetObjectW` でカラービットマップ（`HBITMAP`）の寸法を取得し、`GetDIBits` で 32bpp トップダウン BGRA のピクセルデータへ変換
-  - BGRA → RGBA に並べ替えたうえで `image` クレートで PNG エンコードし、`base64` クレートで Base64 化
-  - 取得したアイコン・ビットマップ・DC などの GDI ハンドルは RAII ガード（`Drop` 実装）で確実に解放する
-  - 取得に失敗した場合（無効なパス等）はアイコンなし（`null`）として扱い、フロントエンドは汎用のドキュメントアイコン SVG にフォールバックする
+- 返却する各`FileEntry`の`icon`は常に`None`（Shellアイコンはここでは取得しない）。Shellアイコンの取得は候補収集から分離されており、表示範囲優先で別途非同期に取得する。取得方式（`SHGetFileInfoW`によるアイコン取得・PNG/Base64エンコード・取得失敗時のフォールバック）と表示範囲優先取得の仕組みは[shell-icon-loading.md](shell-icon-loading.md)を参照
 - ピン止め済みファイルの除外（`exclude_paths` 引数）は [favorites-data-model.md](favorites-data-model.md) を参照
 
 <a id="frecency"></a>

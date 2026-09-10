@@ -20,7 +20,7 @@
 
 加えて、`recentMode` を維持したままウィンドウが非表示→再表示された場合（フォーカス回復を検知）も取得し直す（[window-lifecycle.md](window-lifecycle.md#prefix-mode-architecture) の「フォーカス回復時再取得テーブル」に `recent` エントリとして登録）。クリップボード履歴は OS のクリップボード変更通知を常時受信しているため非表示中の変化も自動で最新化されるが、最近使ったファイル一覧にはプッシュ通知の仕組みがなく、モード遷移時の1回きりの取得のままだと非表示中にファイルを開く／削除する等の変化が反映されないままになるため、この再取得が必要。フォーカスアウトによる一時的な自動非表示は画面離脱ではないため、次回フォーカス回復時も最近使ったファイル画面を維持する（`view`は変更しない）。
 
-`RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }`（アイコンなし）としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する。ファイル検索結果・計算結果・URLエンコード/デコード結果・Web検索候補との関係は排他。frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）。
+`RecentFile` は既存の `FileEntry` へ `{ name, path, icon: null }` としてマッピングし、既存の `ResultList` のファイル検索結果と同じ行 UI・`launchFile` をそのまま再利用する。`icon` が常に `null` なのは通常のファイル検索結果・ピン止めと同じ理由（Rust側は候補のみを返し、Shellアイコンは表示範囲優先で別途非同期取得する。詳細は[shell-icon-loading.md](shell-icon-loading.md)を参照）。ファイル検索結果・計算結果・URLエンコード/デコード結果・Web検索候補との関係は排他。frecency によるスコア並び替えは行わない（常に最終アクセス日時順を維持する）。
 
 **確定クローズ（Enter起動・Shift+Enterで格納フォルダを開く）**：`launchFile`/`openContainingFolder`の`recentMode`分岐は、クエリを既定（`"full"`）でクリアしたうえで`closeWindow()`の`cleanup`内で`resetToSearchView`（[window-lifecycle.md](window-lifecycle.md#l1-confirm-close-view-reset)）を呼び、`view`も明示的に検索画面へ戻す。これにより次回ウィンドウ表示時は必ず通常の検索画面から始まる（お気に入りの「確定後も同じ画面に留まる」既存挙動とは意図的に非対称）。Escapeおよび空のローカル絞り込み入力欄での無修飾Backspace（[window-lifecycle.md](window-lifecycle.md#empty-filter-backspace-return)）も同じく検索画面へ戻る。
 

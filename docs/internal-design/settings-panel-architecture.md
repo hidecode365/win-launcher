@@ -59,6 +59,9 @@
   - グループ小見出しは、サイズ・太さを通常の項目ラベル（`text-sm font-medium text-gray-800`）と揃え、色のみ一段抑える（`text-gray-700`）
   - `description` prop は省略可能。グループの意味が自明でない場合にのみ使う
   - グループ開始前の余白は、`SettingsGroup` 自身が既定で `mt-8`（32px）を持つことで保証する。`className`（既定 `"mt-8"`）・`contentClassName`（既定 `"mt-3 flex flex-col gap-3"`）で個別に上書きできる
+- **項目ラベル＋設定コントロールの横並び表現**：`SettingsField`（`src/components/SettingsField.tsx`）が担う。`label`（左側、`w-36 flex-shrink-0` で幅を固定）＋子要素（右側、コントロール本体）を `flex items-center gap-3` で横並びにし、`hint`（キャプション、`text-xs text-gray-400 mt-1`）・`error`（`text-xs text-red-500 mt-1`）を下に任意で表示する。ラベル幅を固定することで、同一タブ内の複数フィールドのコントロール開始位置が縦に揃う。**`justify-between` 等でラベルとコントロールを両端に引き離さないこと**（コンテナ幅いっぱいに間隔が開き、ラベルとコントロールが同じ項目に見えなくなる不具合が過去にあった）
+  - `muted` prop（既定 `false`）を渡すとラベルの強調を `font-medium text-gray-800` から `text-gray-700` に落とす。`SettingsGroup` の折りたたみ式「詳細設定」内など、主要設定より視覚的な優先度を落としたい項目で使う（[file-search-and-frecency.md](file-search-and-frecency.md) の検索上限件数フィールドが最初の使用例）
+  - 単一のキーワード欄（お気に入り・メモ・システムコマンド等の呼び出しキーワード）から検索上限件数のような数値＋単位まで、ラベル＋コントロールの横並びが成り立つ項目全般に使う。複数のサブコントロールが密結合する項目（全般タブのホットキー選択、拡張子フィルタのタグ入力エディタ等）はこの型に収まらないため対象外とし、無理に統一しない
 
 <a id="save-model"></a>
 

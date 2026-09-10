@@ -87,7 +87,7 @@ issue 0024でL1化したクリップボード履歴・最近使ったファイ�
 
 ピン止め済みファイルを検索ボックスが空のときの通常一覧から除外する処理は、**フロントエンド側でのフィルタではなく Rust 側の `search_files` に `exclude_paths: Vec<String>` 引数を追加して行っている**。
 
-理由：`search_files` は `MAX_SEARCH_RESULTS`（50件）に達した時点で走査を打ち切る。フロントエンド側で受け取った50件からピン止め済み分を差し引く方式だと、ピン止め件数が多いほど「一覧に表示できる固有ファイル数」がその分減ってしまう。Rust側の候補生成ループ内（アイコン取得より前、`continue` で早期スキップ）で除外すれば、50件の枠はピン止め対象外のファイルだけで満たされる。
+理由：`search_files` は検索上限件数（`appSettings.searchMaxResults`。デフォルト100、1〜400）に達した時点で走査を打ち切る。フロントエンド側で受け取った結果からピン止め済み分を差し引く方式だと、ピン止め件数が多いほど「一覧に表示できる固有ファイル数」がその分減ってしまう。Rust側の候補生成ループ内（`continue` で早期スキップ）で除外すれば、上限の枠はピン止め対象外のファイルだけで満たされる。
 
 `exclude_paths` に何を渡すかはフロントエンド（`useSearch.ts`）の責務：クエリが空文字のときのみピン止め済みパス一覧（`pinnedPathSet`）を渡し、クエリに文字が入力されている間は空配列を渡す（＝除外しない）。Rust側の `search_files` 自体はこの「クエリが空かどうか」の判定を一切知らず、渡された `exclude_paths` をそのまま使うだけの単純な実装にとどめている（判定ロジックをRust・フロントエンドの両方に分散させないため）。除外の可視性判定（`pinnedVisible`）を巡る不具合は「経緯」節を参照。
 
@@ -114,7 +114,7 @@ issue 0024でL1化したクリップボード履歴・最近使ったファイ�
 - **世代ID管理**：`get_pinned_files`→`check_paths_exist` の一連の非同期呼び出しに `asyncCallIdRef` の新規キー `"pinned"` を割り当てている（詳細は [window-lifecycle.md](window-lifecycle.md#prefix-mode-architecture) を参照）
 - **フォーカス回復時再取得テーブル**：`focusRegainTableRef.current` に `pinned: { active: pinnedVisible, refetch: () => fetchPinnedFiles("focus-regain") }` を追加している
 - `pinnedVisible`（ピン止めブロックを表示すべきか）は `appSettings.pinEnabled && query === "" && !clipboardMode && !recentMode` で判定する。`calcMode`／`prefixCommandMode`／`pathPasteWizardMode` を明示的に除外していないのは、これらがいずれも非空クエリを前提とする構造上、`query === ""` の時点で自動的に成立しなくなるため
-- `favorites`（生ノード配列、`get_favorites` で取得）と `pinnedFiles`（表示用・シェルアイコン付き、`get_pinned_files` で取得）を別の state として持つ。前者はピン止めの追加・解除・並び替えの判断材料（`order`・`id` を持つ）、後者は描画専用（アイコンは Rust 側でしか取得できないため）
+- `favorites`（生ノード配列、`get_favorites` で取得）と `pinnedFiles`（表示用、`get_pinned_files` で取得）を別の state として持つ。前者はピン止めの追加・解除・並び替えの判断材料（`order`・`id` を持つ）、後者は描画専用。`get_pinned_files` が返す各要素の `icon` は常に `null` で、Shellアイコンは共有キャッシュ経由の表示範囲優先取得で別途反映される（[shell-icon-loading.md](shell-icon-loading.md)を参照）
 - `togglePin`/`reorderPinned` はいずれも `favoritesRef.current`（最新の生配列）を元に更新後の配列を組み立て、`set_favorites` へ送ってから、その戻り値（Rust側で予約フォルダ是正・保存済みの配列）を新しい真実として `favoritesRef`/`favorites` に反映する。`reorderPinned` は保存の完了を待たず `pinnedFiles`（表示用配列）を先に楽観的に並び替える（体感速度を優先。保存自体は fire-and-forget）
 
 <a id="pinning-from-recent"></a>

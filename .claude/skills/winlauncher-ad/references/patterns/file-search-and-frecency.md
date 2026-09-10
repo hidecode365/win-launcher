@@ -2,6 +2,7 @@
 
 → 詳細: [file-search-and-frecency.md](../../../../../docs/internal-design/file-search-and-frecency.md)
 
+- `search_files` は候補（`FileEntry`。`icon`は常に`None`）と検索打ち切り判定（`SearchOutcome.truncated`）だけを返す。Shellアイコン取得は行わない（表示範囲優先取得は別モジュール）。後続の検索フォルダへファイルシステムアクセスして`truncated`の精度を上げようとしない（既存契約に反する）。 → 詳細: [file-search-and-frecency.md](../../../../../docs/internal-design/file-search-and-frecency.md#search-logic)、Shellアイコン取得の詳細は[shell-icon-loading.md](../../../../../docs/internal-design/shell-icon-loading.md)
 - 拡張子フィルタリングを持つ設定を新設する場合、ブラックリスト用・ホワイトリスト用は必ず独立フィールドとして持たせる（共有フィールドにしない。モード切替で入力内容が意図せず流用される事故を防ぐため）。 → 詳細: [file-search-and-frecency.md](../../../../../docs/internal-design/file-search-and-frecency.md#folder-detail-settings)
 - frecencyスコアは `count * decay(lastUsed)`。この仕組み（decay係数・二次キー）はプレフィックスコマンド候補（`docs/internal-design/calc-and-prefix-commands.md`）でもキーを `path` から `keyword` に変えて再利用する。 → 詳細: [file-search-and-frecency.md](../../../../../docs/internal-design/file-search-and-frecency.md#frecency)
 - ファイル起動は `ShellExecuteW` を直接呼ぶ（`cmd /C start` はコマンドインジェクションのリスクがあるため使わない）。 → 詳細: [file-search-and-frecency.md](../../../../../docs/internal-design/file-search-and-frecency.md#file-launch)
