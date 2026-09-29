@@ -8,6 +8,14 @@
   box-sizing: border-box;
 }
 
+/* 画面切替の枠内演出（issue 0032）の光の色。Canvasは解決済みの色文字列を必要とするため、
+   値はここを唯一の定義とし、tailwind.config.js の ui-glow-* トークンとCanvas描画
+   （screenTransitionController の colors）の両方がこの変数を参照する。 */
+:root {
+  --ui-glow-primary: #639dad;
+  --ui-glow-secondary: #9584b8;
+}
+
 html,
 body,
 #root {

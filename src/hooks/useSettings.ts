@@ -272,6 +272,13 @@ export function useSettings(showSettings: boolean) {
     if (updated) setAppSettings(updated);
   }, []);
 
+  const setScreenTransitionAnimationEnabled = useCallback(async (enabled: boolean) => {
+    const updated = await invoke<AppSettings>("set_screen_transition_animation_enabled", {
+      enabled,
+    }).catch(() => null);
+    if (updated) setAppSettings(updated);
+  }, []);
+
   const setFavoriteEnabled = useCallback(async (enabled: boolean) => {
     const updated = await invoke<AppSettings>("set_favorite_enabled", {
       enabled,
@@ -419,6 +426,7 @@ export function useSettings(showSettings: boolean) {
     setCheckUpdateOnStartup,
     setPathPasteEnabled,
     setPinEnabled,
+    setScreenTransitionAnimationEnabled,
     setFavoriteEnabled,
     setFavoriteKeyword,
     setMemoEnabled,

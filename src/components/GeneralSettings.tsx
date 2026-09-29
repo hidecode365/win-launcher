@@ -64,6 +64,8 @@ export function GeneralSettings({
   onToggleCheckUpdateOnStartup,
   pinEnabled,
   onTogglePinEnabled,
+  screenTransitionAnimationEnabled,
+  onToggleScreenTransitionAnimationEnabled,
 }: {
   hotkey: string;
   onSave: (accelerator: string) => Promise<string | null>;
@@ -71,6 +73,8 @@ export function GeneralSettings({
   onToggleCheckUpdateOnStartup: (checked: boolean) => void;
   pinEnabled: boolean;
   onTogglePinEnabled: (checked: boolean) => void;
+  screenTransitionAnimationEnabled: boolean;
+  onToggleScreenTransitionAnimationEnabled: (checked: boolean) => void;
 }) {
   const [mods, setMods] = useState<ModifierState>(() => parseAccelerator(hotkey).mods);
   const [mainKey, setMainKey] = useState<string>(() => parseAccelerator(hotkey).mainKey);
@@ -172,6 +176,15 @@ export function GeneralSettings({
           description="検索結果のファイルをピン止めし、検索ボックスが空のとき一覧の最上部に常に表示します。"
           checked={pinEnabled}
           onChange={onTogglePinEnabled}
+        />
+      </div>
+
+      <div className="pt-3 border-t border-gray-200/60">
+        <FeatureToggle
+          label="画面切替アニメーション"
+          description="検索画面とお気に入り・メモ・クリップボード履歴・最近使ったファイル画面の切替時に、枠の内側を光らせます。"
+          checked={screenTransitionAnimationEnabled}
+          onChange={onToggleScreenTransitionAnimationEnabled}
         />
       </div>
 

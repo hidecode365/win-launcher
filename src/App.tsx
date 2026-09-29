@@ -29,6 +29,8 @@ import { UpdateDialog } from "./components/UpdateDialog";
 import { StatusFooter } from "./components/StatusFooter";
 import { MemoManageView } from "./components/MemoManageView";
 import { hideWindow } from "./lib/window";
+import { screenTransition } from "./lib/screenTransitionController";
+import { ScreenTransitionLayer } from "./components/ScreenTransitionLayer";
 import { FAVORITES_FOLDER_ID, favoriteFolderRowKey } from "./types";
 import type {
   ClipboardTextEntry,
@@ -56,8 +58,26 @@ type MainView =
   | "recentEdit"
   | "ocrEdit";
 
+// 画面切替の枠内演出（issue 0032）の描画面は、画面（ビュー）の早期returnをまたいで
+// 存続させるため、画面を描く AppMain の外側に1つだけ置く。
 export default function App() {
+  return (
+    <>
+      <AppMain />
+      <ScreenTransitionLayer />
+    </>
+  );
+}
+
+function AppMain() {
   const [view, setView] = useState<MainView>("search");
+  // 利用者操作による「4画面→検索」の復帰のたびに増える識別子（画面切替の枠内演出用）。
+  // Escape・空欄Backspace・戻るボタンの共通の入口である closeXxxEdit だけが増やし、
+  // 確定クローズ由来の resetToSearchView では増やさない。setView と同じバッチで反映される
+  // ため、非表示中の内部的な検索復帰を演出の対象から構造的に除外できる（DESIGN_LOG
+  // 「画面切替の枠内演出（issue 0032）」）。
+  const [userReturnToken, setUserReturnToken] = useState(0);
+  const markUserReturn = useCallback(() => setUserReturnToken((t) => t + 1), []);
   // 既存コードとの互換のため、設定パネル表示中かどうかは派生値として残す
   // （useSettings への引数・多数の分岐で使われている）。
   const showSettings = view === "settings";
@@ -147,6 +167,17 @@ export default function App() {
           : ocrEditOpen
             ? "ocrEdit"
             : view;
+
+  // 画面切替の枠内演出：表示上の実効ビューと復帰識別子を毎コミットで渡す。直前との差分の
+  // 判定・連続切替・OFFでの中断は ScreenTransitionController が行う。
+  const screenTransitionEnabled = settings.appSettings.screenTransitionAnimationEnabled;
+  useEffect(() => {
+    screenTransition.update({
+      view: viewRef.current,
+      returnToken: userReturnToken,
+      enabled: screenTransitionEnabled,
+    });
+  });
 
   useEffect(() => {
     if (view === "search" && search.favoriteMode) setView("favoriteEdit");
@@ -326,6 +357,16 @@ export default function App() {
 
     getCurrentWindow()
       .onResized(({ payload: size }) => {
+        // 画面切替の枠内演出：利用者による枠のリサイズなら演出を消す。アプリ主導の
+        // setSize（メモ画面への遷移）・DPI変化だけの Resized では中断しない。
+        // 物理→論理の換算に表示倍率が要るため非同期で分類する（issue 0032）。
+        void getCurrentWindow()
+          .scaleFactor()
+          .catch(() => 1)
+          .then((scale) => {
+            const logical = size.toLogical(scale);
+            screenTransition.handleResize({ width: logical.width, height: logical.height });
+          });
         if (resizeTimer !== undefined) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(async () => {
           const store = storeRef.current;
@@ -354,7 +395,12 @@ export default function App() {
   useEffect(() => {
     if (!memoEditOpen || !storeRef.current) return;
     storeRef.current.get<{ width: number; height: number }>("memoWindowSize").then((size) => {
-      if (size) getCurrentWindow().setSize(new LogicalSize(size.width, size.height)).catch(console.error);
+      if (size) {
+        // 画面遷移に伴うアプリ主導のサイズ変更。枠演出は中断せず追従させるため、
+        // Resized の発生元を照合できるよう目標サイズを先に登録する（issue 0032）。
+        screenTransition.expectProgrammaticResize(size.width, size.height);
+        getCurrentWindow().setSize(new LogicalSize(size.width, size.height)).catch(console.error);
+      }
     }).catch(console.error);
   }, [memoEditOpen]);
 
@@ -403,12 +449,13 @@ export default function App() {
   // このstateを保持し続ける必要があるため、ここでのリセットは「戻る」操作
   // 経由の場合のみ行う）。
   const closeMemoEdit = useCallback(() => {
+    markUserReturn();
     setView("search");
     memoManage.setRenaming(null);
     memoManage.cancelCreate();
     memoManage.setFilterText("");
     search.setQuery("");
-  }, [memoManage.setRenaming, memoManage.cancelCreate, memoManage.setFilterText, search.setQuery]);
+  }, [memoManage.setRenaming, memoManage.cancelCreate, memoManage.setFilterText, search.setQuery, markUserReturn]);
 
   // issue 0024：クリップボード履歴・最近使ったファイル画面を閉じて検索画面へ戻る
   // （Escape・戻るボタン・空欄でのBackspace共通の経路）。closeMemoEdit と同じ理由で
@@ -416,16 +463,18 @@ export default function App() {
   // なり、検索画面へ戻れず同じ画面に留まってしまう）。ローカル絞り込み文字列は
   // useSearch.ts側のstateのため、そちらのsetterで空へ戻す。
   const closeClipboardEdit = useCallback(() => {
+    markUserReturn();
     setView("search");
     search.setClipboardEditFilterText("");
     search.setQuery("");
-  }, [search.setClipboardEditFilterText, search.setQuery]);
+  }, [search.setClipboardEditFilterText, search.setQuery, markUserReturn]);
 
   const closeRecentEdit = useCallback(() => {
+    markUserReturn();
     setView("search");
     search.setRecentEditFilterText("");
     search.setQuery("");
-  }, [search.setRecentEditFilterText, search.setQuery]);
+  }, [search.setRecentEditFilterText, search.setQuery, markUserReturn]);
 
   // issue 0026/0024 軸C-2：設定を開いた元のL1画面（検索・お気に入り・メモ・
   // クリップボード履歴・最近使ったファイル・OCR）を1段だけ記録し、設定を閉じると
@@ -498,6 +547,7 @@ export default function App() {
   // （02-saved-items.md「お気に入り画面」節）。空にしないと search.favoriteMode が
   // 直ちに再び真になり、検索画面へ戻れず同じ画面に留まってしまう。
   const closeFavoriteEdit = useCallback(() => {
+    markUserReturn();
     setView("search");
     // リネーム中・フォルダ作成中に「戻る」ボタン等で編集ビューを閉じた場合、
     // renamingFavoriteNodeId・creatingFolderAnchorKey は view とは独立した state
@@ -518,7 +568,7 @@ export default function App() {
     // 空の状態から始める方が事故が少ないと判断し、閉じる際に必ず空文字へ戻す。
     search.setFavoriteEditFilterText("");
     search.setQuery("");
-  }, [search.setFavoriteEditFilterText, search.setQuery]);
+  }, [search.setFavoriteEditFilterText, search.setQuery, markUserReturn]);
 
   // 4c：編集ビューでのフォルダ作成完了後、新規フォルダへ選択状態を移し、作成中の
   // 入力欄を閉じる（識別子ベースの intent。useFavoriteEditSelection の既存の
@@ -1351,6 +1401,7 @@ export default function App() {
           onSetCheckUpdateOnStartup={settings.setCheckUpdateOnStartup}
           onSetPathPasteEnabled={settings.setPathPasteEnabled}
           onSetPinEnabled={settings.setPinEnabled}
+          onSetScreenTransitionAnimationEnabled={settings.setScreenTransitionAnimationEnabled}
           onSetFavoriteEnabled={settings.setFavoriteEnabled}
           onSetFavoriteKeyword={settings.setFavoriteKeyword}
           onSetMemoEnabled={settings.setMemoEnabled}

@@ -193,6 +193,7 @@ export interface AppSettings {
   favoriteKeyword: string;
   memoEnabled: boolean;
   memoKeyword: string;
+  screenTransitionAnimationEnabled: boolean;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -229,6 +230,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   favoriteKeyword: "favorite",
   memoEnabled: true,
   memoKeyword: "memo",
+  screenTransitionAnimationEnabled: true,
 };
 
 // Rust の `check_for_update` コマンドの戻り値。

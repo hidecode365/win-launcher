@@ -75,6 +75,7 @@ export function SettingsPanel({
   onSetCheckUpdateOnStartup,
   onSetPathPasteEnabled,
   onSetPinEnabled,
+  onSetScreenTransitionAnimationEnabled,
   onSetFavoriteEnabled,
   onSetFavoriteKeyword,
   onSetMemoEnabled,
@@ -118,6 +119,7 @@ export function SettingsPanel({
   onSetCheckUpdateOnStartup: (checked: boolean) => void;
   onSetPathPasteEnabled: (checked: boolean) => void;
   onSetPinEnabled: (checked: boolean) => void;
+  onSetScreenTransitionAnimationEnabled: (checked: boolean) => void;
   onSetFavoriteEnabled: (checked: boolean) => void;
   onSetFavoriteKeyword: (keyword: string) => Promise<string | null>;
   onSetMemoEnabled: (checked: boolean) => void;
@@ -202,6 +204,8 @@ export function SettingsPanel({
               onToggleCheckUpdateOnStartup={onSetCheckUpdateOnStartup}
               pinEnabled={appSettings.pinEnabled}
               onTogglePinEnabled={onSetPinEnabled}
+              screenTransitionAnimationEnabled={appSettings.screenTransitionAnimationEnabled}
+              onToggleScreenTransitionAnimationEnabled={onSetScreenTransitionAnimationEnabled}
             />
           )}
           {tab === "fileSearch" && (

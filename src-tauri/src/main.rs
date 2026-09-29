@@ -2144,6 +2144,9 @@ struct AppSettings {
     memo_enabled: bool,
     #[serde(default = "default_memo_keyword")]
     memo_keyword: String,
+    // 画面切替の枠内演出（issue 0032）専用のON/OFF。他の演出へは適用しない。
+    #[serde(default = "default_true")]
+    screen_transition_animation_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -2180,6 +2183,7 @@ impl Default for AppSettings {
             favorite_keyword: DEFAULT_FAVORITE_KEYWORD.to_string(),
             memo_enabled: true,
             memo_keyword: DEFAULT_MEMO_KEYWORD.to_string(),
+            screen_transition_animation_enabled: true,
         }
     }
 }
@@ -2435,6 +2439,17 @@ fn set_path_paste_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, 
 fn set_pin_enabled(app: AppHandle, enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_app_settings(&app);
     settings.pin_enabled = enabled;
+    save_app_settings(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_screen_transition_animation_enabled(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<AppSettings, String> {
+    let mut settings = load_app_settings(&app);
+    settings.screen_transition_animation_enabled = enabled;
     save_app_settings(&app, &settings)?;
     Ok(settings)
 }
@@ -3604,6 +3619,7 @@ fn main() {
             create_shortcut,
             show_path_paste_toast,
             set_pin_enabled,
+            set_screen_transition_animation_enabled,
             get_favorites,
             set_favorites,
             get_pinned_files,

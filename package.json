@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "generate:latest-json": "pwsh -File scripts/generate-latest-json.ps1",
-    "check:docs": "node tools/check-doc-links.mjs"
+    "check:docs": "node tools/check-doc-links.mjs",
+    "test:unit": "node --test tools/screen-transition.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -18,6 +18,9 @@ export default {
           "action-hover": "#2563eb",
           disabled: "#e5e7eb",
           "disabled-text": "#9ca3af",
+          // 画面切替の枠内演出の光の色。値の定義は src/styles.css の :root。
+          "glow-primary": "var(--ui-glow-primary)",
+          "glow-secondary": "var(--ui-glow-secondary)",
         },
       },
       spacing: {
