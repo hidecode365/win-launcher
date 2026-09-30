@@ -60,9 +60,10 @@ export function phaseAt(elapsedMs: number): number {
 }
 
 // --- 枠の内側の経路 ---
-// ウィンドウ枠（外形の角丸16px）の少し内側。
-export const INSET = 8;
-export const CORNER_RADIUS = 9;
+// ウィンドウ枠（外形の角丸16px）の内側4pxに線の中心を置く。角の半径は、枠の内側の縁
+// （外形16px−枠線1px）から線までの距離を引いた12pxに、+1pxの補正を加えた13px。
+export const INSET = 4;
+export const CORNER_RADIUS = 13;
 
 export interface Outline {
   xs: number[];

@@ -9,6 +9,8 @@ import {
   buildOutline,
   pointAt,
   classifyResize,
+  INSET,
+  CORNER_RADIUS,
 } from "../src/lib/screenTransition.ts";
 import { paintFrame } from "../src/lib/screenTransitionPainter.ts";
 import { ScreenTransitionController } from "../src/lib/screenTransitionController.ts";
@@ -52,16 +54,19 @@ test("位相：495/51/275ms・合計821ms", () => {
 
 test("経路：閉じた周長・始点・小さなウィンドウでは作らない", () => {
   const o = buildOutline(640, 420);
-  const expected = 2 * (640 - 16 - 18) + 2 * (420 - 16 - 18) + 2 * Math.PI * 9;
+  const a = INSET;
+  const r = CORNER_RADIUS;
+  const expected =
+    2 * (640 - 2 * a - 2 * r) + 2 * (420 - 2 * a - 2 * r) + 2 * Math.PI * r;
   assert.ok(Math.abs(o.length - expected) < 1.5, `${o.length} vs ${expected}`);
   const p0 = pointAt(o, 0);
   const pEnd = pointAt(o, o.length);
   assert.ok(Math.hypot(p0.x - pEnd.x, p0.y - pEnd.y) < 1e-6);
   // 始点は左上の角の45度（枠の内側）
-  assert.ok(p0.x < 20 && p0.y < 20 && p0.x > 8 && p0.y > 8);
+  assert.ok(p0.x < a + r && p0.y < a + r && p0.x > a && p0.y > a);
   // 半周の位置は右下付近
   const mid = pointAt(o, o.length / 2);
-  assert.ok(mid.x > 600 && mid.y > 380, JSON.stringify(mid));
+  assert.ok(mid.x > 640 - a - r - 10 && mid.y > 420 - a - r - 10, JSON.stringify(mid));
   assert.equal(buildOutline(30, 30), null);
 });
 
