@@ -59,7 +59,7 @@ WinLauncherはPOがソロ開発しているTauri v2 + React + TypeScript + Rust�
 | 対象の画面・機能 | 読むファイル |
 |---|---|
 | ウィンドウの表示位置・透過・角丸・シャドウ・起動ホットキー | `patterns/window-and-hotkey.md` |
-| ウィンドウの表示/非表示/クローズ処理、L1画面遷移、Ctrl+D、モーダルのキー操作 | `patterns/window-lifecycle.md` |
+| ウィンドウの表示/非表示/クローズ処理、L1画面遷移、Ctrl+D、モーダルのキー操作、画面切替の枠内演出（開始判定・中断・リサイズ照合） | `patterns/window-lifecycle.md` |
 | 検索結果一覧の選択状態・行のDOM構造・行種別の追加 | `patterns/result-list-and-selection.md` |
 | Shellアイコンの表示範囲優先取得（通常検索・ピン止め・お気に入り・`/recent`横断） | `patterns/shell-icon-loading.md` |
 | フッターのキー操作ヒント表示 | `patterns/status-footer.md` |

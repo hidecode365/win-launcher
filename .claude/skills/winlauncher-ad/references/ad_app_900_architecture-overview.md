@@ -10,7 +10,8 @@ win-launcher/
 │   ├── types.ts             # フロントエンド全体で共有する型・定数（AppSettings 等）
 │   ├── lib/
 │   │   ├── format.ts        # フォーマット系の純粋関数（formatTimestamp 等）
-│   │   └── window.ts        # hideWindow（メインウィンドウ非表示）
+│   │   ├── window.ts        # hideWindow（メインウィンドウ非表示。画面切替の枠内演出も同期的に取り消す）
+│   │   └── screenTransition*.ts # 画面切替の枠内演出（判定・時間・経路／Canvas描画／制御）。詳細は screen-transition-effect.md
 │   ├── hooks/
 │   │   ├── useSettings.ts    # AppSettings・検索フォルダの読み込み・保存
 │   │   ├── useHotkey.ts      # 起動ホットキーの変更（set_hotkey）
@@ -29,7 +30,8 @@ win-launcher/
 │   │   ├── StatusFooter.tsx        # フッターのキー操作ヒント
 │   │   ├── FeatureToggle.tsx       # 設定パネル共通の ON/OFF トグル
 │   │   ├── SettingsPanel.tsx       # 設定パネル全体（タブ構成）
-│   │   ├── GeneralSettings.tsx     # 全般タブ（ホットキー）
+│   │   ├── GeneralSettings.tsx     # 全般タブ（ホットキー・アップデート自動チェック・ピン止め・画面切替アニメーション）
+│   │   ├── ScreenTransitionLayer.tsx # 画面切替の枠内演出の描画面（App の最外側に1つ。再生中だけ Canvas を載せる）
 │   │   ├── FileSearchSettings.tsx  # ファイル検索タブ
 │   │   ├── FavoriteSettings.tsx    # お気に入りタブ
 │   │   ├── MemoSettings.tsx        # メモタブ
@@ -56,6 +58,9 @@ win-launcher/
 │   └── tauri.conf.json
 ├── scripts/
 │   └── generate-latest-json.ps1  # リリース時に latest.json（Tauri Updater 用）を生成する
+├── tools/
+│   ├── check-doc-links.mjs       # ドキュメントのリンク・アンカー検査（npm run check:docs）
+│   └── screen-transition.test.mjs # 画面切替の枠内演出の自動テスト（npm run test:unit）
 ├── docs/
 │   └── internal-design/      # 設計判断の詳細（現状仕様・経緯・却下案・不具合の記録）。詳細は「実装パターン」節を参照
 ├── .claude/skills/winlauncher-ad/  # AD工程別・工程横断の実施要領。詳細は「開発フロー」節を参照

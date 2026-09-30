@@ -34,6 +34,7 @@
 | `get_pinned_files()` | 「ピン止め」予約フォルダ直下の `file` 型ノードを `order` 順に、シェルアイコン付きの `FileEntry` へ変換して返す。件数上限は設けない |
 | `check_paths_exist(paths)` | 渡されたパス配列と同じ順序・同じ長さで、各パスが実在するかどうかの真偽値配列を返す。ピン止めブロックの実体確認用 |
 | `set_pin_enabled(enabled)` | ピン止め機能の ON/OFF を切り替えて `AppSettings` を返す |
+| `set_screen_transition_animation_enabled(enabled)` | 画面切替の枠内演出（この演出専用）の ON/OFF を切り替えて `AppSettings` を返す。既定は ON（旧設定ファイルにキーがなくても ON）。詳細は [screen-transition-effect.md](../../../../docs/internal-design/screen-transition-effect.md#toggle-setting) を参照 |
 | `is_favorited(path)` | 指定したパス文字列が「お気に入り」ツリー配下に既に登録済みかどうかを、パス文字列の完全一致で判定して返す |
 | `get_favorite_nodes()` | 「お気に入り」予約フォルダ配下のノード（`folder`型・`file`型の両方。予約フォルダ自体は含まない）を `order` 順のフラット配列で返す。ツリー構造は呼び出し側が `parentId` を辿って再構築する |
 | `add_favorite(path, name, folderId)` | 指定したパス・表示名で `file` 型ノードを `folderId` 配下に1件追加する。同一パス文字列が「お気に入り」ツリー配下に既に登録済みの場合は何もせず現在の配列をそのまま返す |

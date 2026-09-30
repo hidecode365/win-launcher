@@ -1,6 +1,6 @@
 # フロントエンド
 
-- `App.tsx` はルートのコンポジションのみを担う（検索・設定・お気に入り管理・メモ管理・クリップボード履歴・最近使ったファイル・OCRの7ビュー（`MainView`）の切替、`storeRef`／`inputRef` の保持、フック間をつなぐ `handleKeyDown`・`closeSettings` 等の組み立て）。機能ごとのロジックはカスタムフックへ、UI は `components/` 配下の個別コンポーネントへ分離している
+- `App.tsx` はルートのコンポジションのみを担う。`export default App` は、全処理を持つ `AppMain` と画面切替の枠内演出の描画面 `ScreenTransitionLayer` を並べる薄いラッパーで、画面をまたいで存続させたいものは `AppMain` の外側に置く（詳細は [screen-transition-effect.md](../../../../docs/internal-design/screen-transition-effect.md#shared-layer-placement) を参照）。`AppMain` は（検索・設定・お気に入り管理・メモ管理・クリップボード履歴・最近使ったファイル・OCRの7ビュー（`MainView`）の切替、`storeRef`／`inputRef` の保持、フック間をつなぐ `handleKeyDown`・`closeSettings` 等の組み立て）。機能ごとのロジックはカスタムフックへ、UI は `components/` 配下の個別コンポーネントへ分離している
 - カスタムフック（`hooks/`）
   - `useSettings(showSettings)`：`AppSettings`・検索フォルダの読み込みと各 `set_*` コマンドの呼び出し（ホットキーを除く）
   - `useHotkey(setAppSettings)`：`set_hotkey` の呼び出しとエラー状態。`useSettings` の `setAppSettings` を受け取って更新を反映する
@@ -13,6 +13,7 @@
   - `useOcr()`：OCR画面の状態（ローディング・結果テキスト・エラー・画像URL）管理と`ocr_from_clipboard`の呼び出し
   - `useUpdater()`：アップデートダイアログの状態管理、`check_for_update`/`download_and_install_update` の呼び出し、トレイ発の `"check-for-update-requested"` イベントの受信（詳細は [tray-autostart-updater.md](../../../../docs/internal-design/tray-autostart-updater.md#auto-update) を参照）
   - フック間で共有する `Store` インスタンス（`storeRef`）は `App.tsx` が一度だけ読み込み、`useSearch`／`useClipboard` には参照を渡すのみ
+- 画面切替の枠内演出（`lib/screenTransition.ts`＝判定・時間・経路・リサイズ照合の純粋ロジック、`lib/screenTransitionPainter.ts`＝Canvas描画、`lib/screenTransitionController.ts`＝制御と共有インスタンス `screenTransition`、`components/ScreenTransitionLayer.tsx`＝描画面）：`AppMain` が毎コミットで実効ビューと利用者復帰の識別子を `screenTransition.update` へ渡し、`hideWindow()` が `cancel()` を呼び、`onResized` が `handleResize` を、メモ画面の `setSize` が直前に `expectProgrammaticResize` を呼ぶ。自動テストは `tools/screen-transition.test.mjs`（`npm run test:unit`）。仕様と設計の正本は [screen-transition-effect.md](../../../../docs/internal-design/screen-transition-effect.md)
 - コンポーネント（`components/`）は表示と props 経由のイベント通知のみを担い、Tauri コマンドや永続化には直接アクセスしない（すべて `App.tsx` がフックの戻り値を props として渡す）
 - 検索/計算 UI のキーボード操作：↑↓ 選択、Enter で起動 or コピー、Shift+Enter で選択中のファイル（ピン止め・通常のファイル検索結果選択時）の格納フォルダを開く、Esc で非表示、`Ctrl+,` で設定パネルを開く、`Ctrl+D` でクエリを全クリア
 - `Ctrl+D`：同じ `window` の `keydown`イベントリスナーで一括処理する。**OCR画面ではCtrl+Dを完全に無効化し、検索クエリ・OCR本文とも一切変更しない**。クリップボード履歴・最近使ったファイル画面ではローカル絞り込みのみをクリアし、L1滞在中に凍結して維持している検索クエリ自体は変更しない（変更すると`clipboardMode`/`recentMode`の判定が崩れるため）。それ以外の画面では`search.setQuery("")`に加え、表示中の管理画面が`localQueryClearHandlerRef`へ登録した可視の絞り込み文字列もクリアする（詳細は [window-lifecycle.md](../../../../docs/internal-design/window-lifecycle.md#local-query-clear-dispatch)）
