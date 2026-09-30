@@ -108,7 +108,7 @@ const closeWindow = useCallback(
 
 <a id="l1-confirm-close-view-reset"></a>
 
-**確定クローズ時のL1状態（`view`）の明示リセット**：`closeWindow()` の `clearQuery` は検索クエリ（`search.query`）だけを対象とし、`App.tsx` が保持する画面状態 `view` には一切関与しない。favorite/memo のようにクエリが `view` の昇格判定の一部を担うだけで `view` 自体は一度昇格すると以後クエリの変化に左右されない画面では問題にならないが、issue 0024（クリップボード履歴・最近使ったファイルのL1化）で「確定クローズ後は次回表示を必ず通常検索画面から始める」という仕様を実装した際、クエリをクリアするだけでは `view` が `"clipboardEdit"`/`"recentEdit"` のまま取り残されることが判明した。この場合、**`view` を明示的に `"search"` へ戻す専用コールバック（`resetToSearchView`。`App.tsx` で `useCallback(() => setView("search"), [])` として定義）を、確定クローズを実行する側のフック（`useSearch.ts`/`useClipboard.ts`）へ引数として渡し、`closeWindow()` の `cleanup` 内で呼ぶ**。新しくL1画面を追加し、かつ「確定クローズ後は次回検索画面から始まる」仕様にする場合は、このコールバックを同様に配線すること（既存のfavorite/memoの「確定後も同じL1に留まる」挙動は変更していない。両者は意図的に非対称）。
+**確定クローズ時のL1状態（`view`）の明示リセット**：`closeWindow()` の `clearQuery` は検索クエリ（`search.query`）だけを対象とし、`App.tsx` が保持する画面状態 `view` には一切関与しない。favorite/memo のようにクエリが `view` の昇格判定の一部を担うだけで `view` 自体は一度昇格すると以後クエリの変化に左右されない画面では問題にならないが、issue 0024（クリップボード履歴・最近使ったファイルのL1化）で「確定クローズ後は次回表示を必ず通常検索画面から始める」という仕様を実装した際、クエリをクリアするだけでは `view` が `"clipboardEdit"`/`"recentEdit"` のまま取り残されることが判明した。この場合、**`view` を明示的に `"search"` へ戻す専用コールバック（`resetToSearchView`。`App.tsx` で `useCallback(() => setView("search"), [])` として定義）を、確定クローズを実行する側のフック（`useSearch.ts`/`useClipboard.ts`）へ引数として渡し、`closeWindow()` の `cleanup` 内で呼ぶ**。新しくL1画面を追加し、かつ「確定クローズ後は次回検索画面から始まる」仕様にする場合は、このコールバックを同様に配線すること（既存のfavorite/memoの「確定後も同じL1に留まる」挙動は変更していない。両者は意図的に非対称）。画面切替の枠内演出（[screen-transition-effect.md](screen-transition-effect.md#transition-decision)）は、この`resetToSearchView`による検索画面への復帰を演出の対象にしない（利用者操作の入口である`closeXxxEdit`だけが「利用者復帰」の識別子を更新する）。
 
 <a id="prefix-mode-l1-promotion"></a>
 

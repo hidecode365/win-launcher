@@ -10,3 +10,5 @@
 - 作業を確定する主要ボタンと、それに並ぶ低優先度の補助ボタンは`ActionButton`のsemantic variantを使い、配置密度と固定heightの違いはsizeで表す。画面側で独自のheight・padding・outlineを追加しない。 → 詳細: [shared-ui-system.md](../../../../../docs/internal-design/shared-ui-system.md#action-button)
 - 本文textareaは挙動を無理に共通化せず、`EDITOR_SURFACE_CLASS`で表面だけを共有する。 → 詳細: [shared-ui-system.md](../../../../../docs/internal-design/shared-ui-system.md#editor-surface)
 - 各L1画面のヘッダーで設定を開くボタンを追加する場合、共有コンポーネント`SettingsButton`をそのまま使い、個別にSVGを複製しない。 → 詳細: [shared-ui-system.md](../../../../../docs/internal-design/shared-ui-system.md#settings-button)
+- Canvas等、Tailwindのクラスを使えない描画が解決済みの色文字列を必要とする場合は、色の値を`src/styles.css`の`:root`のCSS変数に唯一の定義として置き、`tailwind.config.js`のtokenは`var(--…)`でその変数を参照し、描画側は`getComputedStyle`で同じ変数を読む。値を`tailwind.config.js`と描画コードの両方に書かない（画面切替の枠内演出の光の色が最初の例）。 → 詳細: [screen-transition-effect.md](../../../../../docs/internal-design/screen-transition-effect.md#glow-color-single-definition)
+
