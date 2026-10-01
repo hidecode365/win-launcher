@@ -57,3 +57,25 @@
 | `judge_pasted_path(text)` | 検索ボックスの文字列（貼り付け・手入力を問わない）に対し、前後のダブルクォートを取り除いたうえで実在確認・フォルダ/ファイル判定を行い、`{ path, name, isDir }` を返す（実在しない場合は `null`） |
 | `add_search_folder_from_paste(path)` | 機能1：検索フォルダとして追加する。既に登録済みの場合は追加をスキップし、いずれもトースト通知で結果を伝える |
 | `create_shortcut(targetPath, folderPath, name)` | 機能2：`folderPath` 配下に `targetPath` を指す `.lnk` を作成する（`windows-rs` 経由の `IShellLinkW`/`IPersistFile` 直接呼び出し）。同名が既に存在する場合は連番を付与し、成功時にトースト通知を表示する |
+| `log_ui_event(line)` | UI 計測行をバックエンドのログへ書き出す診断用コマンド（恒久的な構造化ログ機能の参考実装として意図的に残している。詳細は `src/lib/uiDebugLog.ts`） |
+| `set_search_generation(generation)` | 実行中の `search_files`（重い同期処理）を待たずに obsolete 化するため、検索の世代番号を設定する |
+| `set_folder_info_generation(generation)` | 検索フォルダ情報ダイアログの走査について、`set_search_generation` と同じ役割の世代番号を設定する（ダイアログを閉じる・別フォルダを開く操作の両方から呼ぶ） |
+| `reorder_folders(fromPath, toPath)` | 検索フォルダを `fromPath` から取り出して `toPath` の位置へ挿入し直し、並び替え後のフォルダ一覧を返す |
+| `get_search_folder_info(generation, path)` | 対象フォルダの検索フォルダ情報を返す。検索階層数・拡張子フィルターは引数でなく呼び出し時に設定を読み直す。呼び出し時に走査の世代番号も設定する |
+| `show_path_paste_toast(message)` | パス貼り付け候補（ピン止め・お気に入り）の保存成功後に、成功通知トーストを表示する。保存成功の後にだけ呼ぶ |
+| `get_icons_for_paths(paths)` | 複数パスの Shell アイコンを `data:image/png;base64,...`（取得失敗は `null`）の配列で返す。1回の呼び出し内でドライブ種別判定を共有する |
+| `get_memo_manage_nodes()` | メモ管理画面用のノード一覧（`FavoriteNode`）を返す |
+| `get_memo_document(id)` | 指定メモの本文ドキュメント（`MemoDocument`）を返す |
+| `add_memo(name, content, parentId, notify)` | メモを作成し、更新後のノード一覧を返す。`notify` でトースト通知の要否を呼び出し元が指定する |
+| `save_memo_draft(id, content, expectedRevision)` | メモ本文を下書き保存し、更新後の `MemoDocument` を返す。`expectedRevision` を検証する |
+| `save_memo_final(id, content, expectedRevision)` | メモ本文を確定保存し、更新後の `MemoDocument` を返す。`expectedRevision` を検証する |
+| `add_memo_folder(name, parentId)` | メモ用フォルダを作成し、更新後のノード一覧を返す。空のフォルダ名はエラー |
+| `move_memo_node_to(id, newParentId, targetIndex)` | メモ／フォルダを移動し、更新後のノード一覧を返す。予約フォルダは移動不可 |
+| `delete_memo_node(id)` | メモ／フォルダを削除し、更新後のノード一覧を返す。予約フォルダは削除不可 |
+| `set_search_max_results(maxResults)` | ファイル検索の上限件数（1〜400件）を変更して `AppSettings` を返す。範囲外はエラー |
+| `set_url_convert_enabled(enabled)` | URL エンコード／デコード機能の ON/OFF を切り替えて `AppSettings` を返す |
+| `set_url_convert_keep_space_encoded(enabled)` | URL 変換でスペースの符号化を維持するかを切り替えて `AppSettings` を返す |
+| `set_recent_max_age_days(days)` | `/recent` の保持期間（日数）を変更して `AppSettings` を返す |
+| `set_recent_max_results(maxResults)` | `/recent` の表示件数上限を変更して `AppSettings` を返す |
+| `set_memo_enabled(enabled)` | メモ機能の ON/OFF を切り替えて `AppSettings` を返す |
+| `set_memo_keyword(keyword)` | メモ一覧（`/memo`）の呼び出しキーワードを変更して `AppSettings` を返す |
