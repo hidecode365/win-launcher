@@ -1217,6 +1217,29 @@ function AppMain() {
         // 「複数ステップのウィザード形式インタラクション」節を参照）。
         return;
       }
+      // issue 0035：通常検索画面で、選択行がピン止め行のときの Ctrl+Shift+↑/↓ は
+      // その行を隣接位置へ並び替える（端でもキーを消費し、選択行・順序は変えない）。
+      // 判定は検索ボックスの空/非空ではなく選択行の種別（rows[selected].kind）で行う。
+      // IME変換中は並び替えず、従来の選択移動に任せる。ピン止め行以外は従来どおり。
+      if (
+        (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+        e.ctrlKey &&
+        e.shiftKey &&
+        !e.nativeEvent.isComposing &&
+        !search.clipboardMode &&
+        !search.recentMode &&
+        !search.favoriteMode &&
+        !search.prefixCommandMode &&
+        !search.pathPasteWizardMode &&
+        selectedRow?.kind === "pinned"
+      ) {
+        e.preventDefault();
+        search.reorderPinnedByKey(
+          selectedRow.file.path,
+          e.key === "ArrowDown" ? 1 : -1
+        );
+        return;
+      }
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -1289,6 +1312,10 @@ function AppMain() {
     },
     [
       search.searchOverlayActive,
+      search.recentMode,
+      search.favoriteMode,
+      search.pathPasteWizardMode,
+      search.reorderPinnedByKey,
       moveSelection,
       webSearchVisible,
       search.selected,

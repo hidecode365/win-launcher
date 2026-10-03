@@ -2354,21 +2354,37 @@ export function useSearch(
   // intent に積むだけにする。setPinnedFiles(reordered) が同期的に rows を
   // 再構築させるため、intent 解決用 useLayoutEffect がほぼ次のレンダーで
   // 選択を解決する（詳細は CLAUDE.md「選択状態の維持」節を参照）。
+  //
+  // キー（Ctrl+Shift+↑/↓）からも同じ経路を再利用する（reorderPinnedByKey）。キーの長押し
+  // では再レンダーを挟まずに連続して呼ばれるため、並び替えの元になる配列は state の
+  // クロージャ（古い値になり得る）ではなく pinnedFilesRef（呼出しごとに同期更新）から読む。
+  // また保存応答は発行順に返るとは限らないため、最新の保存の応答だけを
+  // favoritesRef/favorites へ反映する（古い応答で新しい順序を巻き戻さない）。
+  const pinnedFilesRef = useRef<FileEntry[]>(pinnedFiles);
+  pinnedFilesRef.current = pinnedFiles;
+
   const reorderPinned = useCallback(
-    (fromIndex: number, toIndex: number) => {
+    (fromIndex: number, toIndex: number, viaKeyboard = false) => {
+      if (viaKeyboard) {
+        // キー経由はキーボード操作として扱い、ホバー抑止の基準時刻を更新する
+        // （D&D はポインター起点のため更新しない）。端で無変化の場合も押下は操作とみなす。
+        lastKeyboardNavAtRef.current = Date.now();
+      }
+      const current = pinnedFilesRef.current;
       if (
         fromIndex === toIndex ||
         fromIndex < 0 ||
         toIndex < 0 ||
-        fromIndex >= pinnedFiles.length ||
-        toIndex >= pinnedFiles.length
+        fromIndex >= current.length ||
+        toIndex >= current.length
       ) {
         return;
       }
 
-      const reordered = [...pinnedFiles];
+      const reordered = [...current];
       const [moved] = reordered.splice(fromIndex, 1);
       reordered.splice(toIndex, 0, moved);
+      pinnedFilesRef.current = reordered;
       setPinnedFiles(reordered);
       updateIntent(
         { type: "key", key: `pinned:${moved.path}`, expiresAt: Date.now() + SELECT_INTENT_TIMEOUT_MS },
@@ -2386,14 +2402,31 @@ export function useSearch(
         }
         return f;
       });
+      const callId = beginAsyncCall("pinnedReorder");
       invoke<FavoriteNode[]>("set_favorites", { favorites: updatedFavorites })
         .then((saved) => {
+          if (!isLatestAsyncCall("pinnedReorder", callId)) return;
           favoritesRef.current = saved;
           setFavoritesState(saved);
         })
         .catch(console.error);
     },
-    [pinnedFiles, updateIntent]
+    [updateIntent, beginAsyncCall, isLatestAsyncCall]
+  );
+
+  // Ctrl+Shift+↑/↓：選択中のピン止め行（パスで指定）を隣接位置へ1つ移動する。
+  // 移動元は行インデックスではなくパスから引く（連続押下で選択行の位置が変わっても追従）。
+  // 端では並びを変えない（reorderPinned が範囲外を無視する）。
+  const reorderPinnedByKey = useCallback(
+    (path: string, direction: 1 | -1) => {
+      const from = pinnedFilesRef.current.findIndex((f) => f.path === path);
+      if (from < 0) {
+        lastKeyboardNavAtRef.current = Date.now();
+        return;
+      }
+      reorderPinned(from, from + direction, true);
+    },
+    [reorderPinned]
   );
 
   // launch_file / open_containing_folder はいずれもファイルやフォルダを OS の既定
@@ -2923,6 +2956,7 @@ export function useSearch(
     togglePin,
     togglePinFromPaste,
     reorderPinned,
+    reorderPinnedByKey,
     isFavorited,
     toggleFavorite,
     toggleFavoriteFromPaste,
