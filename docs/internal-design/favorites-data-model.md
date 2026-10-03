@@ -105,6 +105,19 @@ issue 0024でL1化したクリップボード履歴・最近使ったファイ�
 
 **トレードオフとして記録しておくべき制約**：`dragDropEnabled: false` にした結果、**HTML5 D&D による並び替えと、OSからのファイルドロップ受け入れは、現状の実装では二者択一の関係にある**。将来「Explorer からファイルをウィンドウへドラッグ&ドロップして検索フォルダに追加する」「Explorer からファイルをドラッグしてピン止め／お気に入りに直接追加する」といった、OS側のドラッグ操作を起点とする機能を追加したくなった場合、この設定が障害になる。その場合は `dragDropEnabled` を `true` に戻したうえで、ページ内 HTML5 D&D との共存方法を別途検討する必要がある（両者を同時に成立させる具体的な設計は未検討・今後の課題）。
 
+<a id="pinned-keyboard-reordering"></a>
+
+### キーボード（Ctrl+Shift+↑↓）による並び替え（issue 0035）
+
+通常検索画面のピン止め行を選択中の `Ctrl+Shift+↑/↓` は、D&Dと同じ `reorderPinned`（`pinned:<path>` 識別子の intent 設定＋`set_favorites` 保存）をキー用の薄いラッパー `reorderPinnedByKey(path, direction)` から呼ぶ（`useSearch.ts`。呼出しは `App.tsx` の検索入力欄 `handleKeyDown`）。キー専用の並び替え・保存経路は新設しなかった（ドラッグと保存・選択維持・永続順序の実装が二重になり競合の温床になるため）。Rust・保存形式・新規依存の変更はない。操作仕様は 06-keyboard-interactions.md の検索画面表が正本で、ここには複製しない。
+
+- **適用判定**：「検索ボックスが空か」ではなく「`rows[selected].kind` がピン止め行か」で決める（`displayedPinnedVisible` が遅延切替するため、クエリ入力直後の表示と一致させる）。あわせて `clipboardMode`／`recentMode`／`favoriteMode`／`prefixCommandMode`／`pathPasteWizardMode` 中は無効。ピン止め行選択中はキーを常に消費し（端でも選択を動かさない）、それ以外の行は従来の選択移動に落とす。IME変換中（`isComposing`）は並び替えず、従来の選択移動に任せる（現行挙動の維持）
+- **移動元の引き方**：行インデックスではなく選択行のパスから `pinnedFiles` 内の位置を引く。端は `reorderPinned` が範囲外として無変化で返す
+- **長押し（キーリピート）対策**：再レンダーを挟まず連続呼出しされるため、並び替えの元配列は state のクロージャ（古い値になり得る）ではなく `pinnedFilesRef`（呼出しごとに同期更新）から読む。保存応答は発行順に返るとは限らないため、`asyncCallIdRef` の新規キー `"pinnedReorder"` で最新の保存の応答だけを `favoritesRef`/`favorites` へ反映し、古い応答で新しい順序を巻き戻さない（保存自体は Rust 側の排他で直列化される）
+- **ホバー抑止**：`reorderPinned` の `viaKeyboard` 引数が真のときだけ `lastKeyboardNavAtRef` を更新する（端で無変化でも押下は操作とみなす）。D&D経由は従来どおり更新しない（ポインター起点。規約は [result-list-and-selection.md](result-list-and-selection.md#hover-suppression) を参照）
+- **選択維持**：移動で先頭要素が入れ替わっても intent を top へ戻すトリガーは query/settings/closeRefreshTick のみのため選択は維持される。識別子 `pinned:<path>` は移動で変わらない（[result-list-and-selection.md](result-list-and-selection.md#reset-triggers)）
+- **フッター**：ピン止め行選択時のみ `StatusFooter` に「Ctrl+Shift+↑↓ 並び替え」を出す（[status-footer.md](status-footer.md#footer-implementation-map)）
+
 <a id="frontend-implementation"></a>
 
 ### フロントエンド実装（`useSearch.ts`）
@@ -115,7 +128,7 @@ issue 0024でL1化したクリップボード履歴・最近使ったファイ�
 - **フォーカス回復時再取得テーブル**：`focusRegainTableRef.current` に `pinned: { active: pinnedVisible, refetch: () => fetchPinnedFiles("focus-regain") }` を追加している
 - `pinnedVisible`（ピン止めブロックを表示すべきか）は `appSettings.pinEnabled && query === "" && !clipboardMode && !recentMode` で判定する。`calcMode`／`prefixCommandMode`／`pathPasteWizardMode` を明示的に除外していないのは、これらがいずれも非空クエリを前提とする構造上、`query === ""` の時点で自動的に成立しなくなるため
 - `favorites`（生ノード配列、`get_favorites` で取得）と `pinnedFiles`（表示用、`get_pinned_files` で取得）を別の state として持つ。前者はピン止めの追加・解除・並び替えの判断材料（`order`・`id` を持つ）、後者は描画専用。`get_pinned_files` が返す各要素の `icon` は常に `null` で、Shellアイコンは共有キャッシュ経由の表示範囲優先取得で別途反映される（[shell-icon-loading.md](shell-icon-loading.md)を参照）
-- `togglePin`/`reorderPinned` はいずれも `favoritesRef.current`（最新の生配列）を元に更新後の配列を組み立て、`set_favorites` へ送ってから、その戻り値（Rust側で予約フォルダ是正・保存済みの配列）を新しい真実として `favoritesRef`/`favorites` に反映する。`reorderPinned` は保存の完了を待たず `pinnedFiles`（表示用配列）を先に楽観的に並び替える（体感速度を優先。保存自体は fire-and-forget）
+- `togglePin`/`reorderPinned` はいずれも `favoritesRef.current`（最新の生配列）を元に更新後の配列を組み立て、`set_favorites` へ送ってから、その戻り値（Rust側で予約フォルダ是正・保存済みの配列）を新しい真実として `favoritesRef`/`favorites` に反映する。`reorderPinned` は保存の完了を待たず `pinnedFiles`（表示用配列）を先に楽観的に並び替える（体感速度を優先。保存自体は fire-and-forget。キー経由の連続呼出し・応答順の扱いは[キーボード並び替え](#pinned-keyboard-reordering)を参照）
 
 <a id="pinning-from-recent"></a>
 

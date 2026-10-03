@@ -72,7 +72,7 @@ intent を更新している全箇所（すべて `updateIntent(next, source)` �
 3. `selectRowFromHover(key, x, y)`：マウスホバーによる同上（抑止ロジックは [hover-suppression](#hover-suppression) を参照）
 4. `togglePin` 追加分岐：`{type:'key', key: "pinned:<path>", expiresAt: now+1000}`
 5. `togglePin` 解除分岐：`{type:'key', key: "file:<path>", expiresAt: now+1000}`
-6. `reorderPinned`：`{type:'key', key: "pinned:<moved.path>", expiresAt: now+1000}`
+6. `reorderPinned`（D&Dおよびキー経由の `reorderPinnedByKey` 共通）：`{type:'key', key: "pinned:<moved.path>", expiresAt: now+1000}`
 7. `toggleFavorite` の★解除分岐（`favoriteMode` 中、`/favorite` 一覧自身から解除した場合のみ）：解除で消える行の次（無ければ前）のアイテム行の識別子を `{type:'key', key: <neighbor.key>, expiresAt: now+1000}` として積む（見つからなければ `{type:'top'}`）。`togglePin` の解除分岐と同じ「削除後に別の場所へ移動する対象を識別子で追う」パターン
 8. タイムアウト効果（`intent.expiresAt` を過ぎても対象が見つからない場合）：`{type:'top'}`
 
@@ -158,7 +158,7 @@ Web検索行（「Googleで〇〇を検索」）は `rows: ResultRow[]` に含�
 
 **条件2の基準座標が未記録（`null`）の場合は「静止扱い」（＝抑止する）を既定にする**（issue 0030・400工程で特定・修正）。本アプリはキーボード駆動が主用途（Alt+Space起動→入力→Enter）で、ウィンドウ表示後に一度もマウスを動かさないまま一覧が大きく再構成されることが珍しくない。この場合ブラウザは実際のポインター移動を伴わずに`mouseenter`を発火させうるため、基準座標が無いことを理由に条件2をすり抜けさせる（＝抑止しない）と、この事後的な`mouseenter`がキーボードで維持していた正しい選択を無条件に上書きしてしまう。`null`を「静止扱い」にしても、ユーザーが実際にマウスを動かして意図的にホバーする操作は、その移動で基準座標が更新されるため妨げない（初回の1回だけ抑止され、直後の移動で正しく機能する）。新しく同種のホバー抑止を実装する場合も、基準座標の初期値（`null`）をどちらの扱いにするかを明示的に決めること。
 
-通常の↑↓だけでなく、Ctrl+Shift+矢印による並び替え・再親化もキーボード操作として扱い、移動対象を `selectByKeyboard` に渡す。非同期再取得後に選択を明示復元する経路では、その復元時にも `selectByKeyboard` を使って再描画直後をホバー抑止期間の起点にする。D&D・クリック・作成後の選択はポインター／プログラム起点なので `selectByKey` を使い、この抑止時刻を更新しない。
+通常の↑↓だけでなく、Ctrl+Shift+矢印による並び替え・再親化もキーボード操作として扱い、移動対象を `selectByKeyboard` に渡す（通常検索のピン止め行の `Ctrl+Shift+↑↓` は `reorderPinned` の `viaKeyboard` 引数で `lastKeyboardNavAtRef` を直接更新する。詳細は [favorites-data-model.md](favorites-data-model.md#pinned-keyboard-reordering)）。非同期再取得後に選択を明示復元する経路では、その復元時にも `selectByKeyboard` を使って再描画直後をホバー抑止期間の起点にする。D&D・クリック・作成後の選択はポインター／プログラム起点なので `selectByKey` を使い、この抑止時刻を更新しない。
 
 <a id="dom-structure-and-dividers"></a>
 
