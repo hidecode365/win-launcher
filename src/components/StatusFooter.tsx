@@ -111,6 +111,11 @@ export function StatusFooter({
       {(selectedRowKind === "pinned" || selectedRowKind === "file") && (
         <KeyHint keys="Shift+Enter" label="フォルダを開く" />
       )}
+      {/* ピン止めブロック内の選択行のみ。App.tsx handleKeyDown の並び替え分岐
+          （selectedRow.kind === "pinned" かつ prefixCommandMode 以外）と同じ条件。 */}
+      {selectedRowKind === "pinned" && !prefixCommandMode && (
+        <KeyHint keys="Ctrl+Shift+↑↓" label="並び替え" />
+      )}
       <KeyHint keys="Ctrl+D" label="クリア" />
       {settingsHint}
       <KeyHint keys="Esc" label="閉じる" />
