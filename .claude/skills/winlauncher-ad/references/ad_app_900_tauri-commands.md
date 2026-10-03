@@ -19,14 +19,14 @@
 | `set_calc_enabled(enabled)` | 数式計算機能の ON/OFF を切り替えて `AppSettings` を返す |
 | `set_copy_with_comma(enabled)` | 計算結果コピー時のカンマ区切り ON/OFF を切り替えて `AppSettings` を返す |
 | `set_system_command_enabled(enabled)` | システムコマンド機能の ON/OFF を切り替えて `AppSettings` を返す |
-| `set_system_command_keyword(command, keyword)` | `command`（`shutdown`/`restart`/`sleep`）に対応する呼び出しキーワードを変更して `AppSettings` を返す。空文字列、または他の5キーワードのいずれかと重複する場合はエラーを返して保存しない |
+| `set_system_command_keyword(command, keyword)` | `command`（`shutdown`/`restart`/`sleep`）に対応する呼び出しキーワードを変更して `AppSettings` を返す。空文字列、または他の6キーワードのいずれかと重複する場合はエラーを返して保存しない |
 | `set_web_search_enabled(enabled)` | Web検索機能の ON/OFF を切り替えて `AppSettings` を返す |
 | `set_clipboard_enabled(enabled)` | クリップボード履歴機能の ON/OFF を切り替えて `AppSettings` を返す |
-| `set_clipboard_prefix(prefix)` | クリップボード履歴の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の5キーワードのいずれかと重複する場合はエラーを返して保存しない |
+| `set_clipboard_prefix(prefix)` | クリップボード履歴の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の6キーワードのいずれかと重複する場合はエラーを返して保存しない |
 | `set_clipboard_max_items(maxItems)` | クリップボード履歴の最大保持件数を変更して `AppSettings` を返す。`1` 未満はエラーを返して保存しない |
 | `paste_clipboard_image(id)` | `ClipboardImageCache` から `id` に対応する画像バイナリを取得し、Win32 API でクリップボードへ直接書き込む |
 | `set_recent_files_enabled(enabled)` | 最近使ったファイル一覧機能の ON/OFF を切り替えて `AppSettings` を返す |
-| `set_recent_keyword(keyword)` | 最近使ったファイル一覧の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の5キーワードのいずれかと重複する場合はエラーを返して保存しない |
+| `set_recent_keyword(keyword)` | 最近使ったファイル一覧の呼び出しキーワード（`/` に続く部分）を変更して `AppSettings` を返す。空文字列、または他の6キーワードのいずれかと重複する場合はエラーを返して保存しない |
 | `set_recent_display_settings(includeFolders, extensionFilterMode, blacklistExtensions, whitelistExtensions)` | `/recent` の「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）をまとめて保存して `AppSettings` を返す。`FolderEntry` とは独立した /recent 機能全体のグローバル設定。拡張子タグの正規化は `set_folder_settings` と同じ `normalize_extensions` を使う（詳細は [recent-files.md](../../../../docs/internal-design/recent-files.md#recent-display-settings) を参照） |
 | `get_recent_files()` | Windows の Recent フォルダ・Office の Recent フォルダから最近使ったファイル一覧（`.lnk`/`.url` 由来、OneDrive パス解決込み）を最終アクセス日時降順で返す（最大50件）。「表示対象設定」（フォルダを対象に含めるか・拡張子フィルタリング）を反映する（詳細は [recent-files.md](../../../../docs/internal-design/recent-files.md#recent-display-settings) を参照） |
 | `get_favorites()` | 予約フォルダ（ピン止め／お気に入り／メモ）を含む `FavoriteNode` 配列全体を返す |
@@ -45,7 +45,7 @@
 | `remove_favorite_folder(id)` | 指定フォルダノード自身と、その配下（再帰）を丸ごと削除する。実ファイル自体は操作しない。予約フォルダ（ピン止め／お気に入り／メモ）は削除できない |
 | `move_favorite_node_to(id, newParentId, targetIndex)` | 指定ノードを `newParentId` 配下の `targetIndex` の位置へ移動する（並び替え・再親化を同一ロジックで扱う）。予約フォルダ自体は移動できず、移動先は「お気に入り」ツリー配下の `folder` 型ノードに限られ、循環参照・同名重複が生じる場合はエラーを返して保存しない |
 | `set_favorite_enabled(enabled)` | お気に入り機能の ON/OFF を切り替えて `AppSettings` を返す |
-| `set_favorite_keyword(keyword)` | お気に入り一覧（`/favorite`）の呼び出しキーワードを変更して `AppSettings` を返す。空文字列、または他の5キーワードのいずれかと重複する場合はエラーを返して保存しない |
+| `set_favorite_keyword(keyword)` | お気に入り一覧（`/favorite`）の呼び出しキーワードを変更して `AppSettings` を返す。空文字列、または他の6キーワードのいずれかと重複する場合はエラーを返して保存しない |
 | `set_hotkey(accelerator)` | 起動ホットキーを変更（unregister → register）し `AppSettings` を返す。失敗時は旧ホットキーを維持しエラーを返す |
 | `ocr_from_clipboard()` | クリップボードの画像を Rust 側で直接読み取り、Windows OCR API（`Windows.Media.Ocr`）でテキスト抽出して返す。日本語言語パック優先・英語フォールバック。`tauri::async_runtime::spawn_blocking` で別スレッドに逃がし COM を初期化して実行。テキスト取得は `OcrLine.Words` を個別に取得し、直前と現在の単語が両方とも ASCII 英数字のみ（各文字が `is_ascii_alphanumeric()` を満たすか `chars().all(...)` で判定）の場合のみスペースを挿入、それ以外はスペースなしで結合（CJK 文字への不要な空白挿入を防ぐ）。行のソートは先頭ワードの `BoundingRect.Y`（`Windows.Foundation.Rect`、`"Foundation"` feature 必要）を基準に昇順ソートしてから改行結合する |
 | `set_ocr_enabled(enabled)` | OCR機能の ON/OFF を切り替えて `AppSettings` を返す |
