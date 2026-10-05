@@ -11,6 +11,7 @@
 - `vite`：5系から `6.4.3` へ更新済み（`package.json` は `^6.4.3` 固定）
 - `esbuild`（`vite` の間接依存）：`0.25.12` に更新済み
 - `@vitejs/plugin-react`：`4.7.0` のまま据え置き（追加の更新なし）
+- `browserslist`（`autoprefixer` 経由の間接依存）：`4.29.3` へ、`baseline-browser-mapping`（同間接依存）：`2.11.27` へ、`package-lock.json` のみ更新（Dependabot #10・#11 対応。`package.json` 不変、ビルド生成物は更新前後で同一）
 - `glib`（Rust、`src-tauri/Cargo.lock` 上の間接依存。Windows ビルドでは未使用）：Dependabot が medium 指摘を出しているが、`tauri` が要求する `gtk 0.18.2` に固定されているため単独更新不可。`tauri` 本体の上流アップデート待ちで保留中
 
 <a id="dialog-plugin-parent-window"></a>
