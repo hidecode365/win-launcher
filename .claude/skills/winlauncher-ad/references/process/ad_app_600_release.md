@@ -40,6 +40,7 @@ GitHub Release本文とアプリ内更新ダイアログのノートは、対象
    - 該当する `.sig` が見つからない場合はエラーで停止する（署名鍵の未設定・`createUpdaterArtifacts` の設定漏れの早期検知）
 5. **git commit / tag / push**：`git commit` → `git push` → `git tag vX.Y.Z` → `git push --tags`
    - `release-notes-en.md` は一時ファイルなのでステージングしない。commit前に `git status` を確認し、意図しないファイルが含まれていないことを確認する
+   - push結果のDependabot通知の報告は `../ad_app_900_handoff-protocol.md` に従う
 6. **GitHub Release 作成**：`gh release create vX.Y.Z --title "vX.Y.Z" --notes-file release-notes-en.md` を実行する。作成後、`release-notes-en.md` を削除する
 7. **アセットアップロード**：`gh release upload vX.Y.Z` で以下の **5つ** をすべて添付する（署名文字列自体は `latest.json` に埋め込み済みのため、updater は `*.sig` ファイルを別途ダウンロードしない。`.sig` の添付は他アセットとの一貫性・参照用）
    - NSIS インストーラー本体（`*_x64-setup.exe`。`latest.json` の `url` が直接参照するダウンロード対象）
